@@ -244,7 +244,7 @@ function settingsSections(): SettingsSection[] {
     },
   ];
   if (!global.isIOS) return sections;
-  const deferred = new Set(["Navigate", "Watch"]);
+  const deferred = new Set(["Watch"]);
   return sections.map(section => {
     if (section.label === "Developer") return { ...section, items: [toggleSettingMenuItem(showBleBandwidthSetting)] };
     if (section.label === "Voice") return { label: "Voice", items: [enumSettingMenuItem(wakeWordActionSetting), {
@@ -255,12 +255,8 @@ function settingsSections(): SettingsSection[] {
       label: "Not available on iOS yet", disabled: true, onSelect: () => {},
       description: `${section.label} integration has not been ported to iOS.`,
     }] };
-    // Brightness works on iOS now that the message format is shared
-    // (app/g2/brightness-protocol.ts, used by GlassesSession); only the
-    // screen-timeout path is still Android-only.
     if (section.label === "Display") return { ...section, items: section.items.filter(item =>
       item.label !== screenTimeoutSetting.label) };
-    if (section.label === "Phone display") return { ...section, items: section.items.filter(item => item.label !== mirrorTouchSetting.label) };
     return section;
   });
 }

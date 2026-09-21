@@ -204,3 +204,131 @@ Page.main-page {
 .main-landscape .system-name-modal { padding: 6 12; }
 .main-landscape .system-name-modal .h2 { visibility: collapse; }
 .main-landscape .system-name-modal Button { padding: 6 8; margin-top: 0; margin-bottom: 0; }
+
+/*
+ * Dark mode. NativeScript puts .ns-dark on the root view when iOS is in Dark
+ * appearance, so these follow the system setting with no toggle of our own.
+ * The pairing / permissions palette is the one app.css already uses on Android.
+ */
+.ns-dark Page {
+  background-color: #1c1c1e;
+  color: #f0f0f0;
+}
+
+.ns-dark Page.main-page {
+  background-color: #121212;
+  color: #f0f0f0;
+}
+
+.ns-dark .main-page .main-header {
+  background-color: #2a2a2a;
+}
+
+.ns-dark .main-page .mode-button {
+  background-color: #3a3a3a;
+  color: #f0f0f0;
+}
+
+.ns-dark .main-page .ble-bandwidth-indicator {
+  color: #999999;
+}
+
+.ns-dark Button {
+  background-color: #2f6f54;
+}
+
+.ns-dark Button.pairing-link {
+  background-color: transparent;
+}
+
+/* The name modal is deliberately a light panel in both appearances (as on
+ * Android), so its text must stay dark instead of following the page. */
+.ns-dark .main-page .system-name-modal,
+.ns-dark .main-page .system-name-modal Label,
+.ns-dark .main-page .system-name-modal TextView {
+  color: #222222;
+}
+
+.ns-dark .footer-link {
+  color: #8ab0ff;
+}
+
+.ns-dark .pairing-instructions {
+  color: #b0b0b0;
+}
+
+.ns-dark .pairing-empty {
+  color: #999999;
+}
+
+.ns-dark .pairing-row {
+  background-color: #2e2e2e;
+  border-color: #4a4a4a;
+}
+
+.ns-dark .pairing-row-selected {
+  background-color: #333c4c;
+  border-color: #5b8def;
+}
+
+.ns-dark .pairing-row-incomplete {
+  background-color: #282828;
+  border-color: #3c3c3c;
+}
+
+.ns-dark .pairing-title {
+  color: #f0f0f0;
+}
+
+.ns-dark .pairing-badge {
+  color: #a8c4f5;
+  background-color: #2a3b5e;
+}
+
+.ns-dark .pairing-variant {
+  color: #cccccc;
+}
+
+.ns-dark .pairing-proximity {
+  color: #a0a0a0;
+}
+
+.ns-dark .pairing-proximity-immediate {
+  color: #7da7f5;
+}
+
+.ns-dark .pairing-serial {
+  color: #a0a0a0;
+}
+
+.ns-dark .pairing-arms {
+  color: #c0c0c0;
+}
+
+.ns-dark .pairing-warning {
+  color: #e08a66;
+}
+
+.ns-dark .pairing-swatch-label {
+  color: #aaaaaa;
+}
+
+.ns-dark .pairing-chevron {
+  color: #bbbbbb;
+}
+
+.ns-dark .pairing-selection {
+  background-color: #2e2e2e;
+}
+
+.ns-dark Button.pairing-link {
+  color: #7da7f5;
+}
+
+.ns-dark .permissions-description {
+  color: #b0b0b0;
+}
+
+.ns-dark .permissions-check {
+  color: #7bc47f;
+}
