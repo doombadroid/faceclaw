@@ -812,6 +812,30 @@ export const roamApiTokenSetting = new ConfigSettingString({
   description: "API token for the graph, created in Roam under Settings > Graph > API tokens. Needs edit access for checking off todos.",
 });
 
+export const klipperAddressSetting = new ConfigSettingString({
+  id: "klipper-address",
+  label: "Printer address",
+  storageKey: "integrations.klipper.address",
+  defaultValue: "",
+  editorTitle: "Printer address",
+  glassesEditTitle: "Edit printer address",
+  normalize: normalizeNightscoutSiteUrl,
+  formatValue: emptySettingDisplay,
+  description: "Moonraker address of a Klipper 3D printer on your network (or the address you open Mainsail or Fluidd with), e.g. 192.168.1.50 or voron.local.",
+});
+
+export const klipperApiKeySetting = new ConfigSettingString({
+  id: "klipper-api-key",
+  label: "Moonraker API key",
+  storageKey: "integrations.klipper.apiKey",
+  defaultValue: "",
+  editorTitle: "Moonraker API key",
+  glassesEditTitle: "Edit Moonraker API key",
+  normalize: normalizeNightscoutApiToken,
+  formatValue: maskToken,
+  description: "Only needed when this phone is not under trusted_clients in moonraker.conf.",
+});
+
 export const nightscoutSiteUrlSetting = new ConfigSettingString({
   id: "nightscout-site-url",
   label: "Nightscout site URL",
