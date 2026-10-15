@@ -20,6 +20,26 @@ window.__faceclawEvenHub = { postMessage: function(name, args, id) {
 })();
 `
 
+/**
+ * A WKUserScript has no origin scope (Android's document-start injection takes
+ * one), so the shim would also run in a page the app opens in a popup — an
+ * OAuth login, say. That page must keep the platform's real timers: the shim
+ * replaces setTimeout/setInterval/requestAnimationFrame with queues that only
+ * drain when the native host ticks the app's own web view, so a foreign page
+ * that inherited them loads and then never runs anything again.
+ *
+ * Packaged apps are matched by scheme alone: only this app's URL scheme
+ * handler serves faceclaw-ehpk:, and `location.origin` is not dependable for
+ * a non-special scheme.
+ */
+function scopeToAppOrigin(script: string, remoteUrl: string | null | undefined): string {
+  let test = "location.protocol === 'faceclaw-ehpk:'"
+  const parts = remoteUrl ? /^([a-z][a-z0-9+.-]*:)\/\/([^/?#]+)/i.exec(remoteUrl) : null
+  if (parts) test = `location.protocol === ${JSON.stringify(parts[1].toLowerCase())} && location.host === ${JSON.stringify(parts[2].toLowerCase())}`
+  // Everything inside is an assignment to window or an IIFE, so a block is safe.
+  return `if (${test}) {\n${script}\n}`
+}
+
 export function createEvenHubWebView(session: EvenHubSession): EvenHubWebView {
   const host = FaceclawEvenHubWebView.new()
   host.packageIdentifier = session.manifest.packageId
@@ -38,7 +58,9 @@ export function createEvenHubWebView(session: EvenHubSession): EvenHubWebView {
     } catch (error) { console.warn(`EvenHub bridge: ${error}`) }
   }
   // Defer loading until manager.ts has attached the session/window handles.
-  const script = IOS_EVENHUB_TRANSPORT_SCRIPT + EVENHUB_BRIDGE_INJECT_SCRIPT + buildFaceclawExtensionsScript(`Faceclaw/${FACECLAW_VERSION}`)
+  const script = scopeToAppOrigin(
+    IOS_EVENHUB_TRANSPORT_SCRIPT + EVENHUB_BRIDGE_INJECT_SCRIPT + buildFaceclawExtensionsScript(`Faceclaw/${FACECLAW_VERSION}`),
+    session.remoteUrl)
   const loading = setTimeout(() => {
     if (session.remoteUrl) host.startURLScript(session.remoteUrl, script)
     else host.startEntrypointScript(session.distDir, session.manifest.entrypoint, script)
