@@ -36,7 +36,16 @@ function scopeToAppOrigin(script: string, remoteUrl: string | null | undefined, 
   const tests = [remoteUrl ? null : "location.protocol === 'faceclaw-ehpk:'"]
   for (const origin of (remoteUrl ? [remoteUrl, ...declared] : declared)) {
     const parts = /^([a-z][a-z0-9+.-]*:)\/\/([^/?#]+)/i.exec(origin)
-    if (parts) tests.push(`(location.protocol === ${JSON.stringify(parts[1].toLowerCase())} && location.host === ${JSON.stringify(parts[2].toLowerCase())})`)
+    if (!parts) continue
+    const protocol = JSON.stringify(parts[1].toLowerCase())
+    const host = parts[2].toLowerCase()
+    // A declared wildcard host ("*.tesla.com") matches whole labels only.
+    if (host.startsWith('*.')) {
+      const suffix = JSON.stringify(host.slice(1))
+      tests.push(`(location.protocol === ${protocol} && location.host.length > ${suffix}.length && location.host.endsWith(${suffix}))`)
+    } else {
+      tests.push(`(location.protocol === ${protocol} && location.host === ${JSON.stringify(host)})`)
+    }
   }
   // Everything inside is an assignment to window or an IIFE, so a block is safe.
   return `if (${tests.filter(Boolean).join(' || ')}) {\n${script}\n}`
@@ -51,7 +60,7 @@ function scopeToAppOrigin(script: string, remoteUrl: string | null | undefined, 
 function declaredOrigins(hosts: string[]): string[] {
   const origins = new Set<string>()
   for (const host of hosts) {
-    const parts = /^(https?):\/\/([^/?#:]+)(?::(\d+))?/i.exec(host.trim())
+    const parts = /^(https?):\/\/(\*?[^/?#:]+)(?::(\d+))?/i.exec(host.trim())
     if (!parts) continue
     const scheme = parts[1].toLowerCase()
     const port = parts[3] && parts[3] !== (scheme === 'https' ? '443' : '80') ? `:${parts[3]}` : ''

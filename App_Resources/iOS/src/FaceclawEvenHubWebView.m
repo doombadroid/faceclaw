@@ -150,7 +150,19 @@
      * addJavascriptInterface does the same; this is the narrower form. */
     if (_allowedOrigins.count) {
         NSString *origin = [self originOf:url];
-        if (origin && [_allowedOrigins containsObject:origin]) return YES;
+        if (origin) {
+            for (NSString *allowed in _allowedOrigins) {
+                if ([allowed isEqual:origin]) return YES;
+                /* A manifest may declare a wildcard host ("https://*.tesla.com").
+                 * Match whole labels only, so it never spans a dot boundary. */
+                NSRange star = [allowed rangeOfString:@"://*."];
+                if (star.location == NSNotFound) continue;
+                NSString *scheme = [allowed substringToIndex:star.location + 3];
+                NSString *suffix = [allowed substringFromIndex:star.location + 3];
+                if ([origin hasPrefix:scheme] && [origin hasSuffix:suffix] &&
+                    origin.length > scheme.length + suffix.length) return YES;
+            }
+        }
     }
     if (!_remoteURL) return [url.scheme isEqual:@"faceclaw-ehpk"] && [url.host isEqual:@"app"];
     NSNumber *port = url.port ?: @([url.scheme.lowercaseString isEqual:@"https"] ? 443 : 80);
