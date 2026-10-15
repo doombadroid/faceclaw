@@ -33,7 +33,11 @@ window.__faceclawEvenHub = { postMessage: function(name, args, id) {
  * a non-special scheme.
  */
 function scopeToAppOrigin(script: string, remoteUrl: string | null | undefined, declared: string[]): string {
-  const tests = [remoteUrl ? null : "location.protocol === 'faceclaw-ehpk:'"]
+  // A packaged app is served from either the loopback server (whose port is
+  // picked at runtime, hence the host-only test) or the custom scheme. Host
+  // access is gated natively against the exact origin either way, so a wider
+  // test here only decides where the SDK shim is installed.
+  const tests = [remoteUrl ? null : "(location.protocol === 'faceclaw-ehpk:' || location.hostname === '127.0.0.1')"]
   for (const origin of (remoteUrl ? [remoteUrl, ...declared] : declared)) {
     const parts = /^([a-z][a-z0-9+.-]*:)\/\/([^/?#]+)/i.exec(origin)
     if (!parts) continue

@@ -1,4 +1,5 @@
 #import "FaceclawEvenHubWebView.h"
+#import "FaceclawEvenHubLocalServer.h"
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <CommonCrypto/CommonDigest.h>
@@ -13,6 +14,11 @@
 @property(nonatomic) NSURL *remoteURL;
 @property(nonatomic) BOOL ticking;
 @property(nonatomic) BOOL destroyed;
+/* A packaged app is served over loopback HTTP so its page has an ordinary web
+ * origin, as it does in the stock host. nil when the listener would not bind,
+ * in which case the faceclaw-ehpk scheme handler still serves the app. */
+@property(nonatomic) FaceclawEvenHubLocalServer *server;
+@property(nonatomic, copy) NSString *localOrigin;
 // A window.open()/off-origin navigation from the app, shown over the app's own
 // page so the page stays alive to receive the result (an OAuth redirect lands
 // in here, not in the app's frame).
@@ -29,6 +35,14 @@
 }
 - (void)start:(NSString *)directory entrypoint:(NSString *)entrypoint script:(NSString *)script {
     _directory = directory.stringByStandardizingPath.stringByResolvingSymlinksInPath;
+    _server = [[FaceclawEvenHubLocalServer alloc] initWithDirectory:_directory];
+    if ([_server start]) {
+        _localOrigin = [NSString stringWithFormat:@"http://127.0.0.1:%u", (unsigned)_server.port];
+        NSString *text = [NSString stringWithFormat:@"%@/%@", _localOrigin, entrypoint];
+        [self startRequest:[NSURL URLWithString:text] script:script];
+        return;
+    }
+    _server = nil;
     NSURLComponents *url = [NSURLComponents new];
     url.scheme = @"faceclaw-ehpk"; url.host = @"app"; url.path = [@"/" stringByAppendingString:entrypoint];
     [self startRequest:url.URL script:script];
@@ -127,6 +141,7 @@
 - (void)destroy {
     if (_destroyed) return;
     _destroyed = YES; [_timer invalidate]; _timer = nil;
+    [_server stop]; _server = nil; _localOrigin = nil;
     [self dismissPopup];
     [_webView stopLoading]; _webView.navigationDelegate = nil; _webView.UIDelegate = nil;
     [_webView.configuration.userContentController removeScriptMessageHandlerForName:@"faceclaw"];
@@ -164,7 +179,10 @@
             }
         }
     }
-    if (!_remoteURL) return [url.scheme isEqual:@"faceclaw-ehpk"] && [url.host isEqual:@"app"];
+    if (!_remoteURL) {
+        if (_localOrigin) return [[self originOf:url] isEqual:_localOrigin];
+        return [url.scheme isEqual:@"faceclaw-ehpk"] && [url.host isEqual:@"app"];
+    }
     NSNumber *port = url.port ?: @([url.scheme.lowercaseString isEqual:@"https"] ? 443 : 80);
     NSNumber *remotePort = _remoteURL.port ?: @([_remoteURL.scheme.lowercaseString isEqual:@"https"] ? 443 : 80);
     return [url.scheme.lowercaseString isEqual:_remoteURL.scheme.lowercaseString] &&
