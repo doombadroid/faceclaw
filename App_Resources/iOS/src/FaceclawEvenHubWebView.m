@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <CommonCrypto/CommonDigest.h>
+#import <os/log.h>
 
 @interface FaceclawEvenHubWebView ()
 @property(nonatomic) WKWebView *webView;
@@ -161,8 +162,20 @@
  * which carry auth codes and tokens. */
 static void fcdiag(NSString *format, ...) {
     va_list args; va_start(args, format);
-    NSLogv([@"FC-DIAG " stringByAppendingString:format], args);
+    NSString *line = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
+    /* os_log with an explicit public format: NSLog from a third-party app does
+     * not reach the device log relay on iOS 27, so the first instrumented
+     * build produced nothing at all. */
+    os_log(OS_LOG_DEFAULT, "FC-DIAG %{public}s", line.UTF8String);
+    /* Second, independent sink: the diagnostic host on the LAN. Path and host
+     * only (never a query string), fire and forget, failures ignored. */
+    NSURL *sink = [NSURL URLWithString:@"http://10.1.24.221:8749/d"];
+    NSMutableURLRequest *post = [NSMutableURLRequest requestWithURL:sink];
+    post.HTTPMethod = @"POST";
+    post.HTTPBody = [line dataUsingEncoding:NSUTF8StringEncoding];
+    post.timeoutInterval = 3;
+    [[NSURLSession.sharedSession dataTaskWithRequest:post] resume];
 }
 static NSString *fcsafe(NSURL *url) {
     if (!url) return @"(nil)";
