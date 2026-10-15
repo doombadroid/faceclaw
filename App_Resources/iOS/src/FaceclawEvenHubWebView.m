@@ -132,7 +132,25 @@
     [_webView.configuration.userContentController removeAllUserScripts];
     [_host removeFromSuperview]; _host = nil; _back = nil; _webView = nil; _eventHandler = nil;
 }
+/** "scheme://host[:port]" with the scheme's default port omitted, lowercased. */
+- (NSString *)originOf:(NSURL *)url {
+    NSString *scheme = url.scheme.lowercaseString;
+    if (!scheme || !url.host.length) return nil;
+    NSNumber *fallback = @([scheme isEqual:@"https"] ? 443 : 80);
+    NSNumber *port = url.port ?: fallback;
+    NSString *suffix = [port isEqual:fallback] ? @"" : [NSString stringWithFormat:@":%@", port];
+    return [NSString stringWithFormat:@"%@://%@%@", scheme, url.host.lowercaseString, suffix];
+}
 - (BOOL)allowsURL:(NSURL *)url {
+    /* A page at an origin the manifest declares is the app's own code too: an
+     * auth flow that redirects the whole page back to the app's hosted copy
+     * lands there and has to reach the bridge to finish. The stock host grants
+     * every page in the app's web view that access, and Android's
+     * addJavascriptInterface does the same; this is the narrower form. */
+    if (_allowedOrigins.count) {
+        NSString *origin = [self originOf:url];
+        if (origin && [_allowedOrigins containsObject:origin]) return YES;
+    }
     if (!_remoteURL) return [url.scheme isEqual:@"faceclaw-ehpk"] && [url.host isEqual:@"app"];
     NSNumber *port = url.port ?: @([url.scheme.lowercaseString isEqual:@"https"] ? 443 : 80);
     NSNumber *remotePort = _remoteURL.port ?: @([_remoteURL.scheme.lowercaseString isEqual:@"https"] ? 443 : 80);
@@ -277,14 +295,25 @@ static NSString *fcsafe(NSURL *url) {
     }
     fcdiag(@"app nav -> %@ (mainFrame=%d, newWindow=%d, appOrigin=%d)", fcsafe(url),
         action.targetFrame.isMainFrame, action.targetFrame == nil, [self allowsURL:url]);
-    if ([self allowsURL:url] && action.targetFrame.isMainFrame) {
-        decisionHandler(WKNavigationActionPolicyAllow);
+    /* The app's own top-level page may navigate anywhere on the web, as it can
+     * on Android (FaceclawEvenHubWebViewClient overrides no navigation policy)
+     * and in the stock host. Apps rely on it: an OAuth flow sets location.href
+     * and is redirected back to its own hosted page, so cancelling that, or
+     * diverting it to a window the app did not ask for, breaks the round trip.
+     * Host access does not follow the navigation — didReceiveScriptMessage
+     * checks each message's own frame URL. */
+    if (action.targetFrame.isMainFrame) {
+        if ([self allowsURL:url] || [self isWebURL:url]) {
+            decisionHandler(WKNavigationActionPolicyAllow);
+            return;
+        }
+        if (url) [self openExternally:url];
+        decisionHandler(WKNavigationActionPolicyCancel);
         return;
     }
-    /* Only the app's own top-level page and the windows it opens are rerouted;
-     * subframe loads stay blocked exactly as before. A nil targetFrame is a
-     * new window WebKit did not route through createWebViewWithConfiguration. */
-    if (action.targetFrame.isMainFrame || !action.targetFrame) {
+    /* A nil targetFrame is a new window WebKit did not route through
+     * createWebViewWithConfiguration; subframe loads stay blocked as before. */
+    if (!action.targetFrame) {
         if ([self isWebURL:url]) {
             [self presentPopupWithConfiguration:webView.configuration request:action.request load:YES];
             decisionHandler(WKNavigationActionPolicyCancel);

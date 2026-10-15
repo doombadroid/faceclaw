@@ -32,12 +32,32 @@ window.__faceclawEvenHub = { postMessage: function(name, args, id) {
  * handler serves faceclaw-ehpk:, and `location.origin` is not dependable for
  * a non-special scheme.
  */
-function scopeToAppOrigin(script: string, remoteUrl: string | null | undefined): string {
-  let test = "location.protocol === 'faceclaw-ehpk:'"
-  const parts = remoteUrl ? /^([a-z][a-z0-9+.-]*:)\/\/([^/?#]+)/i.exec(remoteUrl) : null
-  if (parts) test = `location.protocol === ${JSON.stringify(parts[1].toLowerCase())} && location.host === ${JSON.stringify(parts[2].toLowerCase())}`
+function scopeToAppOrigin(script: string, remoteUrl: string | null | undefined, declared: string[]): string {
+  const tests = [remoteUrl ? null : "location.protocol === 'faceclaw-ehpk:'"]
+  for (const origin of (remoteUrl ? [remoteUrl, ...declared] : declared)) {
+    const parts = /^([a-z][a-z0-9+.-]*:)\/\/([^/?#]+)/i.exec(origin)
+    if (parts) tests.push(`(location.protocol === ${JSON.stringify(parts[1].toLowerCase())} && location.host === ${JSON.stringify(parts[2].toLowerCase())})`)
+  }
   // Everything inside is an assignment to window or an IIFE, so a block is safe.
-  return `if (${test}) {\n${script}\n}`
+  return `if (${tests.filter(Boolean).join(' || ')}) {\n${script}\n}`
+}
+
+/**
+ * The origins of the hosts the manifest declares, as "scheme://host[:port]"
+ * with a default port dropped — the same shape the native side compares. An
+ * app's auth flow redirects the whole page to its own hosted copy, which is
+ * one of these, and that page has to reach the bridge to finish signing in.
+ */
+function declaredOrigins(hosts: string[]): string[] {
+  const origins = new Set<string>()
+  for (const host of hosts) {
+    const parts = /^(https?):\/\/([^/?#:]+)(?::(\d+))?/i.exec(host.trim())
+    if (!parts) continue
+    const scheme = parts[1].toLowerCase()
+    const port = parts[3] && parts[3] !== (scheme === 'https' ? '443' : '80') ? `:${parts[3]}` : ''
+    origins.add(`${scheme}://${parts[2].toLowerCase()}${port}`)
+  }
+  return [...origins]
 }
 
 export function createEvenHubWebView(session: EvenHubSession): EvenHubWebView {
@@ -58,9 +78,11 @@ export function createEvenHubWebView(session: EvenHubSession): EvenHubWebView {
     } catch (error) { console.warn(`EvenHub bridge: ${error}`) }
   }
   // Defer loading until manager.ts has attached the session/window handles.
+  const declared = declaredOrigins(session.manifest.networkWhitelist)
+  host.allowedOrigins = declared
   const script = scopeToAppOrigin(
     IOS_EVENHUB_TRANSPORT_SCRIPT + EVENHUB_BRIDGE_INJECT_SCRIPT + buildFaceclawExtensionsScript(`Faceclaw/${FACECLAW_VERSION}`),
-    session.remoteUrl)
+    session.remoteUrl, declared)
   const loading = setTimeout(() => {
     if (session.remoteUrl) host.startURLScript(session.remoteUrl, script)
     else host.startEntrypointScript(session.distDir, session.manifest.entrypoint, script)
