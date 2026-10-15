@@ -43,6 +43,7 @@
 }
 - (void)startRequest:(NSURL *)url script:(NSString *)script {
     if (_destroyed) return;
+    fcdiag(@"start %@ declaredOrigins=%@", fcsafe(url), _allowedOrigins ?: @[]);
     WKWebViewConfiguration *config = [WKWebViewConfiguration new];
     // Isolate browser storage by package, retaining it across closing/reopening.
     // SDK storage also persists independently through the shared TS session.
@@ -334,6 +335,7 @@ static NSString *fcsafe(NSURL *url) {
         decisionHandler(WKNavigationActionPolicyAllow);
         return;
     }
+    fcdiag(@"subframe BLOCKED -> %@", fcsafe(url));
     decisionHandler(WKNavigationActionPolicyCancel);
 }
 - (void)webView:(WKWebView *)webView didCommitNavigation:(WKNavigation *)navigation {
