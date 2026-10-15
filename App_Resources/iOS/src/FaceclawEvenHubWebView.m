@@ -12,6 +12,12 @@
 @property(nonatomic) NSURL *remoteURL;
 @property(nonatomic) BOOL ticking;
 @property(nonatomic) BOOL destroyed;
+// A window.open()/off-origin navigation from the app, shown over the app's own
+// page so the page stays alive to receive the result (an OAuth redirect lands
+// in here, not in the app's frame).
+@property(nonatomic) WKWebView *popup;
+@property(nonatomic) UIView *popupHost;
+@property(nonatomic) UILabel *popupOrigin;
 @end
 
 @implementation FaceclawEvenHubWebView
@@ -47,12 +53,16 @@
             config.websiteDataStore = [WKWebsiteDataStore dataStoreForIdentifier:[[NSUUID alloc] initWithUUIDBytes:digest]];
         }
     }
+    // Without this, WebKit drops a window.open() that is not inside a user
+    // gesture — which is where an app's setup flow usually calls it.
+    config.preferences.javaScriptCanOpenWindowsAutomatically = YES;
     [config setURLSchemeHandler:self forURLScheme:@"faceclaw-ehpk"];
     [config.userContentController addScriptMessageHandler:self name:@"faceclaw"];
     [config.userContentController addUserScript:[[WKUserScript alloc] initWithSource:script
         injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES]];
     _webView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:config];
     _webView.navigationDelegate = self;
+    _webView.UIDelegate = self;
     _webView.accessibilityIdentifier = @"evenhub-webview";
     UIWindow *window = nil;
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
@@ -115,7 +125,8 @@
 - (void)destroy {
     if (_destroyed) return;
     _destroyed = YES; [_timer invalidate]; _timer = nil;
-    [_webView stopLoading]; _webView.navigationDelegate = nil;
+    [self dismissPopup];
+    [_webView stopLoading]; _webView.navigationDelegate = nil; _webView.UIDelegate = nil;
     [_webView.configuration.userContentController removeScriptMessageHandlerForName:@"faceclaw"];
     [_webView.configuration.userContentController removeAllUserScripts];
     [_host removeFromSuperview]; _host = nil; _back = nil; _webView = nil; _eventHandler = nil;
@@ -127,6 +138,86 @@
     return [url.scheme.lowercaseString isEqual:_remoteURL.scheme.lowercaseString] &&
         [url.host.lowercaseString isEqual:_remoteURL.host.lowercaseString] && [port isEqual:remotePort];
 }
+- (BOOL)isWebURL:(NSURL *)url {
+    NSString *scheme = url.scheme.lowercaseString;
+    return [scheme isEqual:@"http"] || [scheme isEqual:@"https"];
+}
+/* A scheme WKWebView cannot load (an auth handoff to an installed app, mailto:,
+ * tel:) belongs to the system. Faceclaw registers no URL scheme of its own, so
+ * such a flow can leave for the other app but cannot redirect back here yet. */
+- (void)openExternally:(NSURL *)url {
+    if (!url || [self isWebURL:url] || [url.scheme.lowercaseString isEqual:@"faceclaw-ehpk"]) return;
+    [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
+}
+/* The destination runs over the app's own page rather than replacing it: an
+ * auth flow ends by handing a result back to the page that opened it, which a
+ * same-frame navigation would have already torn down. `load` is NO when WebKit
+ * opened the window itself and will load the request into the view we return. */
+- (WKWebView *)presentPopupWithConfiguration:(WKWebViewConfiguration *)configuration
+    request:(NSURLRequest *)request load:(BOOL)load {
+    if (_destroyed || !_host) return nil;
+    [self dismissPopup];
+    _popupHost = [[UIView alloc] initWithFrame:_host.bounds];
+    _popupHost.backgroundColor = UIColor.systemBackgroundColor;
+    _popup = [[WKWebView alloc] initWithFrame:CGRectZero configuration:configuration ?: _webView.configuration];
+    _popup.navigationDelegate = self;
+    _popup.UIDelegate = self;
+    _popup.accessibilityIdentifier = @"evenhub-popup";
+    UIButton *done = [UIButton buttonWithType:UIButtonTypeSystem];
+    [done setTitle:@"Done" forState:UIControlStateNormal];
+    done.accessibilityIdentifier = @"evenhub-popup-done";
+    [done addTarget:self action:@selector(dismissPopup) forControlEvents:UIControlEventTouchUpInside];
+    // The page is not the app's own and may ask for a password: show its host.
+    _popupOrigin = [UILabel new];
+    _popupOrigin.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    _popupOrigin.textColor = UIColor.secondaryLabelColor;
+    _popupOrigin.textAlignment = NSTextAlignmentCenter;
+    _popupOrigin.lineBreakMode = NSLineBreakByTruncatingMiddle;
+    _popupOrigin.text = request.URL.host ?: @"";
+    [_host addSubview:_popupHost];
+    for (UIView *view in @[_popupHost, _popup, done, _popupOrigin]) view.translatesAutoresizingMaskIntoConstraints = NO;
+    [_popupHost addSubview:_popup]; [_popupHost addSubview:done]; [_popupHost addSubview:_popupOrigin];
+    [NSLayoutConstraint activateConstraints:@[
+        [_popupHost.topAnchor constraintEqualToAnchor:_host.topAnchor],
+        [_popupHost.leadingAnchor constraintEqualToAnchor:_host.leadingAnchor],
+        [_popupHost.trailingAnchor constraintEqualToAnchor:_host.trailingAnchor],
+        [_popupHost.bottomAnchor constraintEqualToAnchor:_host.bottomAnchor],
+        [done.topAnchor constraintEqualToAnchor:_popupHost.safeAreaLayoutGuide.topAnchor],
+        [done.leadingAnchor constraintEqualToAnchor:_popupHost.leadingAnchor constant:12],
+        [done.heightAnchor constraintEqualToConstant:44],
+        [_popupOrigin.centerYAnchor constraintEqualToAnchor:done.centerYAnchor],
+        [_popupOrigin.leadingAnchor constraintEqualToAnchor:done.trailingAnchor constant:12],
+        [_popupOrigin.trailingAnchor constraintEqualToAnchor:_popupHost.trailingAnchor constant:-12],
+        [_popup.topAnchor constraintEqualToAnchor:done.bottomAnchor],
+        [_popup.leadingAnchor constraintEqualToAnchor:_popupHost.leadingAnchor],
+        [_popup.trailingAnchor constraintEqualToAnchor:_popupHost.trailingAnchor],
+        [_popup.bottomAnchor constraintEqualToAnchor:_popupHost.safeAreaLayoutGuide.bottomAnchor]
+    ]];
+    if (load && request) [_popup loadRequest:request];
+    return _popup;
+}
+- (void)dismissPopup {
+    if (!_popupHost) return;
+    [_popup stopLoading];
+    _popup.navigationDelegate = nil; _popup.UIDelegate = nil;
+    [_popup removeFromSuperview]; _popup = nil;
+    [_popupHost removeFromSuperview]; _popupHost = nil; _popupOrigin = nil;
+}
+/* Without a UI delegate WebKit discards window.open() silently, which is what
+ * made app setup flows that need a browser appear to do nothing at all. */
+- (WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
+    forNavigationAction:(WKNavigationAction *)action windowFeatures:(WKWindowFeatures *)windowFeatures {
+    if (_destroyed || webView != _webView) return nil;  // a popup opens no popups
+    NSURL *url = action.request.URL;
+    if (url && ![self isWebURL:url] && ![url.scheme.lowercaseString isEqual:@"faceclaw-ehpk"]) {
+        [self openExternally:url];
+        return nil;
+    }
+    return [self presentPopupWithConfiguration:configuration request:action.request load:NO];
+}
+- (void)webViewDidClose:(WKWebView *)webView {
+    if (webView == _popup) [self dismissPopup];
+}
 - (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
     // Subframes and navigated third-party documents never receive host access.
     NSURL *url = message.frameInfo.request.URL;
@@ -135,21 +226,52 @@
 }
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
     NSURL *url = action.request.URL;
-    BOOL allowed = [self allowsURL:url] && action.targetFrame.isMainFrame;
-    if (!allowed && action.targetFrame.isMainFrame)
-        [self emit:@{@"kind": @"error", @"message": @"Navigation outside the app origin is blocked. Open the destination as a separate app URL."}];
-    decisionHandler(allowed ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
+    if (webView == _popup) {
+        /* The popup is a browser view, so any web page may load in it. Host
+         * access does not follow: didReceiveScriptMessage re-checks every
+         * message against the app origin, whichever frame sends it. */
+        if ([self isWebURL:url] || [self allowsURL:url] || [url.scheme.lowercaseString isEqual:@"about"]) {
+            decisionHandler(WKNavigationActionPolicyAllow);
+            return;
+        }
+        [self openExternally:url];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    if ([self allowsURL:url] && action.targetFrame.isMainFrame) {
+        decisionHandler(WKNavigationActionPolicyAllow);
+        return;
+    }
+    /* Only the app's own top-level page and the windows it opens are rerouted;
+     * subframe loads stay blocked exactly as before. A nil targetFrame is a
+     * new window WebKit did not route through createWebViewWithConfiguration. */
+    if (action.targetFrame.isMainFrame || !action.targetFrame) {
+        if ([self isWebURL:url]) {
+            [self presentPopupWithConfiguration:webView.configuration request:action.request load:YES];
+            decisionHandler(WKNavigationActionPolicyCancel);
+            return;
+        }
+        if (url) [self openExternally:url];
+        else [self emit:@{@"kind": @"error", @"message": @"Blocked a navigation with no address."}];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    decisionHandler(WKNavigationActionPolicyCancel);
+}
+- (void)webView:(WKWebView *)webView didCommitNavigation:(WKNavigation *)navigation {
+    if (webView == _popup) _popupOrigin.text = webView.URL.host ?: @"";
 }
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-    [self emit:@{@"kind": @"loaded"}];
+    if (webView == _webView) [self emit:@{@"kind": @"loaded"}];
 }
 - (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-    [self emit:@{@"kind": @"error", @"message": error.localizedDescription}];
+    if (webView == _webView) [self emit:@{@"kind": @"error", @"message": error.localizedDescription}];
 }
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-    [self emit:@{@"kind": @"error", @"message": error.localizedDescription}];
+    if (webView == _webView) [self emit:@{@"kind": @"error", @"message": error.localizedDescription}];
 }
 - (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+    if (webView != _webView) { [self dismissPopup]; return; }
     [self emit:@{@"kind": @"error", @"message": @"The app's web process ended. Close and reopen the app."}];
 }
 - (void)webView:(WKWebView *)webView startURLSchemeTask:(id<WKURLSchemeTask>)task {
