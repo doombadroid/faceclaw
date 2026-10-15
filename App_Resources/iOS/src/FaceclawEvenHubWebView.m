@@ -156,6 +156,18 @@
     return [url.scheme.lowercaseString isEqual:_remoteURL.scheme.lowercaseString] &&
         [url.host.lowercaseString isEqual:_remoteURL.host.lowercaseString] && [port isEqual:remotePort];
 }
+/* FC-DIAG: temporary instrumentation for the EvenHub auth chain. Logs where
+ * each navigation goes, deliberately without query strings or fragments,
+ * which carry auth codes and tokens. */
+static void fcdiag(NSString *format, ...) {
+    va_list args; va_start(args, format);
+    NSLogv([@"FC-DIAG " stringByAppendingString:format], args);
+    va_end(args);
+}
+static NSString *fcsafe(NSURL *url) {
+    if (!url) return @"(nil)";
+    return [NSString stringWithFormat:@"%@//%@%@", url.scheme ?: @"?", url.host ?: @"", url.path ?: @""];
+}
 - (BOOL)isWebURL:(NSURL *)url {
     NSString *scheme = url.scheme.lowercaseString;
     return [scheme isEqual:@"http"] || [scheme isEqual:@"https"];
@@ -231,20 +243,32 @@
         [self openExternally:url];
         return nil;
     }
+    fcdiag(@"window.open -> %@", fcsafe(url));
     return [self presentPopupWithConfiguration:configuration request:action.request load:NO];
 }
 - (void)webViewDidClose:(WKWebView *)webView {
+    fcdiag(@"window.close (popup=%d)", webView == _popup);
     if (webView == _popup) [self dismissPopup];
 }
 - (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
     // Subframes and navigated third-party documents never receive host access.
     NSURL *url = message.frameInfo.request.URL;
-    if (!message.frameInfo.isMainFrame || ![self allowsURL:url]) return;
-    if ([message.body isKindOfClass:NSDictionary.class]) [self emit:message.body];
+    if (!message.frameInfo.isMainFrame || ![self allowsURL:url]) {
+        fcdiag(@"bridge call REFUSED from %@ (mainFrame=%d)", fcsafe(url), message.frameInfo.isMainFrame);
+        return;
+    }
+    if ([message.body isKindOfClass:NSDictionary.class]) {
+        NSDictionary *body = (NSDictionary *)message.body;
+        if ([body[@"kind"] isEqual:@"console"]) fcdiag(@"app console: %@", body[@"message"]);
+        else fcdiag(@"bridge call %@ name=%@ argsLen=%lu", body[@"kind"], body[@"name"],
+            (unsigned long)[([body[@"args"] isKindOfClass:NSString.class] ? body[@"args"] : @"") length]);
+        [self emit:body];
+    }
 }
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
     NSURL *url = action.request.URL;
     if (webView == _popup) {
+        fcdiag(@"popup nav -> %@ (mainFrame=%d)", fcsafe(url), action.targetFrame.isMainFrame);
         /* The popup is a browser view, so any web page may load in it. Host
          * access does not follow: didReceiveScriptMessage re-checks every
          * message against the app origin, whichever frame sends it. */
@@ -256,6 +280,8 @@
         decisionHandler(WKNavigationActionPolicyCancel);
         return;
     }
+    fcdiag(@"app nav -> %@ (mainFrame=%d, newWindow=%d, appOrigin=%d)", fcsafe(url),
+        action.targetFrame.isMainFrame, action.targetFrame == nil, [self allowsURL:url]);
     /* The app's own top-level page may navigate anywhere on the web, as it can
      * on Android (FaceclawEvenHubWebViewClient overrides no navigation policy)
      * and in the stock host. Apps rely on it: an OAuth flow sets location.href
