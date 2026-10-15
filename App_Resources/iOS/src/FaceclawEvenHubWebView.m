@@ -273,7 +273,7 @@
         return;
     }
     /* A nil targetFrame is a new window WebKit did not route through
-     * createWebViewWithConfiguration; subframe loads stay blocked as before. */
+     * createWebViewWithConfiguration. */
     if (!action.targetFrame) {
         if ([self isWebURL:url]) {
             [self presentPopupWithConfiguration:webView.configuration request:action.request load:YES];
@@ -283,6 +283,16 @@
         if (url) [self openExternally:url];
         else [self emit:@{@"kind": @"error", @"message": @"Blocked a navigation with no address."}];
         decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    /* Subframes load too, as they do on Android. A sign-in page is not one
+     * document: a captcha or an SSO widget lives in an iframe, and blocking
+     * those left a login that could never be completed (hCaptcha reports a
+     * challenge error, which its UI tends to blame on a VPN or a proxy).
+     * Nothing in a subframe reaches the host: didReceiveScriptMessage drops a
+     * message that is not from the main frame, whatever its origin. */
+    if ([self isWebURL:url] || [url.scheme.lowercaseString isEqual:@"about"] || [self allowsURL:url]) {
+        decisionHandler(WKNavigationActionPolicyAllow);
         return;
     }
     decisionHandler(WKNavigationActionPolicyCancel);
