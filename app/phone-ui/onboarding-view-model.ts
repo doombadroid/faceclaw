@@ -1,6 +1,7 @@
 import { finishOnboardingNavigation } from "./onboarding-navigation";
 import { Frame, Observable, Screen } from "@nativescript/core";
 import { IOS_PRIVACY_NOTICE } from "../analytics/privacy-disclosure";
+import { APP_NAME } from "../branding";
 
 import { setOnboardingCompleted, setPreviewOnlyMode } from "./onboarding-state";
 
@@ -19,7 +20,7 @@ type StepContent = {
 
 const STEP_CONTENT: Record<OnboardingStep, StepContent> = {
   1: {
-    headline: "Faceclaw",
+    headline: APP_NAME,
     tagline: "Perching on the faces of giants",
     body: "",
     primaryLabel: "Next",
@@ -40,7 +41,8 @@ const STEP_CONTENT: Record<OnboardingStep, StepContent> = {
   3: {
     headline: "Custom Firmware Required",
     tagline: "",
-    body: "Faceclaw only runs on Even Realities G2 glasses that have Faceclaw's custom firmware installed. You have two choices:\n\n• Preview Only — explore Faceclaw's interface on your phone's screen without pairing any glasses. Nothing is written to a headset.\n\n• Flash Firmware — install the custom firmware on your glasses now, then use Faceclaw for real.\n\nFlashing replaces the official firmware. You can uninstall and return to the official firmware later, by reconnecting the official Even Realities app. Installing custom firmware is not covered by warranty.",
+    body: `${APP_NAME} only runs on Even Realities G2 glasses that have Faceclaw's custom firmware installed. You have two choices:\n\n• Preview Only — explore ${APP_NAME}'s interface on your phone's screen without pairing any glasses. Nothing is written to a headset.\n\n• Flash Firmware — install the custom firmware on your glasses now, then use ${APP_NAME} for real.\n\n` +
+      "Flashing replaces the official firmware. You can uninstall and return to the official firmware later, by reconnecting the official Even Realities app. Installing custom firmware is not covered by warranty.",
     primaryLabel: "Flash Firmware",
     secondaryLabel: "Preview Only",
     splash: false,

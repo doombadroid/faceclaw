@@ -1,5 +1,6 @@
 import { iosBluetooth } from "../native/ios-bluetooth";
 import { Application, Dialogs, EventData, Frame, Observable, View } from "@nativescript/core";
+import { APP_NAME } from "../branding";
 
 import {
   ensureFineLocationPermission,
@@ -168,7 +169,7 @@ export class PermissionsViewModel extends Observable {
   }
 
   get instructions(): string {
-    if (global.isIOS) return "Faceclaw uses Bluetooth to communicate with your smart glasses. Calendar access is optional. Tap a card to allow access; a checkmark means it is ready.";
+    if (global.isIOS) return `${APP_NAME} uses Bluetooth to communicate with your smart glasses. Calendar access is optional. Tap a card to allow access; a checkmark means it is ready.`;
     return this.onboarding
       ? `Faceclaw uses these ${global.isIOS ? "iOS" : "Android"} permissions. Tap a card to grant one; a checkmark means it is already granted. ` +
           "Optional permissions can also be granted later, from the Permissions item in the main-screen menu."
