@@ -133,6 +133,8 @@ export class IosPreviewController {
   private lastLayout = ''
   /** The phone-UI button last pushed to the page (onEvenHubPhoneUiChanged). */
   private evenHubPhoneUi: PhoneUiButton | null = null
+  // Phone pages that list the glasses' windows (the Apps tab).
+  private readonly windowListeners = new Set<() => void>()
   private readonly appHosts = new Map<string, WorkerAppHost>()
   private readonly inProcessApps = new Map<string, InProcessWindow>()
   private readonly batteryObservers: any[] = []
@@ -183,7 +185,7 @@ export class IosPreviewController {
       prepareVoiceCapture: () => this.prepareVoiceCapture(),
       getScreenTimeoutMs: () => null,
       requestShellRender: () => this.requestShellRender(),
-      onWindowsChanged: () => { this.requestShellRender(); this.syncEvenHubPhoneUi() },
+      onWindowsChanged: () => this.windowsChanged(),
       onSwitcherBarHeightChanged: () => {
         this.relayout()
         shell.foregroundWindow()?.requestRender()
@@ -618,7 +620,26 @@ export class IosPreviewController {
       console.log(`[ios-preview] Launched ${id}`)
     } catch (error) { this.fail(error) }
   }
-  private async uninstallApp(id: string): Promise<void> {
+  /** Fires when a glasses window opens, closes or comes to the front. */
+  onWindowsChanged(listener: () => void): () => void {
+    this.windowListeners.add(listener)
+    return () => { this.windowListeners.delete(listener) }
+  }
+  private windowsChanged(): void {
+    this.requestShellRender()
+    this.syncEvenHubPhoneUi()
+    for (const listener of [...this.windowListeners]) listener()
+  }
+  /** Bring an open glasses window to the front, as the sidebar does. */
+  focusWindow(windowId: string): void {
+    const window = shell.getWindows().find(candidate => candidate.windowId === windowId)
+    if (!window) return
+    shell.focusWindow(windowId)
+    window.requestRender()
+    this.requestShellRender()
+  }
+  /** Close an installed EvenHub app's windows, then remove the package. */
+  async uninstallApp(id: string): Promise<void> {
     const packageId = installedEvenHubPackageId(id)
     if (!packageId) return
     closeRunningPackage(packageId)
