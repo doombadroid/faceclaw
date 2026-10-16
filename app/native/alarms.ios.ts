@@ -127,11 +127,12 @@ export function installPhoneAlarmDelegate(): void {
   if (delegate) return
   delegate = AlarmNotificationDelegate.new() as AlarmNotificationDelegate
   center().delegate = delegate
-  // No customDismissAction: a swipe-away must not count as a dismiss.
+  // No customDismissAction: a swipe-away must not count as a dismiss. The *OptionNone names are
+  // header static consts with no exported symbol, so pass 0 rather than trust the runtime to resolve them.
   center().setNotificationCategories(NSSet.setWithArray([UNNotificationCategory.categoryWithIdentifierActionsIntentIdentifiersOptions(CATEGORY, [
-    UNNotificationAction.actionWithIdentifierTitleOptions('snooze', 'Snooze', UNNotificationActionOptionNone),
+    UNNotificationAction.actionWithIdentifierTitleOptions('snooze', 'Snooze', 0 as UNNotificationActionOptions),
     UNNotificationAction.actionWithIdentifierTitleOptions('dismiss', 'Dismiss', UNNotificationActionOptions.Destructive),
-  ], [], UNNotificationCategoryOptionNone)]))
+  ], [], 0 as UNNotificationCategoryOptions)]))
   void refreshSettings()
 }
 
