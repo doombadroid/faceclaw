@@ -1,6 +1,6 @@
 import { GridLayout, Label, StackLayout, type NavigatedData, type Page } from '@nativescript/core'
 import { groupedPage, section, navRow, valueRow, customRow, type Row } from './ui-kit'
-import { actionPill, artworkTile, hubAction, runHubAction } from './hub-page'
+import { actionPill, artworkTile, hubAction, hubLog, runHubAction } from './hub-page'
 import { evenHubApi, type EvenHubStoreApp } from '../../apps/evenhub/even-api'
 import { getInstalledEvenHubApp, getInstalledEvenHubFingerprint, installedEvenHubPackagePath, readEvenHubPackageManifest } from '../../apps/evenhub/installed-apps'
 import { describeUpdate } from '../../apps/evenhub/updates'
@@ -108,7 +108,7 @@ export function createPage(): Page {
     const packageId = app.packageId
     void evenHubApi.getStoreAppDetail(packageId).then(detail => {
       if (detail && app?.packageId === packageId) { app = { ...app, ...detail }; refresh() }
-    }).catch(error => console.log(`hub: details unavailable for ${packageId}: ${String((error as Error)?.message ?? error)}`))
+    }).catch(error => hubLog(`details unavailable for ${packageId}`, error))
   })
   // Installs from the glasses change the button too, including while this tab was unloaded.
   const sync = () => { if (app && getInstalledEvenHubFingerprint() !== fingerprint) refresh() }

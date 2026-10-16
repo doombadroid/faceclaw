@@ -53,6 +53,7 @@ import type { VoiceProviderSelection } from '../native/cloud-stt-provider'
 import type { PhoneGesture } from '../phone-ui/phone-gestures'
 import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from '../apps/onboarding/onboarding-progress'
 import { APP_NAME } from '../branding'
+declare const FaceclawLog: { log(message: string): void }
 
 const SHELL_SURFACE_ID = 'shell'
 const SHELL_SURFACE_Z_ORDER = 1
@@ -992,9 +993,13 @@ export class IosPreviewController {
     return { provider: voiceProviderSetting.get(), elevenLabsApiKey: elevenLabsApiKeySetting.get(),
       openAiApiKey: openAiApiKeySetting.get(), sonioxApiKey: sonioxApiKeySetting.get() }
   }
+  /** Append to the app log (Connection Details, bluetooth.log and the system log). */
+  log(message: string): void { this.logBluetooth(message) }
   private logBluetooth(message: string): void {
     const line = `${new Date().toISOString()} [${this.active ? 'foreground' : 'background'}${UIApplication.sharedApplication.protectedDataAvailable ? '' : ',protected-data-unavailable'}] ${message}`
     console.log(`[ios-ble] ${line}`); this.logLines.push(line)
+    // Release builds drop console output; the system log is what idevicesyslog can read.
+    if (typeof FaceclawLog !== 'undefined') FaceclawLog.log(line)
     if (this.logLines.length > 1000) this.logLines.shift()
     if (this.logTimer !== null) return
     this.logTimer = setTimeout(() => {

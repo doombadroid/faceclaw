@@ -122,7 +122,7 @@ const findClass = (view, className) => descendants(view).filter((child) => child
 const shownText = (view) => descendants(view).flatMap((child) => [child.text, child.button?.title, child.section?.footer]).filter(Boolean);
 
 const loadHub = ({ installed = {}, present = () => true, confirm = [], install, api = {}, alert, signedIn = true, fingerprint = () => '', updates } = {}) => {
-  const calls = [], session = { signedIn, listeners: new Set() };
+  const calls = [], logs = [], session = { signedIn, listeners: new Set() };
   const kit = { builds: 0 };
   const installedApps = {
     getInstalledEvenHubApp: (id) => installed[id] ?? null,
@@ -158,7 +158,7 @@ const loadHub = ({ installed = {}, present = () => true, confirm = [], install, 
       navRow: (nav) => ({ view: Object.assign(new FakeView(), { nav }) }),
       customRow: (view) => ({ view }),
     },
-    './runtime': { getRuntime: () => ({ controller: { launchApp: async (id) => calls.push(['launch', id]) } }) },
+    './runtime': { getRuntime: () => ({ controller: { launchApp: async (id) => calls.push(['launch', id]), log: (line) => logs.push(line) } }) },
     './shell': { pushInTab() {} },
     '../../branding': { APP_NAME: 'OcuSmart' },
     '../../apps/evenhub/even-api': evenApi,
@@ -179,7 +179,7 @@ const loadHub = ({ installed = {}, present = () => true, confirm = [], install, 
     // Real updates.ts unless a test replaces it, so the button mapping is production code.
     ...(updates ? { '../../apps/evenhub/updates': updates } : {}),
   });
-  return { hub: load('app/phone-ui/ios/hub-page.ts'), load, calls, kit, AuthError, session };
+  return { hub: load('app/phone-ui/ios/hub-page.ts'), load, calls, logs, kit, AuthError, session };
 };
 
 test('the store button follows the installed copy', () => {
@@ -237,7 +237,7 @@ test('GET installs with the phone prompt; OPEN launches the installed app', asyn
 
 test('a failed install is reported, and a second tap while busy is ignored', async () => {
   let release;
-  const { hub, calls } = loadHub({ install: () => new Promise((_resolve, reject) => { release = reject; }) });
+  const { hub, calls, logs } = loadHub({ install: () => new Promise((_resolve, reject) => { release = reject; }) });
   const first = hub.runHubAction(storeApp('demo'), () => {});
   assert.equal(hub.isInstalling('demo'), true);
   await hub.runHubAction(storeApp('demo'), () => {});
@@ -245,6 +245,10 @@ test('a failed install is reported, and a second tap while busy is ignored', asy
   await first;
   assert.deepEqual(calls, [['alert', 'Could Not Install demo', 'HTTP 500']]);
   assert.equal(hub.isInstalling('demo'), false);
+  // Release builds drop console output, so the failure must reach the app log, stack included.
+  const failure = logs.find((line) => line.startsWith('hub: install of demo failed: HTTP 500'));
+  assert.ok(failure, `no failure line in ${JSON.stringify(logs)}`);
+  assert.match(failure, /\n\s*at /, 'the logged failure carries its stack');
 });
 
 // ---- hub pages: flows ----------------------------------------------------

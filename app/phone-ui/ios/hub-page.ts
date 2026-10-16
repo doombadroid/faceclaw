@@ -57,6 +57,17 @@ export async function confirmOnPhone(request: PermissionRequest): Promise<boolea
 
 // The glasses store can be installing too; this only stops double taps here.
 // ponytail: no lock shared with the glasses store's Update All.
+/**
+ * One Hub line in the app log (Connection Details and the system log). An error
+ * carries its stack, so a failed install can be traced from the log alone.
+ */
+export function hubLog(message: string, error?: unknown): void {
+  // Duck-typed: errors from another realm or the native bridge are not instanceof Error.
+  const raw = (error as { stack?: unknown } | null)?.stack
+  const stack = typeof raw === 'string' && raw ? `\n${raw}` : ''
+  getRuntime().controller.log(`hub: ${message}${error === undefined ? '' : `: ${cleanError(error)}${stack}`}`)
+}
+
 const busy = new Set<string>()
 export const isInstalling = (packageId: string) => busy.has(packageId)
 
@@ -68,10 +79,16 @@ export async function runHubAction(app: EvenHubStoreApp, onStatus: (status: stri
   }
   if (busy.has(app.packageId)) return
   busy.add(app.packageId)
+  hubLog(`${hubAction(app).toLowerCase()} ${app.packageId} ${app.version} (${app.fileSize} bytes listed)`)
   try {
-    const result = await installStoreApp(app, { appendLog: message => console.log(message), onStatus, confirmPermissions: confirmOnPhone })
+    const result = await installStoreApp(app, { appendLog: message => hubLog(message), onStatus: status => {
+      if (status) hubLog(`${app.packageId}: ${status}`)
+      onStatus(status)
+    }, confirmPermissions: confirmOnPhone })
+    if (!result) hubLog(`${app.packageId}: permissions declined`)
     onStatus(result ? '' : 'Installation canceled.')
   } catch (error) {
+    hubLog(`install of ${app.packageId} failed`, error)
     onStatus('')
     await Dialogs.alert({ title: error instanceof EvenHubAuthenticationError ? 'Signed Out of Even Hub' : `Could Not Install ${app.name}`,
       message: cleanError(error), okButtonText: 'OK' })
@@ -88,7 +105,7 @@ function storeIcon(path: string): Promise<ImageSource | null> {
     const copy = bytes.slice()
     const image = UIImage.imageWithData(NSData.dataWithBytesLength(interop.handleof(copy.buffer), copy.byteLength))
     return image ? new ImageSource(image) : null
-  }, () => { icons.delete(path); return null }))
+  }, error => { icons.delete(path); hubLog(`icon ${path} unavailable`, error); return null }))
   return icon
 }
 
@@ -187,6 +204,7 @@ async function signIn(): Promise<boolean> {
     await evenHubApi.signIn(form.userName, form.password, remember === 'Remember Me')
     return true
   } catch (error) {
+    hubLog('sign-in failed', error)
     await Dialogs.alert({ title: 'Could Not Sign In', message: cleanError(error), okButtonText: 'OK' })
     return false
   }
@@ -240,6 +258,7 @@ export function createPage(): Page {
   // The list and the update check fail together on an expired session; say it once.
   let alerting = false
   const signedOut = async (error: unknown) => {
+    hubLog('session rejected', error)
     forget()
     refresh()
     if (alerting) return
@@ -264,6 +283,7 @@ export function createPage(): Page {
     } catch (error) {
       if (stale()) return
       if (error instanceof EvenHubAuthenticationError) { loading.delete(which); await signedOut(error); return }
+      hubLog(`${which} list failed`, error)
       errors[which] = cleanError(error)
     } finally { if (loading.get(which) === asked) loading.delete(which) }
     refresh()
@@ -276,6 +296,7 @@ export function createPage(): Page {
       if (updates.length) refresh()
     } catch (error) {
       if (error instanceof EvenHubAuthenticationError) await signedOut(error)
+      else hubLog('update check failed', error)
     }
   }
 
