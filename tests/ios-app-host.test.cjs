@@ -239,7 +239,7 @@ test('iOS Remote subscribes to the runtime while loaded and never pauses the sha
 });
 
 test('iOS runtime fans controller callbacks out to subscribers and caches the latest values', async () => {
-  let callbacks, connects = 0, pauses = 0, resumes = 0;
+  let callbacks, connects = 0, pauses = 0, resumes = 0, suppressed = false, flashes = 0, addresses = { right: 'AA', left: 'BB' };
   const appEvents = new Map(), alerts = [], order = [];
   const { getRuntime } = load('app/phone-ui/ios/runtime.ts', { require: id => ({
     '@nativescript/core': { Application: { suspendEvent: 'suspend', resumeEvent: 'resume', on: (key, fn) => appEvents.set(key, fn) },
@@ -250,10 +250,11 @@ test('iOS runtime fans controller callbacks out to subscribers and caches the la
       disconnect() { order.push('disconnect'); return Promise.resolve(); } forgetSessionReport() { order.push('forget'); }
     } },
     '../onboarding-state': { isPreviewOnlyMode: () => false },
-    '../../g2/reconnect-policy': { isAutoReconnectSuppressed: () => false, suppressAutoReconnect() {} },
-    '../../g2/device-addresses': { loadDeviceAddresses: () => ({}) },
+    '../../g2/reconnect-policy': { isAutoReconnectSuppressed: () => suppressed, suppressAutoReconnect() { suppressed = true; } },
+    '../../g2/device-addresses': { loadDeviceAddresses: () => addresses },
     '../../g2/ios-peripheral-identity': { deviceAddressError: () => null },
     '../../branding': { APP_NAME: 'OcuSmart' },
+    '../../native/firmware-flasher.ios': { flashesStarted: () => flashes },
   })[id] });
   const runtime = getRuntime();
   assert.equal(getRuntime(), runtime, 'one controller per process');
@@ -276,8 +277,20 @@ test('iOS runtime fans controller callbacks out to subscribers and caches the la
   runtime.setDetour(false); assert.deepEqual([resumes, connects], [3, 2], 'closing a detour re-runs the auto-connect check');
   const detours = []; runtime.on('detour', open => detours.push(open));
   runtime.setDetour(true); runtime.setDetour(false); assert.deepEqual(detours, [true, false], 'pages under a detour learn it closed');
-  await runtime.withDisconnected(() => order.push('present'));
-  assert.deepEqual(order, ['disconnect', 'forget', 'present'], 'a device detour starts from no stale firmware report');
+  // A halted session's report survives a detour that changed nothing, and only that.
+  const detour = async change => {
+    order.length = 0;
+    await runtime.withDisconnected(() => order.push('present'));
+    runtime.setDetour(true); change(); runtime.setDetour(false);
+    return order.includes('forget');
+  };
+  assert.deepEqual(order, []);
+  assert.equal(await detour(() => {}), false, 'backing out keeps the halted warning');
+  assert.deepEqual(order, ['disconnect', 'present']);
+  assert.equal(await detour(() => flashes++), true, 'any flash, even a failed one');
+  assert.equal(await detour(() => { addresses = { right: 'CC', left: 'DD' }; }), true, 'other glasses paired');
+  assert.equal(await detour(() => { suppressed = false; }), true, 'a config save or firmware check lifted the suppression');
+  runtime.setDetour(true); runtime.setDetour(false); assert.equal(order.filter(o => o === 'forget').length, 1, 'Permissions keeps it');
 });
 
 test('forgetSessionReport clears what a halted session reported, and never touches a live one', () => {
@@ -290,7 +303,8 @@ test('forgetSessionReport clears what a halted session reported, and never touch
   host.communicator = {}; host.state = { ...halted };
   host.forgetSessionReport(); assert.deepEqual([host.state, emitted], [halted, 0]);
   host.communicator = null; host.forgetSessionReport();
-  assert.deepEqual(JSON.parse(JSON.stringify(host.state)), { ...halted, battery: null, charging: null, ring: false, leftVersion: '', rightVersion: '', firmwareWarning: '' });
+  assert.deepEqual(JSON.parse(JSON.stringify(host.state)), { ...halted, phase: 'disconnected', status: 'Preview only',
+    battery: null, charging: null, ring: false, leftVersion: '', rightVersion: '', firmwareWarning: '' }, 'the halt reason goes with it');
   assert.equal(emitted, 1);
 });
 

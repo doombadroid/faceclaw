@@ -10,6 +10,7 @@ import { loadDeviceAddresses, loadPairedGlassesIdentityForAddresses } from '../.
 import { deviceAddressError } from '../../g2/ios-peripheral-identity'
 import { GlassesHardwareIdentity } from '../../g2/glasses-hardware-identity'
 import { glassesImagePath } from '../../g2/glasses-artwork'
+import { flash, restore } from './update-page'
 
 /** The one wording for a session phase, on every page. */
 export const PHASE_LABELS: Record<SessionState['phase'], string> = { connected: 'Connected', disconnected: 'Not Connected',
@@ -17,11 +18,10 @@ export const PHASE_LABELS: Record<SessionState['phase'], string> = { connected: 
 
 export const phaseLabel = (state: SessionState | null) => PHASE_LABELS[state?.phase ?? 'disconnected']
 
-/** The one headset battery value the session still reports, or '' while unknown. */
+/** The live headset battery, or '' while unknown. A halted session's reading froze when its link closed. */
 export function batteryText(state: SessionState | null): string {
-  const reported = reportedState(state)
-  if (reported?.battery == null) return ''
-  return reported.charging ? `${reported.battery}% · Charging` : `${reported.battery}%`
+  if (state?.phase !== 'connected' || state.battery == null) return ''
+  return state.charging ? `${state.battery}% · Charging` : `${state.battery}%`
 }
 
 /** The device cell's second line: status, battery when known, what the firmware reported. */
@@ -68,8 +68,6 @@ export function deviceCell(subtitle: string, onTap?: () => void): Row {
   return customRow(grid)
 }
 
-const flash = (mode: 'install' | 'uninstall') => presentDetour('phone-ui/onboarding-flash-page', { mode, fromOnboarding: false })
-
 /** Every device action the old main page's menus offered, in one place. */
 export function createPage(): Page {
   const runtime = getRuntime(), controller = runtime.controller
@@ -103,7 +101,7 @@ export function createPage(): Page {
     container.addChild(section({ header: 'Firmware', rows: [
       navRow({ title: 'Check Firmware', onTap: () => { void presentDetour('phone-ui/onboarding-firmware-check-page') } }),
       buttonRow({ title: 'Install Custom Firmware', onTap: () => { void flash('install') } }),
-      buttonRow({ title: 'Uninstall Custom Firmware', role: 'destructive', onTap: () => { void flash('uninstall') } }),
+      buttonRow({ title: 'Uninstall Custom Firmware', role: 'destructive', onTap: () => { void restore('Uninstall Custom Firmware?', 'Continue') } }),
     ] }))
     // The old menu opened Permissions without dropping the connection.
     container.addChild(section({ rows: [navRow({ title: 'Permissions', onTap: () => { void presentDetour('phone-ui/permissions-page', undefined, false) } })] }))

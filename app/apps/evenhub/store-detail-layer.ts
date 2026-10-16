@@ -14,6 +14,7 @@ import {
 } from "./installed-apps";
 import { cleanError, confirmOnGlasses, installStoreApp } from "./store-install";
 import { describeUpdate } from "./updates";
+import { formatFileSize } from "./file-size";
 import { lineStep, listRowHeight } from "../../ui/metrics";
 
 const X = 18;
@@ -82,7 +83,7 @@ export class EvenHubStoreDetailLayer implements Layer {
       }
       const metadata = [
         `${formatCount(this.app.installCount)} installs  ·  ${formatCount(this.app.likeCount)} likes`,
-        this.app.version ? `Version ${this.app.version}${this.app.fileSize ? `  ·  ${formatBytes(this.app.fileSize)}` : ""}` : "",
+        this.app.version ? `Version ${this.app.version}${this.app.fileSize ? `  ·  ${formatFileSize(this.app.fileSize)}` : ""}` : "",
         this.app.categories.length ? `Categories: ${this.app.categories.join(", ")}` : "",
         this.app.firstPublishedAt ? `Published: ${formatDate(this.app.firstPublishedAt)}` : "",
       ].filter(Boolean);
@@ -251,8 +252,3 @@ function formatDate(value: string): string {
   return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : value;
 }
 
-function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}

@@ -9,6 +9,10 @@ export type { FlashState, FlashProgress } from '../g2/firmware-types'
 
 declare const FaceclawKitIosFirmwareFlasher: any, FaceclawKitFaceclawFirmwareFlasherListener: any
 
+let flashes = 0
+/** Flashes started this process; even a failed one may have rewritten a lens. */
+export const flashesStarted = () => flashes
+
 /**
  * iOS twin of the Android FirmwareFlasher wrapper. The OTA transfer itself is the shared
  * Kotlin OtaFlashFlow over a CoreBluetooth central (FaceclawKitIosFirmwareFlasher); this
@@ -54,6 +58,7 @@ export class FirmwareFlasher {
   start(): void {
     if (this.started) return
     this.started = true
+    flashes++
     void this.run()
   }
 

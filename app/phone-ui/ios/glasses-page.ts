@@ -32,7 +32,7 @@ function text(value: string, className: string): Label {
   return view
 }
 
-/** `state` is the raw session for the phase; firmware and battery come from what it still reports. */
+/** `state` is the raw session for the phase; firmware comes from what it still reports, battery only from a live link. */
 function deviceCard(state: SessionState | null): StackLayout {
   const reported = reportedState(state)
   const card = new StackLayout()
@@ -46,21 +46,22 @@ function deviceCard(state: SessionState | null): StackLayout {
   card.addChild(text('Even G2', 'os-glasses-title'))
   card.addChild(text(PHASE_LABELS[state?.phase ?? 'disconnected'], 'os-glasses-status'))
   card.addChild(text(firmwareSummary(reported).line, 'os-glasses-status'))
-  if (reported?.battery != null) {
+  const live = state?.phase === 'connected' ? state : null
+  if (live?.battery != null) {
     const battery = new StackLayout()
     battery.className = 'os-battery'
     battery.accessible = true; battery.accessibilityLabel = 'Glasses battery'
-    battery.accessibilityValue = `${reported.battery}%${reported.charging ? ', charging' : ''}`
+    battery.accessibilityValue = `${live.battery}%${live.charging ? ', charging' : ''}`
     const track = new GridLayout()
     track.className = 'os-battery-track'
     const fill = new StackLayout()
     fill.className = 'os-battery-fill'; fill.horizontalAlignment = 'left'
-    fill.width = { unit: '%', value: Math.max(0, Math.min(100, reported.battery)) / 100 }
+    fill.width = { unit: '%', value: Math.max(0, Math.min(100, live.battery)) / 100 }
     track.addChild(fill); battery.addChild(track)
     const caption = new GridLayout()
     caption.columns = '*,auto'
-    caption.addChild(text(reported.charging ? 'Battery · Charging' : 'Battery', 'os-battery-label'))
-    const value = text(`${reported.battery}%`, 'os-battery-value')
+    caption.addChild(text(live.charging ? 'Battery · Charging' : 'Battery', 'os-battery-label'))
+    const value = text(`${live.battery}%`, 'os-battery-value')
     GridLayout.setColumn(value, 1); caption.addChild(value)
     battery.addChild(caption)
     card.addChild(battery)

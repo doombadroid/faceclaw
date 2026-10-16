@@ -212,7 +212,7 @@ test('My Glasses shows firmware and battery only while the session still reports
   // Stock firmware halts the session: what it reported is why, and the warning pages show it.
   const halted = { ...connected, phase: 'error', status: 'Incompatible firmware', capabilities: '', firmwareWarning: 'Stock firmware' };
   page.setState(halted);
-  assert.deepEqual(page.texts(page.card()).slice(0, 3), ['Even G2', 'Connection Failed', 'Even firmware 2.3.0.24']);
+  assert.deepEqual(page.texts(page.card()), ['Even G2', 'Connection Failed', 'Stock firmware 2.3.0.24'], 'its battery froze when the link closed');
   assert.ok(page.find('Attention Needed'));
   assert.equal(page.find('Software Update').badge, '1');
   page.setState({ ...halted, phase: 'disconnected' });

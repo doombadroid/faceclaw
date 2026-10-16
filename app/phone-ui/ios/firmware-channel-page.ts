@@ -2,15 +2,14 @@ import { Dialogs, type Page } from '@nativescript/core'
 import { groupedPage, section, checkRow } from './ui-kit'
 import { getRuntime } from './runtime'
 import { firmwareSummary, firmwareChannel, reportedState } from './firmware-info'
-import { CHANNEL_NAMES, firmwareKey, flash } from './update-page'
+import { CHANNEL_NAMES, RESTORE_MESSAGE, firmwareKey, flash } from './update-page'
 import { BASE_STOCK_VERSION_TEXT, REQUIRED_FACECLAW_FIRMWARE_VERSION } from '../../g2/firmware-compat'
 
 // Subtitles say what switching installs; the checked row shows what the glasses report instead.
 const CHANNELS = [
   { id: 'faceclaw', mode: 'install', subtitle: `Installs custom firmware revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}`,
     message: `This flashes Faceclaw's custom firmware (revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}) to both lenses.` },
-  { id: 'even', mode: 'uninstall', subtitle: `Installs stock firmware ${BASE_STOCK_VERSION_TEXT}`,
-    message: `This flashes Even's stock firmware ${BASE_STOCK_VERSION_TEXT} to both lenses and removes Faceclaw's custom features.` },
+  { id: 'even', mode: 'uninstall', subtitle: `Installs stock firmware ${BASE_STOCK_VERSION_TEXT}`, message: RESTORE_MESSAGE },
 ] as const
 
 export function createPage(): Page {

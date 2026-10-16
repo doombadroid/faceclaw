@@ -106,7 +106,7 @@ function fixture() {
     on(kind, fn) { this.listeners[kind] = fn; return () => { if (this.listeners[kind] === fn) delete this.listeners[kind]; }; }
     onStateChange(fn) { return this.on('state', fn); } onRingEvent(fn) { return this.on('ring', fn); }
     onWearState(fn) { return this.on('wear', fn); } onBatteryState() { return noop(); } onFirmwareInfo() { return noop(); }
-    onFrameMetrics() { return noop(); } addCompassListener() { return noop(); } onAncsRelayFrame() { return noop(); }
+    onFrameMetrics() { return noop(); } onPreviewAnimationFrame() { return noop(); } addCompassListener() { return noop(); } onAncsRelayFrame() { return noop(); }
     onAncsAuthorization() { return noop(); } setRequiresAncs() {} rightWriteLimit() { return 20; } onPhoneLockSignal() {}
     async writeRawToRight() {} async configureBrightness() {} async setBrightness() {} async enableWearDetectionAndRequestState() {} async playBuzzerSequence() {} async close() {}
     emitState(phase, status = phase) { if (phase === 'connected' || phase === 'disconnected') this.phase = phase; this.listeners.state?.({ phase, status }); }
@@ -241,3 +241,13 @@ test('keyboard sessions cannot deliver text after the glasses lock or phone leav
   editor.discard(); assert.deepEqual(calls.at(-1), ['discard']);
 });
 
+
+test('a firmware halt keeps a status line that names this app, like its alert', async () => {
+  const f = fixture();
+  await f.connect();
+  f.bridge.emitState('incompatible-firmware', 'The glasses firmware is not compatible with this version of Faceclaw. Install the custom firmware, then connect.');
+  await f.render();
+  const state = f.controller.connectionState;
+  assert.equal(state.phase, 'error');
+  assert.equal(state.status, 'The glasses firmware is not compatible with this version of OcuSmart. Install the custom firmware, then connect.');
+});

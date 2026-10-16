@@ -3,6 +3,7 @@
 // path after the permission prompt became an injected callback.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const { loader } = require('./helpers/load-typescript.cjs');
 
 const storeApp = (packageId, version = '1.0.0') => ({ packageId, name: packageId, version, iconPath: '', tagline: '', creatorName: '', categories: [], fileSize: 0 });
@@ -380,8 +381,10 @@ test('a This Session Only sign-in that ends on the glasses signs the Hub tab out
   assert.equal(session.listeners.size, 0);
 });
 
-test('Hub sizes use decimal units, like Software Update and iOS Settings', () => {
-  const { load } = loadHub();
-  const { formatBytes } = load('app/phone-ui/ios/hub-detail-page.ts');
-  assert.deepEqual([999, 1500, 5_000_000].map(formatBytes), ['999 B', '1.5 KB', '5.0 MB']);
+test('Hub sizes use decimal units on iOS, like Software Update and iOS Settings, on the phone and the glasses alike', () => {
+  const size = isIOS => loader({ global: { isIOS } }, {})('app/apps/evenhub/file-size.ts').formatFileSize;
+  assert.deepEqual([999, 1500, 5_000_000].map(size(true)), ['999 B', '1.5 KB', '5.0 MB']);
+  assert.deepEqual([1000, 1536, 5_000_000].map(size(false)), ['1000 B', '1.5 KB', '4.8 MB'], 'Android keeps binary units');
+  for (const file of ['app/phone-ui/ios/hub-detail-page.ts', 'app/apps/evenhub/store-detail-layer.ts'])
+    assert.match(fs.readFileSync(file, 'utf8'), /formatFileSize\((shown|this\.app)\.fileSize\)/, `${file} formats sizes with it`);
 });

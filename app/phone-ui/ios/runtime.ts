@@ -7,6 +7,7 @@ import { isAutoReconnectSuppressed, suppressAutoReconnect } from '../../g2/recon
 import { loadDeviceAddresses } from '../../g2/device-addresses'
 import { deviceAddressError } from '../../g2/ios-peripheral-identity'
 import { APP_NAME } from '../../branding'
+import { flashesStarted } from '../../native/firmware-flasher.ios'
 
 export type RuntimeEvents = {
   frame: { image: ImageSource; focus: string }
@@ -35,6 +36,8 @@ export class IosRuntime {
   private started = false
   /** A device/firmware detour is presented over the shell. */
   inDetour = false
+  /** glassesMark() when the open detour started. */
+  private beforeDetour: string | null = null
 
   constructor() {
     this.controller = new IosPreviewController(
@@ -73,11 +76,11 @@ export class IosRuntime {
     if (!isPreviewOnlyMode() && !isAutoReconnectSuppressed() && !deviceAddressError(loadDeviceAddresses())) void this.controller.connect()
   }
 
-  /** Device pages need the glasses to themselves and must not be redialled; what the glasses reported may change there. */
+  /** Device pages need the glasses to themselves and must not be redialled. */
   async withDisconnected(fn: () => void): Promise<void> {
     suppressAutoReconnect()
     await this.controller.disconnect()
-    this.controller.forgetSessionReport()
+    this.beforeDetour = this.glassesMark()
     fn()
   }
 
@@ -88,8 +91,20 @@ export class IosRuntime {
   setDetour(open: boolean): void {
     this.inDetour = open
     if (open) this.controller.pause()
-    else { this.controller.resume(); this.autoConnect() }
+    else {
+      // A halted session's report says why it halted; keep it unless the detour could have
+      // changed the glasses: a flash ran or the saved devices changed (glassesMark), or a
+      // config save or passed firmware check lifted the reconnect suppression.
+      if (this.beforeDetour != null && (this.glassesMark() !== this.beforeDetour || !isAutoReconnectSuppressed()))
+        this.controller.forgetSessionReport()
+      this.beforeDetour = null
+      this.controller.resume(); this.autoConnect()
+    }
     this.emit('detour', open)
+  }
+
+  private glassesMark(): string {
+    return `${flashesStarted()}\n${JSON.stringify(loadDeviceAddresses())}`
   }
 
   get connected(): boolean {

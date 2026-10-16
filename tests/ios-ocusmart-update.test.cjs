@@ -61,7 +61,7 @@ function uiHarness(state, extraMocks = {}) {
   const listeners = new Map();
   const runtime = { controller: { connectionState: state }, on(event, fn) { listeners.set(event, fn); return () => listeners.delete(event); } };
   const rowKit = kind => options => ({ kind, ...options });
-  class View { addChild() {} }
+  class View { addChild() {} on() {} }
   const kit = {
     groupedPage({ build }) {
       const page = { events: new Map(), on(e, fn) { this.events.set(e, fn); }, frame: { navigate: entry => calls.push(['navigate', entry.moduleName]) } };
@@ -72,7 +72,7 @@ function uiHarness(state, extraMocks = {}) {
     section: s => s, navRow: rowKit('nav'), buttonRow: rowKit('button'), valueRow: rowKit('value'), checkRow: rowKit('check'),
     customRow: view => ({ kind: 'custom', view }), tile: () => Object.assign(new View(), { className: 'os-tile' }),
   };
-  const core = { Label: View, StackLayout: View, GridLayout: Object.assign(class extends View {}, { setColumn() {}, setRow() {}, setColumnSpan() {} }),
+  const core = { Label: View, StackLayout: View, Image: View, GridLayout: Object.assign(class extends View {}, { setColumn() {}, setRow() {}, setColumnSpan() {} }),
     Dialogs: { confirm: async options => { confirms.push(options); return confirmAnswer; } } };
   const mocks = { '@nativescript/core': core, './ui-kit': kit, './runtime': { getRuntime: () => runtime },
     './detour': { presentDetour: async (name, context) => calls.push(['detour', name, JSON.parse(JSON.stringify(context))]) }, ...extraMocks };
@@ -173,6 +173,7 @@ test('Firmware Channel checks the reported channel and confirms before switching
   assert.equal(h.confirms.length, 0, 'the current channel is not re-flashed');
   titled(rows, 'Even Realities').onTap(); await settle();
   assert.equal(h.confirms[0].title, 'Switch to Even Realities?');
+  assert.equal(h.confirms[0].message, h.load('app/phone-ui/ios/update-page.ts').RESTORE_MESSAGE, 'what every uninstall route says');
   assert.deepEqual(h.calls.at(-1), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'uninstall', fromOnboarding: false }]);
   assert.match(h.last()[0].footer, /always verified against pinned hashes/);
 
@@ -192,6 +193,20 @@ test('Firmware Channel checks the reported channel and confirms before switching
   assert.deepEqual(none.calls.at(-1), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'install', fromOnboarding: false }]);
 });
 
+test('Device > Uninstall Custom Firmware confirms with what every uninstall route says', async () => {
+  const h = uiHarness(STOCK, {
+    '../onboarding-state': { isPreviewOnlyMode: () => false }, '../../g2/reconnect-policy': {},
+    '../../g2/device-addresses': { loadDeviceAddresses: () => null, loadPairedGlassesIdentityForAddresses: () => null },
+    '../../g2/ios-peripheral-identity': { deviceAddressError: () => 'none' },
+    '../../g2/glasses-hardware-identity': { GlassesHardwareIdentity: { decode: () => null } }, '../../g2/glasses-artwork': { glassesImagePath: () => '' },
+  });
+  const { RESTORE_MESSAGE } = h.load('app/phone-ui/ios/update-page.ts');
+  h.load('app/phone-ui/ios/device-page.ts').createPage();
+  titled(h.rows(), 'Uninstall Custom Firmware').onTap(); await settle();
+  assert.deepEqual([h.confirms[0].title, h.confirms[0].message], ['Uninstall Custom Firmware?', RESTORE_MESSAGE]);
+  assert.deepEqual(h.calls.at(-1), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'uninstall', fromOnboarding: false }]);
+});
+
 test('firmware alert is a native three-action alert titled by firmware kind', async () => {
   const calls = [], presented = [];
   const UIAlertActionStyle = { Default: 0, Cancel: 1 };
@@ -200,11 +215,15 @@ test('firmware alert is a native three-action alert titled by firmware kind', as
   const UIAlertAction = { actionWithTitleStyleHandler: (title, style, handler) => ({ title, style, handler }) };
   let state = OLDER;
   const load = loader({ UIAlertController, UIAlertAction, UIAlertActionStyle, UIAlertControllerStyle: { Alert: 1 }, Promise }, {
-    // A detour is up: the root refuses a second presentation, the topmost presented controller takes it.
-    '@nativescript/core': { Utils: { ios: { getRootViewController: () => ({
-      presentViewControllerAnimatedCompletion: () => { throw new Error('the root is already presenting'); },
-      presentedViewController: { beingDismissed: false, presentViewControllerAnimatedCompletion: alert => presented.push(alert) },
-    }) } } },
+    // A detour is up over the root, and an alert over it is mid-dismissal: only the detour can present.
+    '@nativescript/core': { Utils: (() => {
+      const refuse = why => () => { throw new Error(why); };
+      const dismissing = { beingDismissed: true, presentedViewController: null, presentViewControllerAnimatedCompletion: refuse('being dismissed') };
+      const detour = { beingDismissed: false, presentedViewController: dismissing, presentViewControllerAnimatedCompletion: alert => presented.push(alert) };
+      const root = { presentedViewController: detour, presentViewControllerAnimatedCompletion: refuse('the root is already presenting') };
+      // As core does: getRootViewController() walks to the leaf, dismissing or not.
+      return { getWindow: () => ({ rootViewController: root }), ios: { getRootViewController: () => dismissing } };
+    })() },
     './detour': { presentDetour: async (name, context) => calls.push(['detour', name, JSON.parse(JSON.stringify(context))]) },
     './shell': { pushInTab: (tab, name) => calls.push(['push', tab, name]) },
     './runtime': { getRuntime: () => ({ controller: { get connectionState() { return state; } } }) },
@@ -239,7 +258,8 @@ test('Device, Settings and General read firmware and battery through the same ru
   }).load('app/phone-ui/ios/device-page.ts');
   assert.equal(device.deviceLine(live), `Connected · 80% · Faceclaw firmware r${REQUIRED} · base 2.3.0.24`);
   assert.equal(device.deviceLine({ ...live, phase: 'disconnected' }), 'Not Connected · Firmware not reported yet', 'no hours-old battery or firmware');
-  assert.equal(device.deviceLine({ ...HALTED, battery: 50 }), 'Connection Failed · 50% · Even firmware 2.3.3.0');
+  assert.equal(device.deviceLine({ ...HALTED, battery: 50 }), 'Connection Failed · Stock firmware 2.3.3.0', 'a halted link froze its battery reading');
+  assert.equal(device.deviceLine({ ...OTHER, battery: 80 }), 'Connected · 80% · Third-party firmware · base 2.3.0.24', "Software Update's word for the kind");
 
   const general = uiHarness(OTHER, { './settings-category-page': { documentPage() {} }, '../../version': { FACECLAW_VERSION: 'test' } });
   general.load('app/phone-ui/ios/about-page.ts').createPage();

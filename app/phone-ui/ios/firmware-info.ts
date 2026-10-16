@@ -22,9 +22,9 @@ export function firmwareSummary(state: SessionState | null): FirmwareSummary {
   const extension = parseFirmwareExtension(state.capabilities)
   switch (extension.kind) {
     case 'faceclaw': return { extension, version, line: `Faceclaw firmware r${extension.version} · base ${version}` }
-    case 'none': return { extension, version, line: `Even firmware ${version}` }
+    case 'none': return { extension, version, line: `Stock firmware ${version}` }
     case 'legacy-faceclaw': return { extension, version, line: `Older Faceclaw firmware · base ${version}` }
-    case 'other': return { extension, version, line: `Custom firmware · base ${version}` }
+    case 'other': return { extension, version, line: `Third-party firmware · base ${version}` }
   }
 }
 
@@ -33,7 +33,8 @@ export function firmwareSummary(state: SessionState | null): FirmwareSummary {
  * one the firmware check halted (its versions are why it halted, and the warning
  * pages point here). disconnect() keeps the last versions and battery, which go
  * stale once the user disconnects, a flash runs or another phone connects; every
- * page reads firmware, battery and warnings through this, phase and status raw.
+ * page reads firmware and warnings through this, phase and status raw. Battery
+ * is read only while connected: a halted session's link is closed, so it froze.
  */
 export function reportedState(state: SessionState | null): SessionState | null {
   return state?.phase === 'connected' || (state?.phase === 'error' && !!state.firmwareWarning) ? state : null

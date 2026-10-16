@@ -726,11 +726,11 @@ export class IosPreviewController {
   /**
    * Forget what the ended session reported. A halted session keeps its versions and
    * warning (they say why it halted) until the next connect(); a device detour
-   * (pairing, flash, config) can change all of them first.
+   * (pairing, flash, config) can change all of them first, and the halt reason with them.
    */
   forgetSessionReport(): void {
     if (this.communicator) return
-    this.state = { ...this.state, ...NO_REPORT }
+    this.state = { ...this.state, ...NO_REPORT, phase: 'disconnected', status: 'Preview only' }
     this.emitState()
   }
   private update(phase: SessionPhase, status: string): void {
@@ -864,13 +864,16 @@ export class IosPreviewController {
     const phase: SessionPhase = state.phase === 'charging' ? 'connected' : isHaltedSessionPhase(state.phase) ? 'error' : state.phase
     // Wear state is a per-transport snapshot: ask again on every new session.
     if (phase !== 'connected') this.wearDetectionRequested = false
-    this.update(phase, state.status)
+    // The shared session's halt text names Faceclaw, under an alert that names this app.
+    const status = state.phase === 'incompatible-firmware'
+      ? `The glasses firmware is not compatible with this version of ${APP_NAME}. Install the custom firmware, then connect.` : state.status
+    this.update(phase, status)
     if (phase === 'connected') {
       this.syncNotifications(communicator)
       this.ensureWearDetection(communicator)
     } else if ((phase === 'disconnected' || phase === 'error') && !this.stopping) {
       // The session ended on its own (an arm unpaired, incompatible firmware): release it and go headless.
-      void this.disconnect(state.status)
+      void this.disconnect(status)
     }
   }
   /**
