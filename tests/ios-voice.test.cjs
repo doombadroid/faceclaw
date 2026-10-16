@@ -258,3 +258,21 @@ test('continuous cloud capture tells the provider it is open-ended and pauses re
   h.bridge.stopContinuousCapture(); assert.equal(h.clouds[0].stopped, true);
   assert.equal(h.clouds[0].continuous(), false);
 });
+
+test('continuous capture delivers one final per rolled utterance and keeps listening (Calculator)', async () => {
+  const h = harness(); let ends = 0; h.bridge.onSpeechEnd(() => ends++);
+  const start = h.bridge.startContinuousCapture(h.session, h.onboard, () => {}); h.release(); await start;
+  for (const text of ['two plus two', 'five times six']) {
+    h.event({ kind: 'transcript', text, final: false });
+    h.event({ kind: 'transcript', text, final: true });
+    h.event({ kind: 'pause' });
+  }
+  assert.deepEqual(h.text.filter(event => event.isFinal).map(event => event.text), ['two plus two', 'five times six']);
+  assert.equal(ends, 0); assert.deepEqual(h.commands, [true]);
+  // The Calculator's tap-to-talk joins and leaves without ending the stream.
+  await h.bridge.startGlassesCapture(h.session, h.onboard, () => {});
+  h.event({ kind: 'transcript', text: 'square root of nine', final: true });
+  await h.bridge.stopPushToTalk();
+  assert.equal(h.text.at(-1).text, 'square root of nine'); assert.deepEqual(h.commands, [true]);
+  h.bridge.stopContinuousCapture(); assert.deepEqual(h.commands, [true, false]);
+});
