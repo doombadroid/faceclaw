@@ -3,10 +3,10 @@
 
 @implementation FaceclawLog
 + (void)log:(NSString *)message {
-    static os_log_t log;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ log = os_log_create("com.faceclaw.app", "app"); });
-    // %{public}: the app never logs tokens or passwords, and private would hide every line.
-    os_log(log, "%{public}s", message.UTF8String ?: "");
+    // OS_LOG_DEFAULT, as FC-DIAG uses: its %{public} lines reach idevicesyslog
+    // readable, while lines logged to a custom os_log_create subsystem arrived
+    // as <private> on iOS 27. The prefix makes them easy to filter (-m OcuSmart).
+    // %{public}: the app never logs tokens or passwords.
+    os_log(OS_LOG_DEFAULT, "OcuSmart %{public}s", message.UTF8String ?: "");
 }
 @end
