@@ -1,4 +1,4 @@
-import { Dialogs, GridLayout, Image, Label, StackLayout, type ImageSource, type Page } from '@nativescript/core'
+import { Dialogs, GestureStateTypes, GridLayout, Image, Label, StackLayout, type GestureEventData, type ImageSource, type Page } from '@nativescript/core'
 import { groupedPage, section, navRow, type Row, type TileColor } from './ui-kit'
 import { getRuntime } from './runtime'
 import { selectTab } from './shell'
@@ -7,6 +7,7 @@ import { onAnySettingChanged } from '../../ui/dashboard-settings'
 import { ALL_APPS } from '../../apps/all-apps'
 import { iosAppUnavailableReason } from '../../apps/ios-availability'
 import { ONBOARDING_APP_ID } from '../../apps/onboarding/onboarding-progress'
+import { setAppFolder } from '../../apps/launcher/launcher-folders'
 import { getInstalledEvenHubApps, getInstalledEvenHubFingerprint, installedEvenHubAppId, renderInstalledEvenHubIcon } from '../../apps/evenhub/installed-apps'
 import { renderIcon } from '../../graphics/icons'
 import { GrayImage } from '../../graphics/image'
@@ -28,16 +29,25 @@ export function tileColor(appId: string): TileColor {
 
 const byTitle = (a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title)
 
+// The windows with a glasses switcher icon: a transient status-item host has none, and focusing it would keep it open.
+// ponytail: reads the shell's private list; make switcherWindows public if a second caller needs it.
+const glassesWindows = () => shell['switcherWindows']()
+
 /** What the tab lists, from the same sources the glasses launcher uses. */
 export function listApps() {
   // The launcher window is the glasses app grid itself, always open.
-  const open = shell.getWindows().filter(window => window.appId !== 'launcher').map(window => ({
+  const open = glassesWindows().filter(window => window.appId !== 'launcher').map(window => ({
     windowId: window.windowId, appId: window.appId, title: window.title,
-    draw: ((size: number) => { const image = new GrayImage(size, size, 0); window.drawIcon(image, 0, 0, size); return image }) as Draw,
+    // A window whose glyph will not render draws nothing; null lets the tile show the initial.
+    draw: ((size: number) => {
+      const image = new GrayImage(size, size, 0); window.drawIcon(image, 0, 0, size)
+      return image.withDrawsBaked().pixels.some(pixel => pixel > 0) ? image : null
+    }) as Draw,
   }))
   const builtIn: AppItem[] = [], unavailable: (AppItem & { reason: string })[] = []
   for (const app of ALL_APPS) {
-    if (app.showInLauncher === false || app.appId === ONBOARDING_APP_ID) continue
+    // The glasses Settings app duplicates the Settings tab.
+    if (app.showInLauncher === false || app.appId === ONBOARDING_APP_ID || app.appId === 'settings') continue
     const item = { appId: app.appId, title: app.title, draw: (size: number) => app.renderIcon?.(size) ?? renderIcon(app.icon, size) }
     const reason = iosAppUnavailableReason(app.appId)
     if (reason) unavailable.push({ ...item, reason })
@@ -52,7 +62,7 @@ export function listApps() {
 
 /** Built-ins never change at runtime; open windows and installs do. */
 export function shownKey(): string {
-  return JSON.stringify([shell.getWindows().map(window => [window.windowId, window.appId, window.title]), getInstalledEvenHubFingerprint()])
+  return JSON.stringify([glassesWindows().map(window => [window.windowId, window.appId, window.title]), getInstalledEvenHubFingerprint()])
 }
 
 /** The app's own glyph in white on its palette tile; its initial if the glyph will not render. */
@@ -70,7 +80,7 @@ function appTile(item: AppItem, color = tileColor(item.appId)): GridLayout {
     box.addChild(icon)
   } else {
     const initial = new Label()
-    initial.text = item.title.trim().charAt(0).toUpperCase(); initial.className = 'os-app-initial'
+    initial.text = (Array.from(item.title.trim())[0] ?? '').toUpperCase(); initial.className = 'os-app-initial'
     box.addChild(initial)
   }
   return box
@@ -99,10 +109,16 @@ export function createPage(): Page {
   const controller = getRuntime().controller
   let shown = ''
   const launch = (appId: string) => { void controller.launchApp(appId) }
+  // Set while the uninstall alert is up: the tap that ends the same hold must not launch the app.
+  let confirming = false
   const uninstall = async (app: { appId: string; title: string }) => {
+    confirming = true
     const confirmed = await Dialogs.confirm({ title: `Uninstall ${app.title}?`,
       message: 'It closes on the glasses and is removed from this iPhone.', okButtonText: 'Uninstall', cancelButtonText: 'Cancel' })
+      .finally(() => { confirming = false })
     if (!confirmed) return
+    // As the glasses launcher does, so a reinstall does not land in the old folder.
+    setAppFolder(app.appId, null)
     await controller.uninstallApp(app.appId)
     refresh()
   }
@@ -119,9 +135,10 @@ export function createPage(): Page {
     container.addChild(hub.length
       ? section({ header: 'From Even Hub', footer: 'Tap an app to open it on the glasses. Touch and hold to uninstall it.',
         rows: hub.map(app => {
-          const row = navRow({ tile: appTile(app), title: app.title, value: app.version, onTap: () => launch(app.appId) })
+          const row = navRow({ tile: appTile(app), title: app.title, value: app.version, onTap: () => { if (!confirming) launch(app.appId) } })
           row.view.accessibilityHint = 'Touch and hold to uninstall.'
-          row.view.on('longPress', () => { void uninstall(app) })
+          // iOS sends a hold as began, changed per move, then ended: confirm once.
+          row.view.on('longPress', (args: GestureEventData & { state?: GestureStateTypes }) => { if (args.state === GestureStateTypes.began && !confirming) void uninstall(app) })
           return row
         }) })
       : section({ header: 'From Even Hub', footer: 'Apps you install from Even Hub appear here.',

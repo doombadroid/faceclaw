@@ -12,6 +12,9 @@ class View {
 }
 class GridLayout extends View { static setColumn() {} }
 
+// NativeScript's GestureStateTypes.
+const STATE = { cancelled: 0, began: 1, changed: 2, ended: 3 };
+
 function harness({ windows = [], installed = [], apps = [], whiteIcon = () => 'white' } = {}) {
   const calls = [], settingListeners = new Set(), windowListeners = new Set();
   let builds = 0, build, page, confirmAnswer = true;
@@ -24,7 +27,7 @@ function harness({ windows = [], installed = [], apps = [], whiteIcon = () => 'w
   };
   const row = options => ({ ...options, view: new View() });
   const load = loader({}, {
-    '@nativescript/core': { GridLayout, Image: View, Label: View, StackLayout: View,
+    '@nativescript/core': { GridLayout, Image: View, Label: View, StackLayout: View, GestureStateTypes: STATE,
       Dialogs: { confirm: async options => { calls.push(['confirm', options.title]); return confirmAnswer; } } },
     './ui-kit': {
       groupedPage: options => {
@@ -38,7 +41,8 @@ function harness({ windows = [], installed = [], apps = [], whiteIcon = () => 'w
     },
     './runtime': { getRuntime: () => ({ controller }) },
     './shell': { selectTab: name => calls.push(['tab', name]) },
-    '../../ui/shell/shell': { shell: { getWindows: () => windows } },
+    '../../ui/shell/shell': { shell: { switcherWindows: () => windows } },
+    '../../apps/launcher/launcher-folders': { setAppFolder: (id, folder) => calls.push(['folder', id, folder]) },
     '../../ui/dashboard-settings': { onAnySettingChanged: fn => { settingListeners.add(fn); return () => settingListeners.delete(fn); } },
     '../../apps/all-apps': { ALL_APPS: apps },
     '../../apps/ios-availability': { iosAppUnavailableReason: id => id === 'music' ? 'Media-player integration is not available on iOS yet.' : null },
@@ -48,7 +52,10 @@ function harness({ windows = [], installed = [], apps = [], whiteIcon = () => 'w
       installedEvenHubAppId: id => `hub:${id}`, renderInstalledEvenHubIcon: () => null,
     },
     '../../graphics/icons': { renderIcon: (name, size) => ({ name, size }) },
-    '../../graphics/image': { GrayImage: class { constructor(w, h) { this.size = w; } } },
+    '../../graphics/image': { GrayImage: class {
+      constructor(w, h) { this.size = w; this.pixels = new Uint8Array(w * h); }
+      withDrawsBaked() { return this; }
+    } },
     '../../native/gray-image-preview': { grayImageToWhiteIconSource: whiteIcon },
   });
   const api = load('app/phone-ui/ios/apps-page.ts');
@@ -66,7 +73,8 @@ const builtins = [
   { appId: 'calendar', title: 'Calendar', icon: 'calendar', renderIcon: size => ({ date: true, size }) },
   { appId: 'settings', title: 'Settings', icon: 'settings' },
 ];
-const win = (windowId, appId, title) => ({ windowId, appId, title, drawIcon: (image, x, y, size) => { image.drawn = size; } });
+const win = (windowId, appId, title, ink = true) => ({ windowId, appId, title,
+  drawIcon: (image, x, y, size) => { image.drawn = size; if (ink) image.pixels[0] = 255; } });
 
 test('Apps tab tile colours are stable per app and spread across the palette', () => {
   const { api } = harness();
@@ -85,24 +93,25 @@ test('Apps tab lists real windows, launchable built-ins, installed packages and 
     installed: [{ packageId: 'z.app', name: 'Zed', version: '2.0.1' }, { packageId: 'a.app', name: 'Alpha', version: '1.0.0' }] });
   const { open, builtIn, hub, unavailable } = api.listApps();
   assert.deepEqual(plain(open.map(w => w.windowId)), ['window:timer', 'evenhub:app:3'], 'the always-open launcher grid is not listed');
-  assert.deepEqual(plain(builtIn.map(app => app.title)), ['Calendar', 'Settings', 'Timer'], 'alphabetical; no launcher, onboarding or unavailable apps');
+  assert.deepEqual(plain(builtIn.map(app => app.title)), ['Calendar', 'Timer'], 'alphabetical; no launcher, onboarding, glasses Settings or unavailable apps');
   assert.deepEqual(plain(hub.map(app => [app.appId, app.title, app.version])), [['hub:a.app', 'Alpha', '1.0.0'], ['hub:z.app', 'Zed', '2.0.1']]);
   assert.deepEqual(plain(unavailable.map(app => [app.title, app.reason])), [['Music', 'Media-player integration is not available on iOS yet.']]);
   assert.deepEqual(plain(builtIn[0].draw(54)), { date: true, size: 54 }, "an app's own renderer wins over its Lucide name");
-  assert.deepEqual(plain(builtIn[2].draw(54)), { name: 'timer', size: 54 });
+  assert.deepEqual(plain(builtIn[1].draw(54)), { name: 'timer', size: 54 });
   assert.equal(open[0].draw(54).drawn, 54, 'window icons are what the glasses sidebar draws');
 });
 
 test('Apps tab rows open apps, focus windows, and fall back to an initial when a glyph will not render', () => {
-  const h = harness({ apps: builtins, windows: [win('window:timer', 'timer', 'Timer')],
-    whiteIcon: image => image.name === 'settings' ? null : 'white' });
+  const h = harness({ apps: [...builtins, { appId: 'weather', title: 'Weather', icon: 'cloud' }],
+    windows: [win('window:timer', 'timer', 'Timer'), win('evenhub:app:1', 'hub:g.app', '🎮 Arcade', false)],
+    whiteIcon: image => image.name === 'cloud' ? null : 'white' });
   h.api.createPage();
   const [onGlasses, builtIn, fromHub, unavailable] = h.page.sections;
   assert.deepEqual([onGlasses.header, builtIn.header, fromHub.header, unavailable.header], ['On Glasses Now', 'Built In', 'From Even Hub', 'Not Available on iPhone']);
   onGlasses.rows[0].onTap(); builtIn.rows[0].onTap();
   assert.deepEqual(h.calls, [['focus', 'window:timer'], ['launch', 'calendar']]);
-  const settingsTile = builtIn.rows.find(r => r.title === 'Settings').tile;
-  assert.equal(settingsTile.children[0].text, 'S');
+  assert.equal(builtIn.rows.find(r => r.title === 'Weather').tile.children[0].text, 'W');
+  assert.equal(onGlasses.rows[1].tile.children[0].text, '🎮', 'a window that drew nothing shows its initial, a whole code point');
   assert.equal(builtIn.rows.find(r => r.title === 'Timer').tile.children[0].imageSource, 'white');
   assert.ok(unavailable.rows[0].view.className.includes('os-disabled'));
   assert.equal(unavailable.rows[0].view.events.size, 0, 'unavailable rows are not tappable');
@@ -115,13 +124,21 @@ test('Apps tab uninstalls only after confirmation, through the controller, then 
   h.api.createPage();
   const hubRow = () => h.page.sections[2].rows[0];
   assert.equal(hubRow().value, '1.0.0');
+  // One hold: began, changed per finger move, ended, and maybe the tap that ends it.
+  const hold = () => {
+    const press = hubRow().view.events.get('longPress');
+    for (const state of [STATE.began, STATE.changed, STATE.changed, STATE.ended]) press({ state });
+    hubRow().onTap();
+  };
   h.confirm = false;
-  hubRow().view.events.get('longPress')(); await settle();
-  assert.deepEqual(h.calls, [['confirm', 'Uninstall Alpha?']]);
+  hold(); await settle();
+  assert.deepEqual(h.calls, [['confirm', 'Uninstall Alpha?']], 'one alert per hold, and the hold does not launch');
+  hubRow().onTap();
+  assert.deepEqual(h.calls.at(-1), ['launch', 'hub:a.app'], 'a tap after the alert closes launches again');
   h.confirm = true;
   const before = h.builds;
-  hubRow().view.events.get('longPress')(); await settle();
-  assert.deepEqual(h.calls.slice(1), [['confirm', 'Uninstall Alpha?'], ['uninstall', 'hub:a.app']]);
+  hold(); await settle();
+  assert.deepEqual(h.calls.slice(2), [['confirm', 'Uninstall Alpha?'], ['folder', 'hub:a.app', null], ['uninstall', 'hub:a.app']]);
   assert.equal(h.builds, before + 1);
   assert.equal(h.page.sections[2].rows[0].title, 'Browse Even Hub');
 });
