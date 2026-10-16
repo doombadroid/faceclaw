@@ -195,6 +195,23 @@ class IosProtocol {
 
     fun png(data: NSData, width: Int, height: Int): NSData =
         SharedScreenshots.encode4BitGrayPng(data.byteArray(), width, height).data()
+
+    /**
+     * Android's photo tone (GrayPacket.fromArgb) on an already-decoded [wLo,wHi,hLo,hHi,pixels]
+     * packet such as FaceclawGraphics returns: the gamma curve, then optional dither. A malformed
+     * packet comes back unchanged.
+     */
+    fun tone(packet: NSData, gamma: Float, dither: Boolean): NSData {
+        val bytes = packet.byteArray()
+        if (bytes.size < GrayPacket.HEADER_SIZE) return packet
+        val width = (bytes[0].toInt() and 255) or ((bytes[1].toInt() and 255) shl 8)
+        val height = (bytes[2].toInt() and 255) or ((bytes[3].toInt() and 255) shl 8)
+        if (bytes.size != GrayPacket.HEADER_SIZE + width * height) return packet
+        val curve = GrayPacket.toneCurve(gamma)
+        for (i in GrayPacket.HEADER_SIZE until bytes.size) bytes[i] = curve[bytes[i].toInt() and 255].toByte()
+        if (dither) GrayPacket.ditherToDisplayLevels(bytes, GrayPacket.HEADER_SIZE, width, height)
+        return bytes.data()
+    }
 }
 
 /** Animated-GIF screen recording over the shared encoder (Android's GifScreenRecorder, minus storage). */

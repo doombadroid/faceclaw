@@ -32,8 +32,8 @@ test('Files on iOS exposes Run app for EHPKs and passes the selected local path'
   let browserOptions, actions, opened, installed;
   const load = loader({ global: { isIOS: true } }, {
     '../../native/file-access': {}, '../../native/font-files': { isFontFile: () => false },
-    '../../graphics/installed-fonts': {}, '../../native/image-files': { isDecodableImageFile: () => false },
-    '../../native/video-player': { isPlayableVideoFile: () => true },
+    '../../graphics/installed-fonts': {}, '../../native/image-files': { isDecodableImageFile: name => name.endsWith('.heic') },
+    '../../native/video-player': { isPlayableVideoFile: name => name.endsWith('.mp4') },
     '../evenhub/installed-apps': { readEvenHubPackageManifest: () => null }, '../evenhub/permission-dialog': {},
     './file-browser': { FileBrowserLayer: class { constructor(options) { browserOptions = options; } } },
     './file-info-dialog': { FileInfoDialogLayer: class { constructor(entry, value) { actions = value; } } },
@@ -49,6 +49,28 @@ test('Files on iOS exposes Run app for EHPKs and passes the selected local path'
   assert.deepEqual(Array.from(actions, a => a.label), ['Run app', 'Install']);
   actions[0].onSelect(ctx); assert.equal(opened, '/Documents/test.ehpk');
   actions[1].onSelect(ctx); assert.equal(installed, '/Documents/test.ehpk');
+  assert.equal(browserOptions.isSupportedFile('photo.heic'), true);
+  browserOptions.onFilePicked({ name: 'photo.heic', path: '/Documents/photo.heic' }, ctx);
+  assert.deepEqual(Array.from(actions, a => a.label), ['View here', 'Open in new window']);
+  browserOptions.onFilePicked({ name: 'clip.mp4', path: '/Documents/clip.mp4' }, ctx);
+  assert.equal(actions.length, 0);
+});
+
+test('iOS image files decode through ImageIO and take the photo tone in Kotlin', () => {
+  const calls = [];
+  const packet = { bytes: [2, 0, 1, 0, 128, 255] };
+  const api = loader({ global: { isIOS: true }, console,
+    interop: { bufferFromData: d => new Uint8Array(d.bytes).buffer },
+    FaceclawGraphics: { decodeImageFileMaxWidthMaxHeight: (...args) => { calls.push(['decode', ...args]); return args[0] === '/bad' ? null : packet; } },
+    FaceclawKitIosProtocol: { new: () => ({ tonePacketGammaDither: (p, gamma, dither) => { calls.push(['tone', gamma, dither]); return { bytes: [2, 0, 1, 0, 9, 9] }; } }) },
+  }, { '../graphics/image': { GrayImage: class { constructor(w, h) { this.width = w; this.height = h; this.pixels = new Uint8Array(w * h); } } } })(
+    'app/native/image-files.ts');
+  const photo = api.loadImageFileAsGray('/a.jpg', 635.6, 300, api.PHOTO_TONE);
+  assert.deepEqual([photo.width, photo.height, [...photo.pixels]], [2, 1, [9, 9]]);
+  const flat = api.loadImageFileAsGray('/b.png', 10, 10);
+  assert.deepEqual([...flat.pixels], [128, 255], 'the flat tone skips the Kotlin call');
+  assert.equal(api.loadImageFileAsGray('/bad', 10, 10), null);
+  assert.deepEqual(calls, [['decode', '/a.jpg', 636, 300], ['tone', 2.2, true], ['decode', '/b.png', 10, 10], ['decode', '/bad', 10, 10]]);
 });
 
 test('local package runtimes unpack independently and clean up after closing or a failed launch', async () => {

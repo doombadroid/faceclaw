@@ -1,12 +1,16 @@
 /**
  * Image-file decoding for the on-glasses image viewer, backed by the Java
- * ImageFileLoader (BitmapFactory handles PNG/JPEG/GIF/BMP/WebP/HEIC).
+ * ImageFileLoader (BitmapFactory handles PNG/JPEG/GIF/BMP/WebP/HEIC); on iOS
+ * by ImageIO (FaceclawGraphics) plus the same tone in Kotlin.
  */
 import { GrayImage } from "../graphics/image";
 import { toUint8Array } from "../util/array-util";
 
 declare const com: any;
 declare const global: any;
+declare const FaceclawGraphics: any;
+declare const FaceclawKitIosProtocol: any;
+declare const interop: any;
 
 /** File extensions BitmapFactory can decode (no SVG). */
 const DECODABLE_IMAGE = /\.(png|jpe?g|gif|bmp|webp|heic|heif)$/i;
@@ -76,9 +80,15 @@ export function loadImageFileAsGray(
   maxHeight: number,
   tone?: GrayImageTone,
 ): GrayImage | null {
-  if (!global.isAndroid) return null;
   try {
     const { gamma, dither } = resolveGrayImageTone(tone);
+    if (global.isIOS) {
+      const packet = FaceclawGraphics.decodeImageFileMaxWidthMaxHeight(path, Math.round(maxWidth), Math.round(maxHeight));
+      if (!packet) return null;
+      const toned = gamma === 1 && !dither ? packet : FaceclawKitIosProtocol.new().tonePacketGammaDither(packet, gamma, dither);
+      return grayImageFromPacket(new Uint8Array(interop.bufferFromData(toned)));
+    }
+    if (!global.isAndroid) return null;
     return grayImageFromPacket(
       com.faceclaw.app.ImageFileLoader.loadGray(path, Math.round(maxWidth), Math.round(maxHeight), gamma, dither),
     );

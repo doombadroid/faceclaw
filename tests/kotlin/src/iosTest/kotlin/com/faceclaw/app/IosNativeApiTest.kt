@@ -59,4 +59,17 @@ class IosNativeApiTest {
         assertEquals("GIF89a", gif.copyOf(6).decodeToString())
         assertEquals(0x3b, gif.last().toInt())
     }
+
+    @Test
+    fun photoToneMatchesTheSharedCurveAndDither() {
+        val protocol = IosProtocol()
+        val packet = byteArrayOf(2, 0, 1, 0, -128, -1)
+        val curve = GrayPacket.toneCurve(2.2f)
+        assertContentEquals(byteArrayOf(2, 0, 1, 0, curve[128].toByte(), -1), protocol.tone(packet.data(), 2.2f, false).byteArray())
+        val dithered = protocol.tone(byteArrayOf(2, 0, 2, 0, 0, 40, 90, -56).data(), 1f, true).byteArray()
+        assertContentEquals(byteArrayOf(2, 0, 2, 0), dithered.copyOf(4))
+        assertTrue(dithered.drop(4).all { it.toInt() != 0 && (it.toInt() and 255) % 16 <= 1 }, dithered.toList().toString())
+        val short = byteArrayOf(9, 0, 9, 0, 1).data()
+        assertContentEquals(short.byteArray(), protocol.tone(short, 2.2f, true).byteArray(), "a malformed packet passes through")
+    }
 }
