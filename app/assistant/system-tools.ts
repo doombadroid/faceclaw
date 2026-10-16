@@ -1,7 +1,8 @@
 import { readUpcomingEventsAsync, type CalendarEvent } from "../native/calendar";
 import { hasCalendarPermission } from "../native/calendar-permissions";
 import { mediaControllerBridge } from "../native/media-controller";
-import { dismissNotification, readActiveNotifications } from "../native/notification-icons";
+import { notificationEmptyMessage } from "../native/notification-access";
+import { dismissNotification, invokeNotificationAction, readActiveNotifications } from "../native/notification-icons";
 import { shell } from "../ui/shell/shell";
 import { toolRegistry, type ToolRegistry, type ToolResult } from "./tool-registry";
 
@@ -15,13 +16,15 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 let registered = false;
+// iOS shares no other app's playback with third-party apps.
+const APPLE_MUSIC_ONLY = global.isIOS ? " (on iPhone: Apple Music only)" : "";
 
 export function registerSystemTools(registry: ToolRegistry = toolRegistry): void {
   if (registered) return;
   registered = true;
 
   // Keep a media listener warm so "what's playing" works without opening Music.
-  if (!global.isIOS) void mediaControllerBridge.start();
+  void mediaControllerBridge.start();
 
   registry.registerSystemTool(
     {
@@ -86,13 +89,10 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
     },
   );
 
-  // Phone media and Android notification tools are still platform-specific.
-  if (global.isIOS) return;
-
   registry.registerSystemTool(
     {
       name: "media.now_playing",
-      description: "What is currently playing (or paused) in the user's media app, if anything.",
+      description: `What is currently playing (or paused) in the user's media app, if anything.${APPLE_MUSIC_ONLY}`,
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       proactive: true,
     },
@@ -102,7 +102,7 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
   registry.registerSystemTool(
     {
       name: "media.play_pause",
-      description: "Toggle play/pause for the user's current media session.",
+      description: `Toggle play/pause for the user's current media session.${APPLE_MUSIC_ONLY}`,
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
     async () => {
@@ -116,7 +116,7 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
   registry.registerSystemTool(
     {
       name: "media.next",
-      description: "Skip to the next track in the user's current media session.",
+      description: `Skip to the next track in the user's current media session.${APPLE_MUSIC_ONLY}`,
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
     async () => {
@@ -130,7 +130,7 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
   registry.registerSystemTool(
     {
       name: "notifications.list",
-      description: "List the user's current Android notifications mirrored to the glasses.",
+      description: "List the user's current phone notifications mirrored to the glasses.",
       inputSchema: {
         type: "object",
         properties: { max: { type: "number", description: "Maximum notifications to return (default 10)." } },
@@ -140,7 +140,7 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
     (args) => {
       const max = clampNumber(args?.max, 1, 50, 10);
       const notifications = readActiveNotifications(max);
-      if (!notifications.length) return ok("No current notifications.");
+      if (!notifications.length) return ok(global.isIOS ? notificationEmptyMessage() : "No current notifications.");
       return ok(notifications.map(formatNotification).join("\n"));
     },
   );
@@ -160,9 +160,24 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
     (args) => {
       const key = String(args?.key ?? "").trim();
       if (!key) return err("notifications.dismiss requires a key");
+      if (global.isIOS) return dismissIosNotification(key);
       return dismissNotification(key) ? ok("Dismissed.") : err("No notification with that key.");
     },
   );
+}
+
+/**
+ * ANCS's negative action clears a notification from the iPhone, the way
+ * Android dismisses it, except on an incoming call (category 1), where it
+ * declines the call. Anything else is only hidden on the glasses.
+ */
+function dismissIosNotification(key: string): ToolResult {
+  const notification = readActiveNotifications(Number.MAX_SAFE_INTEGER).find((n) => n.key === key);
+  if (!notification) return err("No notification with that key.");
+  const clears = notification.category !== "1" && notification.actions.some((a) => a.index === 1 && a.enabled);
+  if (clears && invokeNotificationAction(key, 1)) return ok("Dismissed.");
+  dismissNotification(key);
+  return ok("Hidden on the glasses; it stays on the iPhone.");
 }
 
 function describeState(): string {
@@ -181,7 +196,7 @@ function describeState(): string {
 
 function describeNowPlaying(): string {
   const state = mediaControllerBridge.snapshot();
-  if (!state.accessEnabled) return "Notification access isn't granted, so media state is unavailable.";
+  if (!state.accessEnabled) return global.isIOS ? state.status : "Notification access isn't granted, so media state is unavailable.";
   if (state.playbackState === "playing" || state.playbackState === "paused") {
     const verb = state.playbackState === "playing" ? "Playing" : "Paused";
     const title = state.title || "(unknown title)";
@@ -189,7 +204,7 @@ function describeNowPlaying(): string {
     const app = state.appName ? ` in ${state.appName}` : "";
     return `${verb}: ${title}${artist}${app}.`;
   }
-  return "Nothing is currently playing.";
+  return (global.isIOS && state.status) || "Nothing is currently playing.";
 }
 
 function formatEvent(event: CalendarEvent): string {

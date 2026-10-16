@@ -48,7 +48,7 @@ import {
   glanceTapDurationSetting,
   type GlanceSlotChoice,
 } from "../../apps/glanceboard/glanceboard-settings";
-import { iosAppUnavailableReason } from "../../apps/ios-availability";
+import { mediaControllerBridge } from "../../native/media-controller";
 
 /**
  * The iPhone Settings tab's catalog: the same ConfigSetting objects the
@@ -153,8 +153,11 @@ function glanceSlotItems(): CatalogItem[] {
     setting,
     title: setting.label.replace(/ \w/g, (initial) => initial.toUpperCase()),
     // Each widget appears once per board, as the glasses slot picker enforces.
-    onChange: (value) => clearConflictingSlots(layout, index, value as GlanceSlotChoice),
-    unavailable: (value) => iosAppUnavailableReason(value),
+    onChange: (value) => {
+      clearConflictingSlots(layout, index, value as GlanceSlotChoice);
+      // Choosing the Music widget is the phone-side moment to ask for Apple Music access.
+      if (value === "music") mediaControllerBridge.openNotificationAccessSettings();
+    },
   }));
 }
 
