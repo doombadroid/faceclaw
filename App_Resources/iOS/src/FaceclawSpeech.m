@@ -8,7 +8,8 @@
 
 @interface FaceclawSpeech ()
 @property(nonatomic, strong) SFSpeechRecognizer *recognizer;
-@property(nonatomic, strong) SFSpeechAudioBufferRecognitionRequest *request;
+// Atomic: replaced on the main queue at a continuous roll, read on audioQueue.
+@property(atomic, strong) SFSpeechAudioBufferRecognitionRequest *request;
 @property(nonatomic, strong) SFSpeechRecognitionTask *task;
 @property(nonatomic, strong) FaceclawLc3Decoder *decoder;
 @property(nonatomic, strong) dispatch_queue_t audioQueue;
@@ -22,7 +23,10 @@
 @property(nonatomic, strong) id interruptionObserver;
 @property(nonatomic, copy) NSString *bestText;
 @property(nonatomic, strong) FaceclawSpeechTranscript *transcript;
-@property(nonatomic, strong) FaceclawKitVoiceEndpointDetector *endpointDetector;
+@property(atomic, strong) FaceclawKitVoiceEndpointDetector *endpointDetector;
+@property(nonatomic) BOOL endpointing;
+@property(nonatomic, strong) NSDate *taskStarted;
+@property(nonatomic) NSUInteger fastErrors;
 @end
 /** Resamples one tap buffer to 16 kHz mono PCM16LE. Called on the serial
  * audio queue; the converter keeps its filter state between buffers. */
@@ -91,7 +95,9 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
     }
     self.pcmOutput = pcm;
     self.bestText = @""; self.accepting = YES;
-    self.endpointDetector = endpointing ? [FaceclawKitVoiceEndpointDetector new] : nil;
+    // Always measured: hands-free capture finishes on it, continuous capture rolls on it.
+    self.endpointing = endpointing;
+    self.endpointDetector = [FaceclawKitVoiceEndpointDetector new];
     NSUInteger generation = self.generation;
     __weak FaceclawSpeech *weakSelf = self;
     if (pcm) {
@@ -103,16 +109,36 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
         return @"";
     }
     self.recognizer.queue = NSOperationQueue.mainQueue;
-    self.request = [SFSpeechAudioBufferRecognitionRequest new];
-    self.request.requiresOnDeviceRecognition = YES;
-    self.request.shouldReportPartialResults = YES;
-    self.request.taskHint = SFSpeechRecognitionTaskHintDictation;
-    if (@available(iOS 16.0, *)) self.request.addsPunctuation = YES;
+    [self startRecognitionTask];
+    if (phone) {
+        NSString *error = [self startPhoneAudio];
+        if (error.length) { [self cancel]; return error; }
+    }
+    [self emit:@{@"kind":@"status", @"message":[NSString stringWithFormat:@"Listening on %@ (%@, on-device)…", phone ? @"phone" : @"glasses", language]}];
+    // Bound a dictation to the recognizer's supported short-session workflow.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 55 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        FaceclawSpeech *owner = weakSelf;
+        if (owner && owner.generation == generation && owner.accepting && !owner.continuous) [owner finish];
+    });
+    return @"";
+}
+/** Starts recognition on a fresh request (main queue); a continuous roll calls it again. */
+- (void)startRecognitionTask {
+    NSUInteger generation = self.generation;
+    __weak FaceclawSpeech *weakSelf = self;
+    SFSpeechAudioBufferRecognitionRequest *request = [SFSpeechAudioBufferRecognitionRequest new];
+    request.requiresOnDeviceRecognition = YES;
+    request.shouldReportPartialResults = YES;
+    request.taskHint = SFSpeechRecognitionTaskHintDictation;
+    if (@available(iOS 16.0, *)) request.addsPunctuation = YES;
+    self.request = request;
     self.transcript = [FaceclawSpeechTranscript new];
-    self.task = [self.recognizer recognitionTaskWithRequest:self.request resultHandler:^(SFSpeechRecognitionResult *result, NSError *error) {
+    self.taskStarted = [NSDate date];
+    self.task = [self.recognizer recognitionTaskWithRequest:request resultHandler:^(SFSpeechRecognitionResult *result, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             FaceclawSpeech *owner = weakSelf;
-            if (!owner || owner.generation != generation) return;
+            // A rolled-over request's late results belong to an utterance already emitted.
+            if (!owner || owner.generation != generation || owner.request != request) return;
             if (result) {
                 SFSpeechRecognitionMetadata *metadata = result.speechRecognitionMetadata;
                 SFTranscriptionSegment *first = result.bestTranscription.segments.firstObject;
@@ -124,22 +150,40 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
                 if (!result.final) [owner emit:@{@"kind":@"transcript", @"text":owner.bestText, @"final":@NO}];
             }
             if (result.final || error) {
+                if (owner.continuous && owner.accepting) {
+                    // Silence ("No speech detected") and Apple's own session limit end a
+                    // task; continuous capture rolls on, unless the recognizer keeps
+                    // failing as soon as it starts.
+                    owner.fastErrors = error && owner.taskStarted.timeIntervalSinceNow > -2 ? owner.fastErrors + 1 : 0;
+                    if (owner.fastErrors < 3) { [owner rollPausing:NO]; return; }
+                }
                 NSString *message = error ? [NSString stringWithFormat:@"Speech recognition: %@", error.localizedDescription] : @"Ready to send";
                 [owner complete:message];
             }
         });
     }];
-    if (phone) {
-        NSString *error = [self startPhoneAudio];
-        if (error.length) { [self cancel]; return error; }
-    }
-    [self emit:@{@"kind":@"status", @"message":[NSString stringWithFormat:@"Listening on %@ (%@, on-device)…", phone ? @"phone" : @"glasses", language]}];
-    // Bound a dictation to the recognizer's supported short-session workflow.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 55 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        FaceclawSpeech *owner = weakSelf;
-        if (owner && owner.generation == generation && owner.accepting) [owner finish];
-    });
-    return @"";
+}
+/** Continuous capture (main queue): the utterance so far becomes final and recognition
+ * restarts on a fresh request. ponytail: the old task is cancelled, not drained, so Apple's
+ * last refinement of it is lost; endAudio with per-task finals if that matters. */
+- (void)rollPausing:(BOOL)pause {
+    NSString *text = self.bestText ?: @"";
+    self.bestText = @"";
+    SFSpeechRecognitionTask *old = self.task;
+    self.endpointDetector = [FaceclawKitVoiceEndpointDetector new];
+    [self startRecognitionTask];
+    [old cancel];
+    if (text.length) [self emit:@{@"kind":@"transcript", @"text":text, @"final":@YES}];
+    if (pause) [self emit:@{@"kind":@"pause"}];
+}
+/** The endpoint detector fired (main queue): hands-free capture finishes, continuous capture rolls. */
+- (void)endpointReached {
+    if (!self.accepting) return;
+    if (!self.continuous) { if (self.endpointing) [self finish]; return; }
+    // A cloud provider segments its own stream.
+    if (self.pcmOutput) return;
+    if (self.bestText.length) [self rollPausing:YES];
+    else self.endpointDetector = [FaceclawKitVoiceEndpointDetector new];
 }
 - (NSString *)startPhoneAudio {
     AVAudioSession *session = AVAudioSession.sharedInstance;
@@ -164,8 +208,6 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
         converter.downmix = YES;
     }
     NSUInteger generation = self.generation;
-    SFSpeechAudioBufferRecognitionRequest *request = self.request;
-    FaceclawKitVoiceEndpointDetector *detector = self.endpointDetector;
     __weak FaceclawSpeech *weakSelf = self;
     [input installTapOnBus:0 bufferSize:1024 format:format block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
         FaceclawSpeech *owner = weakSelf;
@@ -183,7 +225,7 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
             if (converter) {
                 NSData *pcm = resampleToPcm(converter, copy);
                 if (pcm.length) [owner deliverPcm:pcm generation:generation];
-            } else [request appendAudioPCMBuffer:copy];
+            } else [owner.request appendAudioPCMBuffer:copy];
             double sum = 0;
             if (copy.floatChannelData) {
                 const float *samples = copy.floatChannelData[0];
@@ -194,9 +236,9 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
             // The endpoint detector uses a 16 kHz sample clock; device input
             // commonly arrives at 48 kHz. Recognition accepts its native rate.
             int32_t samples = (int32_t)llround(copy.frameLength * 16000.0 / copy.format.sampleRate);
-            BOOL ended = [detector acceptLevelRms:rms * 32768.0 sampleCount:samples];
+            BOOL ended = [owner.endpointDetector acceptLevelRms:rms * 32768.0 sampleCount:samples];
             if (ended) dispatch_async(dispatch_get_main_queue(), ^{
-                if (owner.generation == generation && owner.accepting) [owner finish];
+                if (owner.generation == generation) [owner endpointReached];
             });
         }});
     }];
@@ -224,12 +266,15 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
 }
 - (void)acceptPacket:(NSData *)packet {
     if (!self.accepting) return;
-    if (self.pendingPackets >= 40) { [self complete:@"Audio processing fell behind. Please try again."]; return; }
+    if (self.pendingPackets >= 40) {
+        if (!self.continuous) { [self complete:@"Audio processing fell behind. Please try again."]; return; }
+        // Continuous capture drops audio while it catches up, keeping what it heard.
+        if (self.bestText.length && !self.pcmOutput) [self rollPausing:NO];
+        return;
+    }
     self.pendingPackets++;
     NSUInteger generation = self.generation;
     FaceclawLc3Decoder *decoder = self.decoder;
-    SFSpeechAudioBufferRecognitionRequest *request = self.request;
-    FaceclawKitVoiceEndpointDetector *endpointDetector = self.endpointDetector;
     BOOL pcmOutput = self.pcmOutput;
     NSData *copy = [packet copy];
     dispatch_async(self.audioQueue, ^{ @autoreleasepool {
@@ -255,15 +300,15 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
             if (self.generation == generation) {
                 // The decoder's output is already the PCM consumer's format.
                 if (pcmOutput) [self deliverPcm:pcm generation:generation];
-                else [request appendAudioPCMBuffer:buffer];
+                else [self.request appendAudioPCMBuffer:buffer];
             }
-            speechEnded = [endpointDetector acceptLevelRms:rms * 32768.0 sampleCount:(int32_t)frames];
+            speechEnded = [self.endpointDetector acceptLevelRms:rms * 32768.0 sampleCount:(int32_t)frames];
         }
         NSUInteger packets = decoder.packets, errors = decoder.errors, missing = decoder.missing;
         dispatch_async(dispatch_get_main_queue(), ^{
             if (self.generation != generation) return;
             self.pendingPackets--;
-            if (speechEnded && self.accepting) [self finish];
+            if (speechEnded) [self endpointReached];
             if (pcm.length && packets % 20 == 0) [self emit:@{@"kind":@"audio", @"packets":@(packets), @"seconds":@(packets * 0.05), @"rms":@(rms), @"missing":@(missing), @"errors":@(errors)}];
             if (errors > 10 && !packets) [self complete:@"Could not decode glasses audio. Reconnect the glasses and retry."];
         });
