@@ -56,7 +56,7 @@ import { voiceActivity } from "../ui/shell/voice-activity";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
 import { prepareFrameDraws } from "../graphics/glyph-wire";
-import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID } from "./lock-screen";
+import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID, LOCK_SCREEN_TIMEOUT_MS } from "./lock-screen";
 import { rawInputEventToInputEvent, shell, type ShellInputOutcome } from "../ui/shell/shell";
 import { NotificationPopupDelay, notificationPopupDelayMs } from "../ui/shell/notification-popup-delay";
 import { type InputEvent } from "../ui/gestures";
@@ -167,9 +167,6 @@ const PREVIEW_INTERVAL_MS = 1_000;
 const SCREEN_TIMEOUT_CHECK_MS = 1_000;
 // voiceActivity holder for Transcribe's continuous capture.
 const CONTINUOUS_CAPTURE_HOLDER = "continuous-capture";
-// The lock screen is a short notice, not something to read at leisure; it
-// ignores the screen-timeout setting (including "never").
-const LOCK_SCREEN_TIMEOUT_MS = 15_000;
 const EVENHUB_SCREEN_OFF_SUSPEND_DELAY_MS = 5_000;
 const EVENHUB_WAKE_READY_TIMEOUT_MS = 4_500;
 const FOREGROUND_NOTIFICATION_MIN_UPDATE_MS = 30_000;

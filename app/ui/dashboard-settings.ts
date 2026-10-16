@@ -802,7 +802,8 @@ export const ringConnectionModeSetting = new ConfigSettingEnum<RingConnectionMod
   id: "ring-connection-mode",
   label: "Ring connection",
   storageKey: "developer.ringConnectionMode",
-  defaultValue: "glasses",
+  // iOS has always connected to the ring directly; existing installs keep that.
+  defaultValue: global.isIOS ? "direct" : "glasses",
   values: ["glasses", "direct"],
   formatValue: (value) => (value === "direct" ? "Direct" : "Only via glasses"),
   description:

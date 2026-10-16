@@ -3,8 +3,11 @@ import { identifyIosPeripheral, type IosAdvertisement, type IosDevice } from '..
 import { hexToBytes } from '../util/hex-util'
 import { kotlinListener } from './kotlin-listener.ios'
 import { APP_NAME } from '../branding'
+import type { RawAdvertisement } from '../g2/even-advertisement'
 
 declare const FaceclawKitIosBleCentral: any, FaceclawKitIosProtocolPlatform: any, FaceclawKitIosBleScanListener: any
+
+const PERIPHERAL_KEY = 'ios.ble.peripheral.'
 
 /** CBManagerState raw values reported by the Kotlin central. */
 export const BLE_STATE_UNSUPPORTED = 2, BLE_STATE_UNAUTHORIZED = 3, BLE_STATE_POWERED_OFF = 4, BLE_STATE_POWERED_ON = 5
@@ -46,7 +49,8 @@ export class IosBluetooth {
         const device = identifyIosPeripheral(raw)
         if (device) {
           this.devices.set(device.address, device)
-          ApplicationSettings.setString(`ios.ble.peripheral.${device.address}`, JSON.stringify({ identifier: device.identifier, role: device.role }))
+          ApplicationSettings.setString(PERIPHERAL_KEY + device.address, JSON.stringify({ identifier: device.identifier, role: device.role,
+            name: raw.name, manufacturerData: raw.manufacturerData, seenAtMs: Date.now() }))
           this.emit({ kind: 'device', device })
         }
       },
@@ -106,7 +110,7 @@ export class IosBluetooth {
       const live = this.devices.get(address)
       if (live && live.role !== role) throw new Error(`${address} advertises as ${live.role}, not ${role}. Check Configure devices.`)
       try {
-        const saved = JSON.parse(ApplicationSettings.getString(`ios.ble.peripheral.${address}`, '{}'))
+        const saved = JSON.parse(ApplicationSettings.getString(PERIPHERAL_KEY + address, '{}'))
         if (saved.role === role && typeof saved.identifier === 'string') result[role] = saved.identifier
       } catch { /* A fresh scan can recover malformed settings. */ }
     }
@@ -130,7 +134,19 @@ export class IosBluetooth {
     })
     return result
   }
-  forget(address: string): void { ApplicationSettings.remove(`ios.ble.peripheral.${address}`); this.devices.delete(address) }
+  forget(address: string): void { ApplicationSettings.remove(PERIPHERAL_KEY + address); this.devices.delete(address) }
+  /** Devices past scans identified, as paired-device candidates: CoreBluetooth has no bond list. */
+  rememberedDevices(): RawAdvertisement[] {
+    return ApplicationSettings.getAllKeys().filter(key => key.startsWith(PERIPHERAL_KEY)).flatMap(key => {
+      try {
+        const saved = JSON.parse(ApplicationSettings.getString(key, '{}'))
+        // Entries saved before names were kept cannot be classified; the next scan rewrites them.
+        if (typeof saved.manufacturerData !== 'string' || !saved.manufacturerData) return []
+        return [{ address: key.slice(PERIPHERAL_KEY.length), name: String(saved.name ?? ''), manufacturerData: saved.manufacturerData,
+          rssi: null, txPower: null, connectable: null, bonded: true, source: 'paired' as const, seenAtMs: Number(saved.seenAtMs) || 0 }]
+      } catch { return [] }
+    })
+  }
 }
 let instance: IosBluetooth | null = null
 export function iosBluetooth(): IosBluetooth { return instance ??= new IosBluetooth() }
