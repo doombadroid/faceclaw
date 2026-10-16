@@ -257,6 +257,28 @@ test('firmware alert is a native three-action alert titled by firmware kind', as
   assert.equal(calls.length, count, 'Not Now does nothing');
 });
 
+test('fonts alert explains the download and offers the firmware-check detour', async () => {
+  const calls = [], presented = [];
+  const UIAlertController = { alertControllerWithTitleMessagePreferredStyle: (title, message, style) =>
+    ({ title, message, style, actions: [], preferredAction: null, addAction(a) { this.actions.push(a); } }) };
+  const UIAlertAction = { actionWithTitleStyleHandler: (title, style, handler) => ({ title, style, handler }) };
+  const root = { presentedViewController: null, presentViewControllerAnimatedCompletion: c => presented.push(c) };
+  const { showFontsAlert } = loader({ UIAlertController, UIAlertAction, UIAlertActionStyle: { Default: 0, Cancel: 1 }, UIAlertControllerStyle: { Alert: 1 }, Promise }, {
+    '@nativescript/core': { Utils: { getWindow: () => ({ rootViewController: root }) } },
+    './detour': { presentDetour: async (...args) => calls.push(['detour', ...args]) },
+    './shell': { pushInTab() {} }, './runtime': { getRuntime: () => ({ controller: {} }) },
+  })('app/phone-ui/ios/firmware-alert.ts');
+  const pick = async title => { const done = showFontsAlert(); presented.at(-1).actions.find(a => a.title === title).handler(); await done; return presented.at(-1); };
+  const alert = await pick('Prepare G2 Fonts');
+  assert.equal(alert.title, 'G2 Fonts Missing');
+  assert.match(alert.message, /fallback fonts.*not reflashed/s);
+  assert.deepEqual(alert.actions.map(a => [a.title, a.style]), [['Prepare G2 Fonts', 0], ['Not Now', 1]]);
+  assert.equal(alert.preferredAction, alert.actions[0]);
+  assert.deepEqual(calls, [['detour', 'phone-ui/onboarding-firmware-check-page']]);
+  await pick('Not Now');
+  assert.equal(calls.length, 1, 'Not Now does nothing');
+});
+
 test('Device, Settings and General read firmware and battery through the same rule as Software Update', () => {
   const live = { ...CURRENT, battery: 80, charging: false };
   const device = uiHarness(live, {
