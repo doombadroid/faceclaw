@@ -13,8 +13,10 @@ export const SETUP_STEPS = [
   'Take the glasses out of the case, or wear them, and keep them near this iPhone.',
   'Select your glasses once both arms are found. Adding an R1 ring is optional.',
 ]
-// Pairing saves addresses with ApplicationSettings and sends nothing anywhere.
-export const SETUP_FOOTER = 'Pairing uses Bluetooth only. The addresses of your glasses and ring are saved on this iPhone.'
+// Pairing saves addresses with ApplicationSettings and sends nothing anywhere,
+// but the firmware step Continue leads to (install, or font extraction) fetches
+// Even's stock image (firmware-builder.ts FIRMWARE_URL).
+export const SETUP_FOOTER = "Pairing uses Bluetooth only, and the addresses of your glasses and ring are saved on this iPhone. The firmware step downloads Even's official firmware from Even Realities."
 
 function label(text: string, className: string): Label {
   const view = new Label()

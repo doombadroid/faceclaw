@@ -100,6 +100,14 @@ test('shared device pages take the OcuSmart tokens in light and dark', async () 
   const primary = style(tree(false, 'Page', 'GridLayout', 'Button.-primary'));
   assert.equal(primary['border-radius'], '14');
   assert.equal(primary['white-space'], 'normal', 'labels wrap rather than truncate on narrow phones');
+  // An incomplete row dims its art and title but not the warning the wearer must read first.
+  const incomplete = ['Page', 'ScrollView', 'StackLayout', 'GridLayout.pairing-row.pairing-row-incomplete'];
+  for (const dark of [false, true]) {
+    assert.equal(style(tree(dark, ...incomplete)).opacity, undefined, 'the row itself keeps full opacity');
+    assert.equal(style(tree(dark, ...incomplete, 'StackLayout.m-l-8', 'Label.pairing-warning')).opacity, undefined);
+    assert.equal(style(tree(dark, ...incomplete, 'StackLayout.m-l-8', 'GridLayout', 'Label.pairing-title')).opacity, '0.6');
+    assert.equal(style(tree(dark, ...incomplete, 'GridLayout.pairing-art')).opacity, '0.6');
+  }
   // Utility margins in the XML (m-t-*) must survive the restyle.
   assert.equal(style(tree(false, 'Page', 'ScrollView', 'StackLayout', 'Label.h2.pairing-section.m-t-16'))['margin-top'], '16');
   assert.equal(style(tree(false, 'Page', 'ScrollView', 'StackLayout', 'Label.body-text.m-t-24'))['margin-top'], '24');
@@ -188,6 +196,9 @@ test('Set Up describes what the pairing flow actually asks for', () => {
   assert.doesNotMatch(setup.SETUP_STEPS.join(' '), /case open/);
   assert.match(read('app/phone-ui/pairing-view-model.ts'), /Make sure they are out of the case/);
   assert.match(setup.SETUP_STEPS[0], /Even Realities app/);
+  // The firmware step Continue leads to downloads Even's image, so the footer cannot claim the flow is offline.
+  assert.match(read('app/g2/firmware-builder.ts'), /FIRMWARE_URL = "https:\/\/cdn\.evenreal\.co\//);
+  assert.match(setup.SETUP_FOOTER, /downloads Even's official firmware from Even Realities/);
   assert.match(setup.SETUP_BODY, /^OcuSmart .*Faceclaw's custom firmware/, 'the app is OcuSmart; the firmware keeps its name');
 });
 
