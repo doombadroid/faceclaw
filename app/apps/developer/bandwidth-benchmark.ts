@@ -13,7 +13,8 @@ import {
 
 const MESSAGE_SIZES = [250, 500, 1000, 2000, 3800];
 const WINDOW_SIZES = [1, 2, 3, 4, 6];
-const LINK_MODES = ["Current", "Request HIGH", "Request 2M", "HIGH + 2M"];
+// CoreBluetooth has no API to request a connection priority or PHY.
+const LINK_MODES = global.isIOS ? ["Current"] : ["Current", "Request HIGH", "Request 2M", "HIGH + 2M"];
 const DURATION_MS = 15_000;
 // After painting the "running" screen, wait for that frame to reach the
 // glasses before the benchmark blocks normal image sends — otherwise the

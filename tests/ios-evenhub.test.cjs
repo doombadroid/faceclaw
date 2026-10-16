@@ -79,13 +79,13 @@ test('local package runtimes unpack independently and clean up after closing or 
 });
 
 function sessionHarness(overrides = {}, playBuzzer = () => {}) {
-  const settings = new Map(), logs = [], renders = [];
+  const settings = new Map(), logs = [], renders = [], imu = [];
   const load = loader({ global: { isIOS: true }, setTimeout, clearTimeout, Promise }, {
     '@nativescript/core': { ApplicationSettings: { getString: (k, d) => settings.get(k) ?? d, setString: (k, v) => settings.set(k, v) } },
     'upng-js': require('upng-js'),
     '../../graphics/evenhub-font': { EvenHubFont: { get: () => ({ drawText() {}, drawTextWrapped() {}, lineHeight: 20 }) } },
     '../../ui/dashboard-settings': {}, '../../ui/sound-effects': {}, './api-key-dialog': {},
-    './mic-router': { evenHubMicRouter: {} }, './imu-router': { evenHubImuRouter: {} },
+    './mic-router': { evenHubMicRouter: {} }, './imu-router': { evenHubImuRouter: { requestImu: (client, freq) => imu.push(freq), releaseImu: () => imu.push('off') } },
     './compass-router': { evenHubCompassRouter: {} }, '../../assistant/tool-registry': {},
     '../../native/location': {}, '../../native/location-tracker': {}, '../../native/location-permissions': {}, ...overrides,
   });
@@ -99,7 +99,7 @@ function sessionHarness(overrides = {}, playBuzzer = () => {}) {
   session.attachWebView({ evaluateJs: script => vm.runInContext(script, web), destroy: () => { destroyed = true; } });
   vm.runInContext(api.EVENHUB_BRIDGE_INJECT_SCRIPT, web);
   const call = (method, data = {}) => web.flutter_inappwebview.callHandler('evenAppMessage', JSON.stringify({ method, data }));
-  return { session, call, web, logs, renders, destroyed: () => destroyed };
+  return { session, call, web, logs, renders, imu, destroyed: () => destroyed };
 }
 
 test('injected EvenHub RPC creates, updates and composites an image page with no Android globals', async () => {
@@ -116,7 +116,9 @@ test('injected EvenHub RPC creates, updates and composites an image page with no
   h.session.handleGesture({ type: 'click', source: 'ring' });
   assert.ok(events.some(e => e.method === 'evenHubEvent'));
   assert.equal(await h.call('audioControl', { isOpen: true }), false);
-  assert.equal(await h.call('imuControl', { isOpen: true }), false);
+  assert.equal(await h.call('imuControl', { isOpen: true, reportFrq: 240 }), true);
+  assert.equal(await h.call('imuControl', { isOpen: false }), true);
+  assert.deepEqual(h.imu, [200, 'off']);
   assert.equal(await h.call('getAppLocation'), null);
   h.session.close(); await new Promise(resolve => setTimeout(resolve, 120)); assert.equal(h.destroyed(), true);
 });
