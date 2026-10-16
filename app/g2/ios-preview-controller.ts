@@ -14,6 +14,7 @@ import { registerNavigateTools } from '../assistant/navigate-tools'
 import { registerRoamTools } from '../assistant/roam-tools'
 import { IosNavigationSensors } from '../native/ios-navigation-sensors'
 import { bindCompassSession, receiveCompassEvent } from '../native/compass.ios'
+import { bindImuSession, imuSessionReady, receiveImuReading } from '../native/imu.ios'
 import { Dialogs, File, knownFolders, path, Utils, type ImageSource } from '@nativescript/core'
 import { iosVoiceInput } from '../native/ios-voice-input'
 import { nightscoutBridge } from '../native/nightscout-bridge'
@@ -819,6 +820,7 @@ export class IosPreviewController {
     this.notifications = notifications
     bindIosNotifications(notifications)
     bindCompassSession(communicator)
+    bindImuSession(communicator)
     communicator.setRequiresAncs(true)
     this.sessionOffs.push(
       communicator.onStateChange(state => this.handleSessionState(communicator, state)),
@@ -859,6 +861,7 @@ export class IosPreviewController {
       communicator.onPreviewAnimationFrame(() => { if (this.communicator === communicator) this.schedulePreviewUpdate() }),
       communicator.onWearState(wearing => { if (this.communicator === communicator) this.handleWearState(wearing) }),
       communicator.addCompassListener(receiveCompassEvent),
+      communicator.addImuListener(receiveImuReading),
       communicator.onAncsRelayFrame(frame => { if (this.communicator === communicator) notifications.receive(frame) }),
       communicator.onAncsAuthorization(authorized => {
         if (this.communicator !== communicator) return
@@ -887,6 +890,7 @@ export class IosPreviewController {
       ? `The glasses firmware is not compatible with this version of ${APP_NAME}. Install the custom firmware, then connect.` : state.status
     this.update(phase, status)
     if (phase === 'connected') {
+      imuSessionReady()
       this.syncNotifications(communicator)
       this.ensureWearDetection(communicator)
     } else if ((phase === 'disconnected' || phase === 'error') && !this.stopping) {

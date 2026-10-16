@@ -812,7 +812,6 @@ export class EvenHubSession implements EvenHubMicClient, EvenHubImuClient, EvenH
    * to the foreground app. reportFrq is one of 100..1000 (step 100).
    */
   private imuControl(data: Record<string, unknown>): boolean {
-    if (global.isIOS) return false;
     const enable = readEnableFlag(data);
     const freq = clampImuFreq(readOptionalNumber(data, "reportFrq") ?? readOptionalNumber(data, "reportFreq") ?? 100);
     // Payload field spelling isn't fully captured; log once per toggle.

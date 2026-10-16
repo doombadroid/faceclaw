@@ -2,6 +2,8 @@ import type { RingInput } from "../g2/ring-input";
 import { File, knownFolders, path, type ImageSource } from "@nativescript/core";
 import { REQUIRED_FACECLAW_FIRMWARE_VERSION, type FirmwareInfo } from "../g2/firmware-compat";
 import { type CompassEvent } from "./compass-types";
+import { type ImuReading } from "./imu-types";
+import { kotlinListener } from "./kotlin-listener.ios";
 import { fromData, toData } from "./kotlin-data";
 import { previewPixels } from "./ios-graphics";
 import { iosBluetooth } from "./ios-bluetooth";
@@ -14,6 +16,7 @@ declare const FaceclawKitFaceclawBleCommunicatorListener: any;
 declare const FaceclawKitIosAncsListener: any;
 declare const FaceclawKitIosAudioPacketListener: any;
 declare const FaceclawKitFaceclawCompassListener: any;
+declare const FaceclawKitFaceclawImuListener: any;
 
 
 export type CommunicatorPhase =
@@ -642,6 +645,20 @@ export class FaceclawCommunicatorBridge {
     proxy.handler = listener;
     this.communicator.addCompassListenerListener(proxy);
     return () => { this.communicator.removeCompassListenerListener(proxy); };
+  }
+
+  /** The glasses accelerometer (ImuCtrl); the core ignores it until the session is ready. */
+  setImuReportEnabled(enable: boolean, reportFreq: number): void {
+    this.communicator.setImuReportEnabledEnableReportFrq(Boolean(enable), Math.max(0, Math.round(reportFreq)));
+  }
+
+  addImuListener(listener: (reading: ImuReading) => void): () => void {
+    const proxy = kotlinListener(FaceclawKitFaceclawImuListener, {
+      onImuDataXYZEventSource: (x: number, y: number, z: number, source: number) =>
+        listener({ x: Number(x), y: Number(y), z: Number(z), source: Number(source) }),
+    });
+    this.communicator.addImuListenerListener(proxy);
+    return () => { this.communicator.removeImuListenerListener(proxy); };
   }
 
   /**

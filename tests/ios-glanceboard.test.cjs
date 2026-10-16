@@ -100,13 +100,14 @@ function fixture() {
     waitForFrameFinished() { return Promise.resolve('composited'); }
   }
   const noop = () => () => {};
+  const imu = load('app/native/imu.ios.ts', { './imu-types': {} }), imuSent = [];
   class FaceclawCommunicatorBridge extends Display {
     phase = 'disconnected'; listeners = {};
     constructor() { super(); bridge = this; }
     on(kind, fn) { this.listeners[kind] = fn; return () => { if (this.listeners[kind] === fn) delete this.listeners[kind]; }; }
     onStateChange(fn) { return this.on('state', fn); } onRingEvent(fn) { return this.on('ring', fn); }
     onWearState(fn) { return this.on('wear', fn); } onBatteryState() { return noop(); } onFirmwareInfo() { return noop(); }
-    onFrameMetrics() { return noop(); } onPreviewAnimationFrame() { return noop(); } addCompassListener() { return noop(); } onAncsRelayFrame() { return noop(); }
+    onFrameMetrics() { return noop(); } onPreviewAnimationFrame() { return noop(); } addCompassListener() { return noop(); } addImuListener(fn) { this.imuListener = fn; return noop(); } setImuReportEnabled(on, freq) { imuSent.push([on, freq]); } onAncsRelayFrame() { return noop(); }
     onAncsAuthorization() { return noop(); } setRequiresAncs() {} rightWriteLimit() { return 20; } onPhoneLockSignal() {}
     async writeRawToRight() {} async configureBrightness() {} async setBrightness() {} async enableWearDetectionAndRequestState() {} async playBuzzerSequence() {} async close() {}
     emitState(phase, status = phase) { if (phase === 'connected' || phase === 'disconnected') this.phase = phase; this.listeners.state?.({ phase, status }); }
@@ -136,6 +137,7 @@ function fixture() {
     '../native/notification-icons.ios': { bindIosNotifications() {}, iosNotificationsChanged() {}, onIosNotificationPopup: () => () => {}, readActiveNotifications: () => [] },
     '../native/notification-sources': { shouldShowNotificationOnGlasses: () => true },
     "../native/compass.ios": { bindCompassSession() {}, receiveCompassEvent() {} },
+    "../native/imu.ios": imu,
     '@nativescript/core': { File: { fromPath: () => ({ writeTextSync() {} }) },
       knownFolders: { documents: () => ({ path: '/tmp' }) }, path },
     '../native/ios-voice-input': { iosVoiceInput: { handleSessionEnded() {}, stopPhoneCapture() {} } },
@@ -204,7 +206,7 @@ function fixture() {
   async function phone(type, origin = 'ring') { controller.gesture(type, origin); await render(); }
   async function connect() { await controller.connect(); await render(); }
   return { controller, shell, remoteHost, keyboardChanged: session => shellOptions.onKeyboardInputChanged(session), settings, phoneState, observers,
-    get bridge() { return bridge; }, connect, wear: wearing => bridge.emitWear(wearing), settingsChanged: () => settingsChanged(), sent, previews, received, boardStats, hardware, phone, advance, render };
+    get bridge() { return bridge; }, connect, imu, imuSent, wear: wearing => bridge.emitWear(wearing), settingsChanged: () => settingsChanged(), sent, previews, received, boardStats, hardware, phone, advance, render };
 }
 const assertBlank = pixels => assert.ok(pixels.every(p => p === 0));
 const assertBoard = pixels => {
@@ -252,4 +254,15 @@ test('a firmware halt keeps a status line that names this app, like its alert', 
   const state = f.controller.connectionState;
   assert.equal(state.phase, 'error');
   assert.equal(state.status, 'The glasses firmware is not compatible with this version of OcuSmart. Install the custom firmware, then connect.');
+});
+
+test('the IMU stream requested before Connect starts once the session is ready and readings fan out', async () => {
+  const f = fixture();
+  const readings = [];
+  f.imu.addImuListener(r => readings.push(r.x));
+  f.imu.setImuReportEnabled(true, 200);
+  await f.connect();
+  assert.deepEqual(f.imuSent, [[true, 200]]);
+  f.bridge.imuListener({ x: 0.5, y: 0, z: 1, source: 2 });
+  assert.deepEqual(readings, [0.5]);
 });
