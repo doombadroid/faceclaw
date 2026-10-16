@@ -4,35 +4,26 @@ import { getRuntime } from './runtime'
 import type { SessionState } from '../../g2/ios-preview-controller'
 import { presentDetour } from './detour'
 import { showFirmwareAlert } from './firmware-alert'
-import { firmwareSummary } from './firmware-info'
+import { firmwareSummary, reportedState } from './firmware-info'
 import { pushInTab, selectTab } from './shell'
-import { isPreviewOnlyMode } from '../onboarding-state'
+import { launchableAppCount } from './app-catalog'
+import { PHASE_LABELS } from './device-page'
+import { categoryValue } from './settings-page'
 import { resumeAutoReconnect, suppressAutoReconnect } from '../../g2/reconnect-policy'
 import { loadDeviceAddresses, loadPairedGlassesIdentityForAddresses } from '../../g2/device-addresses'
 import { deviceAddressError } from '../../g2/ios-peripheral-identity'
 import { GlassesHardwareIdentity } from '../../g2/glasses-hardware-identity'
 import { glassesImagePath } from '../../g2/glasses-artwork'
 import { brightnessLabel, brightnessSetting, mirrorTouchSetting, onAnySettingChanged } from '../../ui/dashboard-settings'
-import { ALL_APPS } from '../../apps/all-apps'
-import { ONBOARDING_APP_ID } from '../../apps/onboarding/onboarding-progress'
-import { iosAppUnavailableReason } from '../../apps/ios-availability'
-import { getInstalledEvenHubApps } from '../../apps/evenhub/installed-apps'
+import { getInstalledEvenHubFingerprint } from '../../apps/evenhub/installed-apps'
 import type { PhoneUiButton } from '../../apps/evenhub/manager'
 
-const PHASE_LABELS = { connected: 'Connected', disconnected: 'Not Connected', connecting: 'Connecting…',
-  retrying: 'Reconnecting…', disconnecting: 'Disconnecting…', error: 'Connection Failed' }
-
-/** What the Apps tab lists as launchable: its BUILT IN filter (same rule as apps-page listApps) plus installed EvenHub packages. */
-export function appsOnGlassesCount(): number {
-  return ALL_APPS.filter(app => app.showInLauncher !== false && app.appId !== ONBOARDING_APP_ID && app.appId !== 'settings'
-    && !iosAppUnavailableReason(app.appId)).length + getInstalledEvenHubApps().length
-}
-
 // Frame acks also emit 'connection' (state.frames); rebuild only when what the page shows changes.
+// Installs and uninstalls (from the glasses store too) write a setting, which reaches onAnySettingChanged.
 function shownKey(state: SessionState | null, button: PhoneUiButton | null): string {
   return [state?.phase, state?.status, state?.firmwareWarning, state?.battery, state?.charging, state?.capabilities,
     state?.leftVersion, state?.rightVersion, button?.icon ? button.windowId + button.title : '',
-    brightnessSetting.get(), mirrorTouchSetting.get()].join('\n')
+    brightnessSetting.get(), mirrorTouchSetting.get(), categoryValue('notifications'), getInstalledEvenHubFingerprint()].join('\n')
 }
 
 function text(value: string, className: string): Label {
@@ -41,9 +32,9 @@ function text(value: string, className: string): Label {
   return view
 }
 
-const flash = (mode: 'install' | 'uninstall') => presentDetour('phone-ui/onboarding-flash-page', { mode, fromOnboarding: false })
-
+/** `state` is the raw session for the phase; firmware and battery come from what it still reports. */
 function deviceCard(state: SessionState | null): StackLayout {
+  const reported = reportedState(state)
   const card = new StackLayout()
   card.className = 'os-glasses-card'
   const art = new Image()
@@ -54,22 +45,22 @@ function deviceCard(state: SessionState | null): StackLayout {
   card.addChild(art)
   card.addChild(text('Even G2', 'os-glasses-title'))
   card.addChild(text(PHASE_LABELS[state?.phase ?? 'disconnected'], 'os-glasses-status'))
-  card.addChild(text(firmwareSummary(state).line, 'os-glasses-status'))
-  if (state?.battery != null) {
+  card.addChild(text(firmwareSummary(reported).line, 'os-glasses-status'))
+  if (reported?.battery != null) {
     const battery = new StackLayout()
     battery.className = 'os-battery'
     battery.accessible = true; battery.accessibilityLabel = 'Glasses battery'
-    battery.accessibilityValue = `${state.battery}%${state.charging ? ', charging' : ''}`
+    battery.accessibilityValue = `${reported.battery}%${reported.charging ? ', charging' : ''}`
     const track = new GridLayout()
     track.className = 'os-battery-track'
     const fill = new StackLayout()
     fill.className = 'os-battery-fill'; fill.horizontalAlignment = 'left'
-    fill.width = { unit: '%', value: Math.max(0, Math.min(100, state.battery)) / 100 }
+    fill.width = { unit: '%', value: Math.max(0, Math.min(100, reported.battery)) / 100 }
     track.addChild(fill); battery.addChild(track)
     const caption = new GridLayout()
     caption.columns = '*,auto'
-    caption.addChild(text(state.charging ? 'Battery · Charging' : 'Battery', 'os-battery-label'))
-    const value = text(`${state.battery}%`, 'os-battery-value')
+    caption.addChild(text(reported.charging ? 'Battery · Charging' : 'Battery', 'os-battery-label'))
+    const value = text(`${reported.battery}%`, 'os-battery-value')
     GridLayout.setColumn(value, 1); caption.addChild(value)
     battery.addChild(caption)
     card.addChild(battery)
@@ -88,7 +79,7 @@ export function createPage(): Page {
   let shown = ''
   let mirror: Image | null = null
   const { page, refresh } = groupedPage({ title: 'My Glasses', build: container => {
-    const state = controller.connectionState, connected = runtime.connected, warning = state?.firmwareWarning
+    const state = controller.connectionState, connected = runtime.connected, warning = reportedState(state)?.firmwareWarning
     shown = shownKey(state, runtime.evenHubButton)
     container.addChild(spaced(section({ rows: [customRow(deviceCard(state))] }), 6))
 
@@ -119,7 +110,7 @@ export function createPage(): Page {
     lens.className = 'os-lens'; lens.addChild(view)
     container.addChild(section({ header: 'Lens', rows: [
       customRow(lens),
-      switchRow({ title: 'Touch Input on Remote', value: mirrorTouchSetting.get(), onChange: value => {
+      switchRow({ title: mirrorTouchSetting.label, value: mirrorTouchSetting.get(), onChange: value => {
         // The switch already shows it; a rebuild would cut its animation.
         mirrorTouchSetting.set(value); shown = shownKey(controller.connectionState, runtime.evenHubButton)
       } }),
@@ -130,11 +121,12 @@ export function createPage(): Page {
     container.addChild(spaced(section({ rows: [
       navRow({ tile: tile('sun.max.fill', 'blue'), title: 'Display & Brightness', value: brightnessLabel(brightnessSetting.get()),
         onTap: () => pushInTab('glasses', 'ocusmart/settings-category', { category: 'display' }) }),
-      // ponytail: no Notifications row until a phone page backs readNotificationSources; no settings category holds them.
-      navRow({ tile: tile('square.grid.2x2.fill', 'purple'), title: 'Apps on Glasses', value: String(appsOnGlassesCount()),
+      navRow({ tile: tile('bell.badge.fill', 'red'), title: 'Notifications', value: categoryValue('notifications'),
+        onTap: () => pushInTab('glasses', 'ocusmart/settings-category', { category: 'notifications' }) }),
+      navRow({ tile: tile('square.grid.2x2.fill', 'purple'), title: 'Apps on Glasses', value: String(launchableAppCount()),
         onTap: () => selectTab('apps') }),
       navRow({ tile: tile('hand.tap.fill', 'green'), title: 'Remote & Touchpads', onTap: () => pushInTab('glasses', 'ocusmart/remote') }),
-      navRow({ tile: tile('gear', 'gray'), title: 'Software Update', badge: warning ? '1' : undefined,
+      navRow({ tile: tile('arrow.down.circle.fill', 'gray'), title: 'Software Update', badge: warning ? '1' : undefined,
         onTap: () => pushInTab('glasses', 'ocusmart/update') }),
     ] })))
 
@@ -144,21 +136,12 @@ export function createPage(): Page {
       else { resumeAutoReconnect(); void controller.connect() }
     } }))
     rows.push(
-      navRow({ title: 'Connection Details', onTap: () => { void Dialogs.alert({ title: 'Connection details', message: controller.connectionDetails, okButtonText: 'OK' }) } }),
-      navRow({ title: 'Pair Glasses', onTap: () => { void presentDetour('phone-ui/onboarding-unpair-page') } }),
+      navRow({ title: 'Connection Details', onTap: () => { void Dialogs.alert({ title: 'Connection Details', message: controller.connectionDetails, okButtonText: 'OK' }) } }),
+      navRow({ title: 'Pair Glasses', onTap: () => { void presentDetour('ocusmart/setup') } }),
+      // Configure, firmware check/install/uninstall and Permissions live there.
       navRow({ title: 'Device Settings', onTap: () => pushInTab('glasses', 'ocusmart/device') }),
     )
     container.addChild(section({ header: 'Connection', footer: state?.status, rows }))
-
-    // ponytail: Phase 1 device actions stay here until the Device page lands; integration decides whether to drop them.
-    container.addChild(section({ header: 'Firmware & Devices', rows: [
-      navRow({ title: 'Configure Devices', onTap: () => { void presentDetour('phone-ui/config-page', { onboarding: isPreviewOnlyMode() }) } }),
-      navRow({ title: 'Check Firmware', onTap: () => { void presentDetour('phone-ui/onboarding-firmware-check-page') } }),
-      navRow({ title: 'Install Custom Firmware', onTap: () => { void flash('install') } }),
-      navRow({ title: 'Uninstall Custom Firmware', onTap: () => { void flash('uninstall') } }),
-      // The old menu opened Permissions without dropping the connection.
-      navRow({ title: 'Permissions', onTap: () => { void presentDetour('phone-ui/permissions-page', undefined, false) } }),
-    ] }))
   } })
   const refreshIfChanged = () => { if (shownKey(controller.connectionState, runtime.evenHubButton) !== shown) refresh() }
   let offs: (() => void)[] = []
@@ -170,7 +153,7 @@ export function createPage(): Page {
       // Saved devices, pairing or firmware can change inside a detour.
       runtime.on('detour', open => { if (!open) refresh() }),
     ]
-    // Installed apps and the paired identity are not evented.
+    // The paired identity is not evented.
     refresh()
   })
   page.on('unloaded', () => { for (const off of offs) off(); offs = [] })

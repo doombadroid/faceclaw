@@ -5,6 +5,7 @@ import type { InputEvent } from "../../ui/gestures";
 import { FACECLAW_VERSION } from "../../version";
 import { onboardingFont } from "./onboarding-fonts";
 import { PAGE_X, type OnboardingNav, type OnboardingPage } from "./onboarding-page";
+import { APP_NAME } from "../../branding";
 
 const LOGO_MAX_HEIGHT = 180;
 const LOGO_MARGIN = 12;
@@ -24,7 +25,7 @@ export class WelcomePage implements OnboardingPage {
     const logoWidth = logo ? logo.width + LOGO_TEXT_GAP : 0;
     const body = onboardingFont("body");
     const lines: TextLine[] = [
-      { font: onboardingFont("hero"), text: "Faceclaw", value: 240, spaceBefore: 0 },
+      { font: onboardingFont("hero"), text: APP_NAME, value: 240, spaceBefore: 0 },
       { font: body, text: `Version ${FACECLAW_VERSION}`, value: 150, spaceBefore: 0 },
       ...wrapText(body, PROMPT, width - 2 * PAGE_X - logoWidth).map((text, index) => ({
         font: body,

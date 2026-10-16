@@ -20,14 +20,18 @@ export async function presentDetour(moduleName: string, context?: object, discon
     const root = Application.getRootView()
     if (detour || !root) return
     const frame = new Frame()
-    // Shared pages leave by goBack() from their first screen, or by navigating to
-    // the legacy main page; in a detour both close it. (A blank base page under
-    // the first would be what slides up: the queue reaches page two only after
-    // page one's viewDidAppear, i.e. after the presentation animation.)
+    // Shared pages leave by goBack() from their first screen, by navigating to the
+    // legacy main page, or (when canGoBack() is false, i.e. on a detour's first
+    // page) by restarting onboarding with clearHistory; in a detour all three
+    // close it. (A blank base page under the first would be what slides up: the
+    // queue reaches page two only after page one's viewDidAppear, i.e. after the
+    // presentation animation.)
     const goBack = frame.goBack.bind(frame) as Frame['goBack'], navigate = frame.navigate.bind(frame) as (entry: unknown) => void
     frame.goBack = to => { if (frame.canGoBack()) goBack(to); else frame.closeModal() }
     frame.navigate = (entry: NavigationEntry | string | (() => Page)) => {
-      if ((typeof entry === 'string' ? entry : (entry as NavigationEntry).moduleName) === RETURN_PAGE) frame.closeModal()
+      const leaves = typeof entry === 'string' ? entry === RETURN_PAGE
+        : typeof entry === 'object' && ((entry as NavigationEntry).moduleName === RETURN_PAGE || !!(entry as NavigationEntry).clearHistory)
+      if (leaves) frame.closeModal()
       else navigate(entry)
     }
     frame.navigate({ moduleName, context })

@@ -97,6 +97,21 @@ export const evenHubRememberMeSetting = new TransientBooleanSetting({
 });
 
 let transientToken = "";
+const transientListeners = new Set<() => void>();
+
+/** The This Session Only token lives in memory, so changing it writes no setting; this is its change event. */
+export function onTransientEvenHubSessionChanged(listener: () => void): () => void {
+  transientListeners.add(listener);
+  return () => {
+    transientListeners.delete(listener);
+  };
+}
+
+function setTransientToken(token: string): void {
+  if (token === transientToken) return;
+  transientToken = token;
+  for (const listener of [...transientListeners]) listener();
+}
 
 export function getEvenHubToken(): string {
   return transientToken || evenHubTokenSetting.get();
@@ -112,22 +127,22 @@ export function saveEvenHubSession(email: string, token: string, remember: boole
   if (remember) {
     evenHubEmailSetting.set(normalizedEmail);
     evenHubTokenSetting.set(normalizedToken);
-    transientToken = "";
+    setTransientToken("");
   } else {
     evenHubEmailSetting.set("");
     evenHubTokenSetting.set("");
-    transientToken = normalizedToken;
+    setTransientToken(normalizedToken);
   }
 }
 
 /** Clear a rejected token but retain a remembered email for the next login. */
 export function invalidateEvenHubToken(): void {
-  transientToken = "";
+  setTransientToken("");
   evenHubTokenSetting.set("");
 }
 
 export function clearEvenHubSession(): void {
-  transientToken = "";
+  setTransientToken("");
   evenHubEmailSetting.set("");
   evenHubTokenSetting.set("");
   clearEvenHubLoginForm();
@@ -147,7 +162,7 @@ export function clearEvenHubLoginForm(): void {
 
 /** Discard a window-scoped session; remembered sessions are left intact. */
 export function clearTransientEvenHubSession(): void {
-  if (transientToken) transientToken = "";
+  setTransientToken("");
   clearEvenHubLoginForm();
 }
 

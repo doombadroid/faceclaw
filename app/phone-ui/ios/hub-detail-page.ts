@@ -7,6 +7,7 @@ import { describeUpdate } from '../../apps/evenhub/updates'
 import { permissionDetail, permissionLabel } from '../../apps/evenhub/permissions'
 import { openPrivacyPolicyOnPhone } from '../../apps/evenhub/privacy-policy'
 import { onSettingsStoreChanged } from '../../native/settings-store'
+import { formatMegabytes } from './firmware-info'
 
 function text(value: string, className: string): Label {
   const label = new Label()
@@ -21,10 +22,11 @@ function paragraph(value: string): Row {
   return customRow(box)
 }
 
-function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+/** Decimal units, like Software Update and iOS Settings. */
+export function formatBytes(value: number): string {
+  if (value < 1000) return `${value} B`
+  if (value < 1e6) return `${(value / 1000).toFixed(1)} KB`
+  return formatMegabytes(value)
 }
 
 function formatDate(value: string): string {

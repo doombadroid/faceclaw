@@ -1,10 +1,10 @@
-import { Dialogs, type Page } from '@nativescript/core'
+import type { Page } from '@nativescript/core'
 import { groupedPage, section, navRow, buttonRow, tile, type TileColor } from './ui-kit'
 import { getRuntime } from './runtime'
 import type { SessionState } from '../../g2/ios-preview-controller'
-import { presentDetour } from './detour'
+import { restore } from './update-page'
 import { pushInTab } from './shell'
-import { firmwareSummary } from './firmware-info'
+import { firmwareSummary, reportedState } from './firmware-info'
 import { deviceCell, deviceKey, deviceLine } from './device-page'
 import { SETTINGS_CATEGORIES, settingsCategory } from '../../ui/dashboard/settings-catalog'
 import { brightnessSetting, onAnySettingChanged } from '../../ui/dashboard-settings'
@@ -33,17 +33,10 @@ export function categoryValue(id: string): string {
   }
 }
 
-/** Uninstall is offered only while the glasses report Faceclaw's own firmware. */
+/** Uninstall is offered only while the glasses (still) report Faceclaw's own firmware. */
 export function runsFaceclawFirmware(state: SessionState | null): boolean {
-  const kind = firmwareSummary(state).extension?.kind
+  const kind = firmwareSummary(reportedState(state)).extension?.kind
   return kind === 'faceclaw' || kind === 'legacy-faceclaw'
-}
-
-async function confirmUninstall(): Promise<void> {
-  const ok = await Dialogs.confirm({ title: 'Uninstall Custom Firmware?',
-    message: `This flashes Even's stock firmware ${BASE_STOCK_VERSION_TEXT} back onto the glasses.`,
-    okButtonText: 'Continue', cancelButtonText: 'Cancel' })
-  if (ok) await presentDetour('phone-ui/onboarding-flash-page', { mode: 'uninstall', fromOnboarding: false })
 }
 
 const rootKey = (state: SessionState | null) => [deviceKey(state), ...SETTINGS_CATEGORIES.map(category => categoryValue(category.id))].join('\n')
@@ -64,12 +57,12 @@ export function createPage(): Page {
     }) }))
     container.addChild(section({ rows: [
       navRow({ tile: tile('gearshape.fill', 'gray'), title: 'General', onTap: () => pushInTab('settings', 'ocusmart/about') }),
-      navRow({ tile: tile('arrow.down.circle.fill', 'gray'), title: 'Software Update', badge: state?.firmwareWarning ? '1' : undefined,
+      navRow({ tile: tile('arrow.down.circle.fill', 'gray'), title: 'Software Update', badge: reportedState(state)?.firmwareWarning ? '1' : undefined,
         onTap: () => pushInTab('settings', 'ocusmart/update') }),
     ] }))
     if (runsFaceclawFirmware(state)) container.addChild(section({
       footer: `Puts Even's stock firmware ${BASE_STOCK_VERSION_TEXT} back on the glasses.`,
-      rows: [buttonRow({ title: 'Uninstall Custom Firmware', role: 'destructive', onTap: () => { void confirmUninstall() } })] }))
+      rows: [buttonRow({ title: 'Uninstall Custom Firmware', role: 'destructive', onTap: () => { void restore('Uninstall Custom Firmware?', 'Continue') } })] }))
   } })
   let offs: (() => void)[] = []
   const refreshIfChanged = () => { if (rootKey(controller.connectionState) !== shown) refresh() }

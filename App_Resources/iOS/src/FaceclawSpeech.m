@@ -75,11 +75,11 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
 - (NSString *)startWithEndpointing:(BOOL)endpointing phone:(BOOL)phone pcm:(BOOL)pcm {
     [self cancel];
     if (phone && [FaceclawSpeech microphoneAuthorizationStatus] != AVAuthorizationStatusAuthorized)
-        return @"Allow Microphone access for Faceclaw in iPhone Settings.";
+        return @"Allow Microphone access for OcuSmart in iPhone Settings.";
     NSString *language = NSLocale.preferredLanguages.firstObject ?: @"en-US";
     if (!pcm) {
         if (SFSpeechRecognizer.authorizationStatus != SFSpeechRecognizerAuthorizationStatusAuthorized)
-            return @"Allow Speech Recognition for Faceclaw in iPhone Settings.";
+            return @"Allow Speech Recognition for OcuSmart in iPhone Settings.";
         self.recognizer = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:language]];
         if (!self.recognizer.supportsOnDeviceRecognition)
             return [NSString stringWithFormat:@"On-device speech is unavailable for %@. Enable Dictation for that language in iPhone Settings → General → Keyboard, then retry.", language];

@@ -127,6 +127,24 @@ test('the device-page restyle leaves OcuSmart pages and the Remote page as they 
   }
 });
 
+test('kit rows: a switch row is 44pt with no theme margin, and page classes on a kit row win without compound selectors', async () => {
+  const style = await styler();
+  const row = ['Page.os-page', 'ScrollView', 'StackLayout.os-grouped', 'StackLayout.os-section', 'StackLayout.os-card'];
+  for (const dark of [false, true]) {
+    // core.css: .ns-ios Switch { margin: 8 15 }, which made switch rows 59pt and inset the switch 31pt.
+    assert.equal(style(tree(dark, ...row, 'GridLayout.os-row', 'Switch')).margin, '0');
+    assert.equal(style(tree(dark, ...row, 'GridLayout.os-row')).padding, '6 16');
+  }
+  assert.equal(style(tree(false, ...row, 'GridLayout.os-row.os-device-cell'))['min-height'], '76');
+  assert.equal(style(tree(false, ...row, 'GridLayout.os-row.os-device-cell')).padding, '11 16 11 12');
+  assert.equal(style(tree(false, ...row, 'StackLayout.os-row.os-about-head')).padding, '16');
+  assert.equal(style(tree(false, ...row, 'GridLayout.os-row.os-hub-header')).padding, '14 16');
+  assert.equal(style(tree(false, ...row, 'StackLayout.os-row.os-hub-paragraph')).padding, '11 16');
+  const icon = ['Page.os-page', 'GridLayout.os-update-header', 'GridLayout.os-tile.os-tile-gray.os-update-icon'];
+  assert.deepEqual([style(tree(false, ...icon)).width, style(tree(false, ...icon))['background-color']], ['54', '#1C1C1E']);
+  assert.equal(style(tree(true, ...icon))['background-color'], '#2C2C2E');
+});
+
 test('the Set Up intro is a system-background sheet with a radius-14 filled Continue', async () => {
   const style = await styler();
   assert.equal(style(tree(false, 'Page.os-page.os-setup'))['background-color'], '#FFFFFF');

@@ -4,6 +4,7 @@ import { firmwareSha256, readFirmwareFile } from './firmware-files.ios'
 import { iosBluetooth } from './ios-bluetooth'
 import { kotlinListener } from './kotlin-listener.ios'
 import type { FlashState, FlashProgress } from '../g2/firmware-types'
+import { APP_NAME } from '../branding'
 export type { FlashState, FlashProgress } from '../g2/firmware-types'
 
 declare const FaceclawKitIosFirmwareFlasher: any, FaceclawKitFaceclawFirmwareFlasherListener: any
@@ -57,7 +58,7 @@ export class FirmwareFlasher {
   }
 
   private readonly backgrounded = () => {
-    this.foregroundError = 'Flashing was interrupted because Faceclaw left the foreground. Keep both lenses charged, return to Faceclaw, and retry both lenses.'
+    this.foregroundError = `Flashing was interrupted because ${APP_NAME} left the foreground. Keep both lenses charged, return to ${APP_NAME}, and retry both lenses.`
     this.cancel()
   }
 
@@ -66,7 +67,7 @@ export class FirmwareFlasher {
     UIApplication.sharedApplication.idleTimerDisabled = true
     Application.on(Application.suspendEvent, this.backgrounded)
     try {
-      if (UIApplication.sharedApplication.applicationState !== UIApplicationState.Active) throw new Error('Keep Faceclaw open on the iPhone while flashing.')
+      if (UIApplication.sharedApplication.applicationState !== UIApplicationState.Active) throw new Error(`Keep ${APP_NAME} open on the iPhone while flashing.`)
       this.emit(this.stateListeners, 'validating', '')
       const image = readFirmwareFile(this.path)
       const hash = firmwareSha256(image.buffer)

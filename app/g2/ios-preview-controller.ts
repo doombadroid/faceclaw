@@ -52,6 +52,7 @@ import { onAnySettingChanged,
 import type { VoiceProviderSelection } from '../native/cloud-stt-provider'
 import type { PhoneGesture } from '../phone-ui/phone-gestures'
 import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from '../apps/onboarding/onboarding-progress'
+import { APP_NAME } from '../branding'
 
 const SHELL_SURFACE_ID = 'shell'
 const SHELL_SURFACE_Z_ORDER = 1
@@ -68,6 +69,9 @@ export type SessionState = { phase: SessionPhase; status: string; battery: numbe
 function ancsCapable(capabilities: string): boolean {
   return /^Faceclaw\/(\d+)/.test(capabilities) && Number(capabilities.split('/')[1]) >= ANCS_FIRMWARE_VERSION
 }
+
+/** What a session reports about the glasses, before it has reported anything. */
+const NO_REPORT = { capabilities: '', leftVersion: '', rightVersion: '', firmwareWarning: '', battery: null, charging: null, ring: false } as const
 
 /**
  * iOS host for the shared app registry, shell and BLE session. The session,
@@ -719,6 +723,16 @@ export class IosPreviewController {
     const state = this.connectionState
     return state ? `${state.status}\nL: ${state.leftVersion || 'unknown'}\nR: ${state.rightVersion || 'unknown'}\nBattery: ${state.battery ?? '?'}%\nRing: ${state.ring ? 'connected' : 'disconnected'}\nFrames acknowledged: ${state.frames}\n${state.capabilities}\n\n${this.logLines.slice(-12).join('\n')}` : 'Preview only. Configure devices, then connect.'
   }
+  /**
+   * Forget what the ended session reported. A halted session keeps its versions and
+   * warning (they say why it halted) until the next connect(); a device detour
+   * (pairing, flash, config) can change all of them first.
+   */
+  forgetSessionReport(): void {
+    if (this.communicator) return
+    this.state = { ...this.state, ...NO_REPORT }
+    this.emitState()
+  }
   private update(phase: SessionPhase, status: string): void {
     this.state = { ...this.state, phase, status }
     this.logBluetooth(status)
@@ -748,7 +762,7 @@ export class IosPreviewController {
     this.connecting = true
     this.sessionCreated = true
     try {
-      this.state = { ...this.state, capabilities: '', leftVersion: '', rightVersion: '', firmwareWarning: '', battery: null, charging: null, ring: false }
+      this.state = { ...this.state, ...NO_REPORT }
       this.firmwareCompatible = false
       this.update('connecting', 'Finding configured devices…')
       let identifiers
@@ -984,7 +998,7 @@ export class IosPreviewController {
     shell.startKeyboardInput()
   }
   private async editSetting(setting: { editorTitle: string; inputKind?: string; get(): string; set(value: string): void; validationError?(value?: string): string | null }): Promise<boolean> {
-    if (!this.active) { this.logBluetooth('Editing text settings requires opening Faceclaw on the phone'); return false }
+    if (!this.active) { this.logBluetooth(`Editing text settings requires opening ${APP_NAME} on the phone`); return false }
     let draft = setting.get()
     while (true) {
       const result = await Dialogs.prompt({ title: setting.editorTitle, defaultText: draft, inputType: setting.inputKind, okButtonText: 'Save', cancelButtonText: 'Cancel' })

@@ -29,7 +29,7 @@ function harness() {
   const settings = settingsFixture();
   // Menu builders that remember their setting, so the glasses tree can be walked.
   const menuItem = setting => ({ label: setting.label, setting });
-  const calls = [];
+  const calls = [], messages = [];
   const mocks = {
     '../dashboard-settings': { ...settings, enumSettingMenuItem: menuItem, toggleSettingMenuItem: menuItem, textSettingMenuItem: menuItem },
     '../../ui/dashboard-settings': { ...settings, enumSettingMenuItem: menuItem, toggleSettingMenuItem: menuItem },
@@ -39,7 +39,7 @@ function harness() {
     './remote-input-menu': { remoteInputMenuItem: () => ({ label: 'Input tokens' }) },
     '../font-picker': { uiFontPickerMenuItem: () => ({ label: 'Font' }) },
     '@nativescript/core': { knownFolders: { currentApp: () => { throw new Error('no bundle'); } },
-      Dialogs: { confirm: async options => { calls.push(['confirm', options.title]); return true; } } },
+      Dialogs: { confirm: async options => { calls.push(['confirm', options.title]); messages.push(options.message); return true; } } },
     '../../graphics/ui-fonts': {}, '../../graphics/logo': {}, '../../graphics/textwrap': {}, '../../version': { FACECLAW_VERSION: 'test' },
     '../../native/llama': { LOCAL_MODEL: { sizeBytes: 1e9, label: 'local' } },
     '../../native/asr-model': { ASR_MODELS: { moonshine: { totalBytes: 1e6, label: 'Moonshine' }, 'whisper-base-en': { totalBytes: 1e6, label: 'Whisper' } } },
@@ -56,7 +56,7 @@ function harness() {
     '../../native/notification-sources': { readNotificationSources: () => [], setNotificationSourceEnabled() {} },
   };
   const load = loader({ global: { isIOS: true } }, mocks);
-  return { settings, mocks, load, calls };
+  return { settings, mocks, load, calls, messages };
 }
 
 /** Every setting the glasses Settings app reaches on iOS, opening each submenu. */
@@ -251,10 +251,10 @@ function rootMocks(state, calls = []) {
 
 test('Settings root: Uninstall only on Faceclaw firmware (confirmed, then the flash detour), update badge on a warning', async () => {
   const build = state => {
-    const { load, mocks, calls } = harness();
+    const { load, mocks, calls, messages } = harness();
     Object.assign(mocks, rootMocks(state, calls));
     const page = load('app/phone-ui/ios/settings-page.ts').createPage();
-    return { calls, rows: rows(page) };
+    return { calls, messages, rows: rows(page) };
   };
   const session = extra => ({ phase: 'connected', leftVersion: '2.3.0.24', rightVersion: '2.3.0.24', capabilities: '', firmwareWarning: '', ...extra });
   assert.ok(!build(session()).rows.some(row => row.title === 'Uninstall Custom Firmware'), 'stock firmware');
@@ -266,6 +266,9 @@ test('Settings root: Uninstall only on Faceclaw firmware (confirmed, then the fl
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(JSON.parse(JSON.stringify(faceclaw.calls)), [['confirm', 'Uninstall Custom Firmware?'],
     ['detour', 'phone-ui/onboarding-flash-page', { mode: 'uninstall', fromOnboarding: false }]]);
+  assert.match(faceclaw.messages[0], /OcuSmart needs Faceclaw firmware to work with your glasses/, 'the consequence Software Update states too');
+  assert.ok(!build(session({ capabilities: 'Faceclaw/37', phase: 'disconnected' })).rows.some(row => row.title === 'Uninstall Custom Firmware'),
+    'a disconnected session no longer reports what is installed');
   const update = state => build(state).rows.find(row => row.title === 'Software Update');
   assert.equal(update(session()).badge, undefined);
   assert.equal(update(session({ firmwareWarning: 'Install r37' })).badge, '1');

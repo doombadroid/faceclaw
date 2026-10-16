@@ -1,6 +1,7 @@
 import type { VoiceControlState, VoiceTranscriptEvent } from './voice-control'
 import type { CloudSttClient, CloudSttTranscriptEvent } from './cloud-stt'
 import { createCloudSttClient, usesCloudStt, type VoiceProviderSelection } from './cloud-stt-provider'
+import { APP_NAME } from '../branding'
 
 declare const FaceclawSpeech: any
 export type IosMicrophoneSession = {
@@ -58,18 +59,18 @@ export class IosVoiceControlBridge {
     if (!usesCloudStt(voice)) {
       let status = FaceclawSpeech.authorizationStatus()
       if (status === 0) {
-        if (!foreground) { this.setStatus('Open Faceclaw on the phone once to allow Speech Recognition.'); return false }
+        if (!foreground) { this.setStatus(`Open ${APP_NAME} on the phone once to allow Speech Recognition.`); return false }
         status = await new Promise<number>(resolve => FaceclawSpeech.requestAuthorization(resolve))
       }
-      if (status !== 3) { this.setStatus('Allow Speech Recognition for Faceclaw in iPhone Settings.'); return false }
+      if (status !== 3) { this.setStatus(`Allow Speech Recognition for ${APP_NAME} in iPhone Settings.`); return false }
     }
     if (usePhoneMic) {
       let microphoneStatus = FaceclawSpeech.microphoneAuthorizationStatus()
       if (microphoneStatus === 0) {
-        if (!foreground) { this.setStatus('Open Faceclaw on the phone to allow microphone access.'); return false }
+        if (!foreground) { this.setStatus(`Open ${APP_NAME} on the phone to allow microphone access.`); return false }
         microphoneStatus = await new Promise<number>(resolve => FaceclawSpeech.requestMicrophoneAuthorization(resolve))
       }
-      if (microphoneStatus !== 3) { this.setStatus('Allow Microphone access for Faceclaw in iPhone Settings.'); return false }
+      if (microphoneStatus !== 3) { this.setStatus(`Allow Microphone access for ${APP_NAME} in iPhone Settings.`); return false }
     }
     return true
   }

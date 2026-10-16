@@ -84,6 +84,7 @@ import {
 import { wearBridge } from "../../native/wear-bridge";
 import { openSettingsSubMenu, SettingsPanelLayer, type SettingsSection } from "./settings-panel";
 import { uiFontPickerMenuItem } from "../font-picker";
+import { APP_NAME } from "../../branding";
 
 /** The Settings app's master-detail panel (sections on the left, contents on the right). */
 export function createSettingsPanelLayer(): SettingsPanelLayer {
@@ -199,7 +200,7 @@ function settingsSections(): SettingsSection[] {
         enumSettingMenuItem(dataCollectionSetting),
         ...(global.isIOS ? [{
           label: "iOS / TestFlight privacy",
-          description: "Apple's beta reports are separate from Faceclaw statistics. Tap to read.",
+          description: `Apple's beta reports are separate from ${APP_NAME} statistics. Tap to read.`,
           onSelect: (ctx: LayerContext) => ctx.stack.push(new TextViewerLayer(IOS_PRIVACY_NOTICE, "iOS / TestFlight privacy")),
         }] : []),
         bundledDocMenuItem("PRIVACY", "Privacy policy"),
@@ -544,7 +545,7 @@ function renderAbout(args: { image: GrayImage; x: number; y: number; width: numb
     image.bitBlt(logo, x, y + 4, { transparentZero: true });
   }
   const textX = logo ? x + logo.width + 12 : x;
-  image.drawText(font, textX, y + 8, "Faceclaw", 220);
+  image.drawText(font, textX, y + 8, APP_NAME, 220);
   image.drawText(font, textX, y + 24, `v${FACECLAW_VERSION}`, 170);
   const blurb = "By James Babcock and other contributors. Distributed under the GNU General Public License, version 3.";
   const blurbY = y + Math.max(64, logo ? logo.height + 12 : 0);

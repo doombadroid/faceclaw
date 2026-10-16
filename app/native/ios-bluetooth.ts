@@ -2,6 +2,7 @@ import { ApplicationSettings } from '@nativescript/core'
 import { identifyIosPeripheral, type IosAdvertisement, type IosDevice } from '../g2/ios-peripheral-identity'
 import { hexToBytes } from '../util/hex-util'
 import { kotlinListener } from './kotlin-listener.ios'
+import { APP_NAME } from '../branding'
 
 declare const FaceclawKitIosBleCentral: any, FaceclawKitIosProtocolPlatform: any, FaceclawKitIosBleScanListener: any
 
@@ -70,7 +71,7 @@ export class IosBluetooth {
         if (event.kind !== 'state') return
         if (event.state === BLE_STATE_POWERED_ON) finish()
         else if (event.state === BLE_STATE_UNSUPPORTED) finish(new Error('Bluetooth is unavailable on this device. Use the physical iPhone.'))
-        else if (event.state === BLE_STATE_UNAUTHORIZED) finish(new Error('Allow Faceclaw to use Bluetooth in iPhone Settings.'))
+        else if (event.state === BLE_STATE_UNAUTHORIZED) finish(new Error(`Allow ${APP_NAME} to use Bluetooth in iPhone Settings.`))
         else if (event.state === BLE_STATE_POWERED_OFF) finish(new Error('Turn on Bluetooth, then try again.'))
       })
       const timer = setTimeout(() => finish(new Error('Waiting for Bluetooth permission timed out. Try again after allowing Bluetooth.')), 30_000)

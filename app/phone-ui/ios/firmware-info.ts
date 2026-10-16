@@ -29,11 +29,14 @@ export function firmwareSummary(state: SessionState | null): FirmwareSummary {
 }
 
 /**
- * The session's report, only while it is live: disconnect() keeps the last
- * versions, which go stale once a flash or another phone changes the firmware.
+ * The session's report while it still describes the glasses: a live session, or
+ * one the firmware check halted (its versions are why it halted, and the warning
+ * pages point here). disconnect() keeps the last versions and battery, which go
+ * stale once the user disconnects, a flash runs or another phone connects; every
+ * page reads firmware, battery and warnings through this, phase and status raw.
  */
 export function reportedState(state: SessionState | null): SessionState | null {
-  return state?.phase === 'connected' ? state : null
+  return state?.phase === 'connected' || (state?.phase === 'error' && !!state.firmwareWarning) ? state : null
 }
 
 /** 'unknown' until reported; 'newer' means installing the bundled revision would downgrade. */

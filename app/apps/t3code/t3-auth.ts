@@ -1,3 +1,5 @@
+import { APP_NAME } from "../../branding";
+
 /**
  * HTTP half of connecting to a T3 Code environment: the unauthenticated
  * environment descriptor, the one-time pairing-token exchange (RFC 8693, form
@@ -95,7 +97,7 @@ function describeFailure(status: number, body: string, what: string): string {
       return "That pairing link doesn't grant enough access. Run `t3 pair` for a new one.";
   }
   if (status === 426 || parsed?.code === "orchestration_protocol_incompatible") {
-    return "This T3 Code server speaks a different protocol version. Update T3 Code and Faceclaw.";
+    return `This T3 Code server speaks a different protocol version. Update T3 Code and ${APP_NAME}.`;
   }
   return `Server error (HTTP ${status}${reason ? `, ${reason}` : ""}).`;
 }

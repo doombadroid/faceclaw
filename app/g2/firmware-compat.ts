@@ -1,3 +1,5 @@
+import { APP_NAME } from "../branding";
+
 /**
  * Compatibility check for the glasses firmware. Faceclaw requires its own
  * custom firmware at a specific revision.
@@ -122,24 +124,24 @@ export function firmwareIncompatibilityMessage(info: FirmwareInfo): string | nul
       if (extension.version >= REQUIRED_FACECLAW_FIRMWARE_VERSION) return null;
       return (
         `The glasses run Faceclaw firmware revision ${extension.version} (base ${versionsText}), ` +
-        `but this version of Faceclaw requires revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}. ` +
+        `but this version of ${APP_NAME} requires revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}. ` +
         "Install the updated custom firmware to continue."
       );
     case "legacy-faceclaw":
       return (
         `The glasses run an older version of Faceclaw's custom firmware (reported "${extension.text}", ` +
-        `base ${versionsText}). This version of Faceclaw requires ${required}. ` +
+        `base ${versionsText}). This version of ${APP_NAME} requires ${required}. ` +
         "Install the updated custom firmware to continue."
       );
     case "other":
       return (
         `The glasses run custom firmware from a different source (reported "${extension.text}", ` +
-        `base ${versionsText}). Faceclaw requires ${required}; installing it will replace the current firmware.`
+        `base ${versionsText}). ${APP_NAME} requires ${required}; installing it will replace the current firmware.`
       );
     default:
       return (
-        `The glasses report stock firmware ${versionsText}. Faceclaw requires ${required}. ` +
-        "Faceclaw will not work until the custom firmware is installed."
+        `The glasses report stock firmware ${versionsText}. ${APP_NAME} requires ${required}. ` +
+        `${APP_NAME} will not work until the custom firmware is installed.`
       );
   }
 }

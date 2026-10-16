@@ -27,9 +27,9 @@ const teardown = node => {
   [...(node.children ?? []), ...(node.rows ?? []), node.view, node.tile].forEach(teardown);
 };
 
-function setup({ state = null, configured = true, serial = '', apps = [], installed = [] } = {}) {
+function setup({ state = null, configured = true, serial = '', apps = [], installed = [], notifications = '2 of 3' } = {}) {
   const calls = [], listeners = new Map(), settingListeners = new Set();
-  const settings = { brightness: 'auto', mirrorTouch: true }, env = { configured };
+  const settings = { brightness: 'auto', mirrorTouch: true, notifications }, env = { configured, installed };
   let build = null, container = null, refreshes = 0;
   const page = { handlers: {}, on(event, fn) { this.handlers[event] = fn; } };
   const row = kind => options => ({ kind, ...options });
@@ -66,11 +66,12 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
     '../../ui/dashboard-settings': {
       brightnessSetting: { get: () => settings.brightness },
       brightnessLabel: value => value === 'auto' ? 'Auto' : value,
-      mirrorTouchSetting: { get: () => settings.mirrorTouch, set: value => { settings.mirrorTouch = value; } },
+      mirrorTouchSetting: { label: 'Touch mirror', get: () => settings.mirrorTouch, set: value => { settings.mirrorTouch = value; } },
       onAnySettingChanged: fn => { settingListeners.add(fn); return () => settingListeners.delete(fn); },
     },
     '../../apps/all-apps': { ALL_APPS: apps },
-    '../../apps/evenhub/installed-apps': { getInstalledEvenHubApps: () => installed },
+    '../../apps/evenhub/installed-apps': { getInstalledEvenHubApps: () => env.installed, getInstalledEvenHubFingerprint: () => JSON.stringify(env.installed) },
+    './settings-page': { categoryValue: id => id === 'notifications' ? settings.notifications : '' },
   });
   const api = load('app/phone-ui/ios/glasses-page.ts');
   api.createPage();
@@ -168,15 +169,17 @@ test('My Glasses firmware warning adds Attention Needed and the update badge', (
   assert.deepEqual(page.calls.at(-1), ['push', 'glasses', 'ocusmart/update']);
 });
 
-test('My Glasses counts launchable apps that run on iOS, plus installed EvenHub packages', () => {
-  // Same as the Apps tab's BUILT IN: no launcher, onboarding or glasses Settings.
+test('My Glasses counts launchable apps that run on iOS, plus installed EvenHub packages, and follows installs', () => {
+  // app-catalog's rule, the Apps tab's BUILT IN + FROM EVEN HUB: no launcher, onboarding, glasses Settings or iOS-unavailable apps.
   const apps = [{ appId: 'launcher', showInLauncher: false }, { appId: 'onboarding' }, { appId: 'settings' },
     { appId: 'timer' }, { appId: 'music' }, { appId: 'weather' }];
   const page = setup({ apps, installed: [{ packageId: 'a' }, { packageId: 'b' }] });
-  assert.equal(page.api.appsOnGlassesCount(), 4);
   assert.equal(page.find('Apps on Glasses').value, '4');
   page.find('Apps on Glasses').onTap();
   assert.deepEqual(page.calls.at(-1), ['tab', 'apps']);
+  // An install from the glasses store writes a setting while this page is on screen.
+  page.env.installed = [...page.env.installed, { packageId: 'c' }]; page.settingsChanged();
+  assert.equal(page.find('Apps on Glasses').value, '5');
 });
 
 test('My Glasses routes rows to their pages', () => {
@@ -184,14 +187,37 @@ test('My Glasses routes rows to their pages', () => {
   // Calls carry objects from the vm realm; clone them into this one to compare.
   const tap = title => { page.find(title).onTap(); return structuredClone(page.calls.at(-1)); };
   assert.deepEqual(tap('Display & Brightness'), ['push', 'glasses', 'ocusmart/settings-category', { category: 'display' }]);
-  assert.equal(page.find('Notifications'), undefined, 'no row until a page backs notification sources');
+  assert.equal(page.find('Notifications').value, '2 of 3');
+  assert.deepEqual(tap('Notifications'), ['push', 'glasses', 'ocusmart/settings-category', { category: 'notifications' }]);
   assert.deepEqual(tap('Remote & Touchpads'), ['push', 'glasses', 'ocusmart/remote']);
-  assert.deepEqual(tap('Pair Glasses'), ['detour', 'phone-ui/onboarding-unpair-page']);
+  assert.equal(page.find('Software Update').tile.symbol, 'arrow.down.circle.fill', 'the same glyph as on Settings');
+  // The Set Up intro first, as from the Device page; its Back/Cancel closes the detour.
+  assert.deepEqual(tap('Pair Glasses'), ['detour', 'ocusmart/setup']);
   assert.deepEqual(tap('Device Settings'), ['push', 'glasses', 'ocusmart/device']);
-  assert.deepEqual(tap('Install Custom Firmware'), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'install', fromOnboarding: false }]);
-  assert.deepEqual(tap('Uninstall Custom Firmware'), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'uninstall', fromOnboarding: false }]);
-  assert.deepEqual(tap('Permissions'), ['detour', 'phone-ui/permissions-page', undefined, false]);
-  for (const title of ['Configure Devices', 'Check Firmware', 'Connection Details']) assert.ok(page.find(title), title);
+  tap('Connection Details');
+  assert.deepEqual(page.calls.at(-1), ['alert', 'details']);
+  // One entry point per device action: Device Settings holds them.
+  for (const title of ['Configure Devices', 'Check Firmware', 'Install Custom Firmware', 'Uninstall Custom Firmware', 'Permissions']) {
+    assert.equal(page.find(title), undefined, title);
+  }
+  assert.equal(page.sections().some(section => section.header === 'Firmware & Devices'), false);
+  assert.equal(page.rows().find(r => r.kind === 'switch').title, 'Touch mirror', "the setting's own name, as in Settings");
+});
+
+test('My Glasses shows firmware and battery only while the session still reports them', () => {
+  const page = setup({ state: connected });
+  // A user disconnect keeps the old values in the controller; they are not current any more.
+  page.setState({ ...connected, phase: 'disconnected', status: 'Preview only' });
+  assert.deepEqual(page.texts(page.card()), ['Even G2', 'Not Connected', 'Firmware not reported yet']);
+  // Stock firmware halts the session: what it reported is why, and the warning pages show it.
+  const halted = { ...connected, phase: 'error', status: 'Incompatible firmware', capabilities: '', firmwareWarning: 'Stock firmware' };
+  page.setState(halted);
+  assert.deepEqual(page.texts(page.card()).slice(0, 3), ['Even G2', 'Connection Failed', 'Even firmware 2.3.0.24']);
+  assert.ok(page.find('Attention Needed'));
+  assert.equal(page.find('Software Update').badge, '1');
+  page.setState({ ...halted, phase: 'disconnected' });
+  assert.equal(page.find('Attention Needed'), undefined, 'no warning once nothing reports it');
+  assert.equal(page.find('Software Update').badge, undefined);
 });
 
 test('My Glasses offers Open <App> on iPhone only for a button with an icon', () => {

@@ -14,8 +14,8 @@ export const CHANNEL_NAMES = { faceclaw: 'Faceclaw', even: 'Even Realities' }
 const FLASH_GUIDANCE = 'Keep both lenses powered on and nearby — each lens takes a few minutes, and the glasses ' +
   'will reboot when each lens finishes. Both lenses need at least 30% battery. Do not close the app during flashing.'
 
-/** Frame acks also emit 'connection'; only the reported firmware, or the session dropping, changes this page. */
-export const firmwareKey = (state: SessionState | null) => [state?.phase, state?.capabilities, state?.leftVersion, state?.rightVersion].join('\n')
+/** Frame acks also emit 'connection'; only the reported firmware, or what reportedState keeps of it, changes these pages. */
+export const firmwareKey = (state: SessionState | null) => [state?.phase, state?.firmwareWarning, state?.capabilities, state?.leftVersion, state?.rightVersion].join('\n')
 
 function text(value: string, className: string): Label {
   const view = new Label()
@@ -91,10 +91,10 @@ export function createPage(): Page {
   return page
 }
 
-export async function restore(): Promise<void> {
-  const ok = await Dialogs.confirm({ title: 'Restore Even Firmware?',
-    message: `This flashes Even's stock firmware ${BASE_STOCK_VERSION_TEXT} to both lenses and removes Faceclaw's custom features. ` +
-      `${APP_NAME} needs Faceclaw firmware to work with your glasses.`,
-    okButtonText: 'Restore', cancelButtonText: 'Cancel' })
-  if (ok) await flash('uninstall')
+/** What every route to the uninstall flash says before it starts. */
+export const RESTORE_MESSAGE = `This flashes Even's stock firmware ${BASE_STOCK_VERSION_TEXT} to both lenses and removes Faceclaw's custom features. ` +
+  `${APP_NAME} needs Faceclaw firmware to work with your glasses.`
+
+export async function restore(title = 'Restore Even Firmware?', okButtonText = 'Restore'): Promise<void> {
+  if (await Dialogs.confirm({ title, message: RESTORE_MESSAGE, okButtonText, cancelButtonText: 'Cancel' })) await flash('uninstall')
 }

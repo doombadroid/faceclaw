@@ -18,6 +18,7 @@ import {
 } from "../../native/file-access";
 import { directionalFallback, type InputEvent } from "../../ui/gestures";
 import { Layer, type LayerContext } from "../../ui/layers";
+import { APP_NAME } from "../../branding";
 
 const LIST_X = 20;
 /** List view: the selection box extends this far left and right of the row text. */
@@ -348,7 +349,7 @@ export class FileBrowserLayer implements Layer {
       for (const path of getBookmarkedPaths()) {
         rows.push(this.bookmarkItem(path));
       }
-      rows.push(this.placeItem(global.isIOS ? "Faceclaw documents" : "Internal storage", externalStorageRootPath()));
+      rows.push(this.placeItem(global.isIOS ? `${APP_NAME} documents` : "Internal storage", externalStorageRootPath()));
       if (!global.isIOS) rows.push(this.placeItem("/", "/"));
       return rows;
     }

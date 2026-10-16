@@ -1,7 +1,7 @@
 import { GridLayout, Image, Label, Page, ScrollView, StackLayout, Switch, type PropertyChangeData, type View } from '@nativescript/core'
 
 // Code-built inset-grouped lists. ListView is a plain UITableView, so sections
-// are StackLayouts; colours live in ocusmart.css (light + .ns-dark).
+// are StackLayouts; colours live in kit.css (light + .ns-dark).
 
 export type TileColor = 'blue' | 'red' | 'purple' | 'green' | 'orange' | 'gray' | 'indigo' | 'teal'
 /** A row and the separator inset under it (to the text). */

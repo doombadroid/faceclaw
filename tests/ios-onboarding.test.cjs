@@ -53,6 +53,7 @@ function flasherFixture({ hash = 'custom', outcome = 'success', backgroundOn = '
     '../g2/firmware/cfw-patches': { CFW_PATCH_SET: { outputSha256: 'custom', baseSha256: 'stock' } },
     './firmware-files.ios': { readFirmwareFile: () => new Uint8Array(16), firmwareSha256: () => hash },
     './ios-bluetooth': bluetooth({ right: 'R-ID', left: 'L-ID' }, resolveError), './kotlin-listener.ios': listenerModule,
+    '../branding': { APP_NAME: 'OcuSmart' },
   }, { UIApplication: { sharedApplication: native }, UIApplicationState: { Active: 0 }, FaceclawKitIosFirmwareFlasher, FaceclawKitFaceclawFirmwareFlasherListener: {} });
   const flasher = new FirmwareFlasher({ right: 'r', left: 'l' }, 'prepared.bin');
   const states = [], progress = [];
@@ -87,7 +88,7 @@ test('iOS flashing refuses a changed image before Bluetooth and never reports pa
 test('backgrounding during iOS OTA stops the transfer and directs retry of both lenses', async () => {
   const f = flasherFixture({ backgroundOn: 'left' }); f.flasher.start();
   const result = await f.result;
-  assert.equal(result.success, false); assert.match(result.detail, /left the foreground.*retry both lenses/);
+  assert.equal(result.success, false); assert.match(result.detail, /OcuSmart left the foreground.*return to OcuSmart.*retry both lenses/);
   assert.equal(f.instances[0].cancelled, true); assert.equal(f.progress.includes('right'), false); assert.equal(f.native.idleTimerDisabled, false);
 });
 
@@ -159,6 +160,45 @@ test('iOS onboarding finishes by closing the presented detour, or by swapping fi
   modals[1].options.closeCallback(); calls.length = 0; root.modal = null; root.showModal = () => {};
   await detour.presentDetour('phone-ui/config-page', undefined, false); assert.deepEqual(calls, []);
   shellExists = false; finishOnboardingNavigation(); assert.equal(resets.length, 2, 'no stale detour to close');
+});
+
+test('Back on the first page of a detour closes it, through the shared view models\' own fallbacks', async () => {
+  // Opened from the shell, these pages are a detour frame's first page, where canGoBack() is false; the
+  // shared view models then restart onboarding with clearHistory instead of calling goBack().
+  const closes = [], navs = [];
+  let current = null;
+  class Frame {
+    static topmost() { return current; }
+    backStack = [];
+    navigate(entry) { navs.push(entry); }
+    goBack() { this.backStack.pop(); }
+    canGoBack() { return this.backStack.length > 0; }
+    closeModal() { closes.push(navs.at(-1)?.moduleName); }
+  }
+  class Observable { set(key, value) { this[key] = value; } notifyPropertyChange() {} }
+  const root = { modal: null, showModal(view, options) { this.modal = view; this.options = options; current = view; } };
+  const runtime = { withDisconnected: async fn => fn(), setDetour() {} };
+  const core = { Application: { getRootView: () => root, resetRootView() {} }, Frame, Page: class {}, Observable, Screen: { mainScreen: {} } };
+  const detour = load('app/phone-ui/ios/detour.ts', { '@nativescript/core': core, './runtime': { getRuntime: () => runtime }, './shell': { createShell() {}, hasShell: () => true } });
+  // Everything else the view models import is irrelevant to leaving: a no-op stand-in.
+  const noop = new Proxy(function () {}, { get: () => noop, apply: () => undefined });
+  const modules = new Proxy({ '@nativescript/core': core, './onboarding-navigation': { finishOnboardingNavigation: detour.finishDetour } },
+    { has: () => true, get: (known, name) => known[name] ?? noop });
+  const viewModel = (file, name, fields = {}) => Object.assign(Object.create(load(file, modules)[name].prototype), fields);
+  const leave = async (moduleName, act) => {
+    await detour.presentDetour(moduleName);
+    const before = navs.length;
+    act();
+    assert.equal(closes.length, 1, `${moduleName}: Back closes the detour`);
+    assert.equal(navs.length, before, `${moduleName}: no onboarding screen is pushed`);
+    // UIKit's dismissal runs the close callback.
+    root.options.closeCallback(); closes.length = 0; root.modal = null; current = null;
+  };
+  await leave('phone-ui/onboarding-firmware-check-page', () =>
+    viewModel('app/phone-ui/onboarding-firmware-check-view-model.ts', 'OnboardingFirmwareCheckViewModel', { disposeProbe() {} }).onSecondaryTap());
+  await leave('phone-ui/onboarding-unpair-page', () => viewModel('app/phone-ui/onboarding-unpair-view-model.ts', 'OnboardingUnpairViewModel').onBackTap());
+  await leave('phone-ui/config-page', () => viewModel('app/phone-ui/config-view-model.ts', 'ConfigViewModel', { onboarding: true }).onBackTap());
+  await leave('phone-ui/pairing-page', () => viewModel('app/phone-ui/pairing-view-model.ts', 'PairingViewModel', { onboarding: true, dispose() {} }).onSecondaryTap());
 });
 
 test('Android onboarding finishes by replacing the stack with the main page', () => {

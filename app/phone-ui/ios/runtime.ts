@@ -33,7 +33,8 @@ export class IosRuntime {
   evenHubButton: PhoneUiButton | null = null
   private readonly listeners = new Map<keyof RuntimeEvents, Set<Listener<any>>>()
   private started = false
-  private inDetour = false
+  /** A device/firmware detour is presented over the shell. */
+  inDetour = false
 
   constructor() {
     this.controller = new IosPreviewController(
@@ -72,10 +73,11 @@ export class IosRuntime {
     if (!isPreviewOnlyMode() && !isAutoReconnectSuppressed() && !deviceAddressError(loadDeviceAddresses())) void this.controller.connect()
   }
 
-  /** Device pages need the glasses to themselves and must not be redialled. */
+  /** Device pages need the glasses to themselves and must not be redialled; what the glasses reported may change there. */
   async withDisconnected(fn: () => void): Promise<void> {
     suppressAutoReconnect()
     await this.controller.disconnect()
+    this.controller.forgetSessionReport()
     fn()
   }
 

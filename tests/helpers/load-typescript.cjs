@@ -15,7 +15,8 @@ exports.loader = (globals = {}, mocks = {}) => {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
     }).outputText;
     vm.runInNewContext(source, {
-      exports: output, console, Uint8Array, ...globals,
+      // NativeScript's global; isIOS stays unset (Android wording) unless a test sets it.
+      exports: output, console, Uint8Array, global: {}, ...globals,
       require(name) {
         if (name in mocks) return mocks[name];
         if (!name.startsWith('.')) throw new Error(`Unmocked module: ${name}`);

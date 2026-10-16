@@ -1,4 +1,4 @@
-/* OcuSmart glasses screens. Tokens and shared row styles live in ocusmart.css. */
+/* OcuSmart glasses screens. Tokens and shared row styles live in kit.css. */
 .os-glasses-card { padding: 18 16 14 16; }
 .os-glasses-art { height: 74; horizontal-align: center; }
 .os-glasses-title { font-size: 20; font-weight: 600; text-align: center; margin-top: 10; color: #000000; }

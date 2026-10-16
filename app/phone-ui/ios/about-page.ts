@@ -1,36 +1,22 @@
 import { Label, StackLayout, type Page } from '@nativescript/core'
 import { groupedPage, section, navRow, valueRow, customRow } from './ui-kit'
 import { getRuntime } from './runtime'
-import type { SessionState } from '../../g2/ios-preview-controller'
 import { presentDetour } from './detour'
 import { documentPage } from './settings-category-page'
-import { firmwareSummary } from './firmware-info'
+import { firmwareKindLabel, firmwareSummary, reportedState } from './firmware-info'
+import { firmwareKey } from './update-page'
 import { APP_NAME } from '../../branding'
 import { FACECLAW_VERSION } from '../../version'
 
 // The project docs webpack.config.js copies into the bundle's about/ folder.
 const DOCUMENTS = [['README.md', 'README'], ['LICENSE', 'License'], ['PRIVACY', 'Privacy Policy'], ['ACKNOWLEDGEMENTS.md', 'Acknowledgements']] as const
 
-/** What the glasses reported running, by the extension slot they sent. */
-export function firmwareKind(state: SessionState | null): string {
-  const extension = firmwareSummary(state).extension
-  switch (extension?.kind) {
-    case undefined: return 'Not reported yet'
-    case 'faceclaw': return `Faceclaw r${extension.version}`
-    case 'legacy-faceclaw': return 'Older Faceclaw'
-    case 'none': return 'Even stock'
-    case 'other': return 'Other custom firmware'
-  }
-}
-
-const firmwareKey = (state: SessionState | null) => [state?.leftVersion, state?.rightVersion, state?.capabilities].join('\n')
-
 export function createPage(): Page {
   const runtime = getRuntime(), controller = runtime.controller
   let shown = ''
   const { page, refresh } = groupedPage({ title: 'General', largeTitle: false, build: container => {
-    const state = controller.connectionState
-    shown = firmwareKey(state)
+    shown = firmwareKey(controller.connectionState)
+    const state = reportedState(controller.connectionState), extension = firmwareSummary(state).extension
     const head = new StackLayout()
     head.className = 'os-row os-about-head'
     const name = new Label(), version = new Label()
@@ -42,7 +28,7 @@ export function createPage(): Page {
     container.addChild(section({ header: 'Glasses firmware', rows: [
       valueRow({ title: 'Left', value: state?.leftVersion || 'Not reported' }),
       valueRow({ title: 'Right', value: state?.rightVersion || 'Not reported' }),
-      valueRow({ title: 'Firmware', value: firmwareKind(state) }),
+      valueRow({ title: 'Firmware', value: extension ? firmwareKindLabel(extension) : 'Not reported' }),
     ], footer: state?.leftVersion || state?.rightVersion ? undefined : 'The glasses report their versions after they connect.' }))
     container.addChild(section({ header: 'Documents', rows: DOCUMENTS.map(([fileName, title]) =>
       navRow({ title, onTap: () => page.frame?.navigate({ create: () => documentPage(fileName, title) }) })) }))

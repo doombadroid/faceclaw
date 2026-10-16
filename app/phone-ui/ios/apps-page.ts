@@ -1,31 +1,22 @@
 import { Dialogs, GestureStateTypes, GridLayout, Image, Label, StackLayout, type GestureEventData, type ImageSource, type Page } from '@nativescript/core'
-import { groupedPage, section, navRow, type Row, type TileColor } from './ui-kit'
+import { groupedPage, section, navRow, type Row } from './ui-kit'
+import { appCatalog, tileColor } from './app-catalog'
 import { getRuntime } from './runtime'
 import { selectTab } from './shell'
 import { shell } from '../../ui/shell/shell'
 import { onAnySettingChanged } from '../../ui/dashboard-settings'
-import { ALL_APPS } from '../../apps/all-apps'
-import { iosAppUnavailableReason } from '../../apps/ios-availability'
-import { ONBOARDING_APP_ID } from '../../apps/onboarding/onboarding-progress'
 import { setAppFolder } from '../../apps/launcher/launcher-folders'
-import { getInstalledEvenHubApps, getInstalledEvenHubFingerprint, installedEvenHubAppId, renderInstalledEvenHubIcon } from '../../apps/evenhub/installed-apps'
+import { getInstalledEvenHubFingerprint, installedEvenHubAppId, renderInstalledEvenHubIcon } from '../../apps/evenhub/installed-apps'
 import { renderIcon } from '../../graphics/icons'
+import type { AppDefinition } from '../../apps/app-definition'
 import { GrayImage } from '../../graphics/image'
 import { grayImageToWhiteIconSource } from '../../native/gray-image-preview'
 
 type Draw = (size: number) => GrayImage | null
 type AppItem = { appId: string; title: string; draw: Draw }
 
-const PALETTE: TileColor[] = ['blue', 'red', 'purple', 'green', 'orange', 'gray', 'indigo', 'teal']
 // The 18pt tile glyph at 3x.
 const ICON_PX = 54
-
-/** A stable tile colour per app (FNV-1a of the appId), the same on every launch. */
-export function tileColor(appId: string): TileColor {
-  let hash = 0x811c9dc5
-  for (let i = 0; i < appId.length; i++) hash = Math.imul(hash ^ appId.charCodeAt(i), 0x01000193)
-  return PALETTE[(hash >>> 0) % PALETTE.length]
-}
 
 const byTitle = (a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title)
 
@@ -44,16 +35,10 @@ export function listApps() {
       return image.withDrawsBaked().pixels.some(pixel => pixel > 0) ? image : null
     }) as Draw,
   }))
-  const builtIn: AppItem[] = [], unavailable: (AppItem & { reason: string })[] = []
-  for (const app of ALL_APPS) {
-    // The glasses Settings app duplicates the Settings tab.
-    if (app.showInLauncher === false || app.appId === ONBOARDING_APP_ID || app.appId === 'settings') continue
-    const item = { appId: app.appId, title: app.title, draw: (size: number) => app.renderIcon?.(size) ?? renderIcon(app.icon, size) }
-    const reason = iosAppUnavailableReason(app.appId)
-    if (reason) unavailable.push({ ...item, reason })
-    else builtIn.push(item)
-  }
-  const hub = getInstalledEvenHubApps().map(app => ({
+  const catalog = appCatalog()
+  const item = (app: AppDefinition): AppItem => ({ appId: app.appId, title: app.title, draw: size => app.renderIcon?.(size) ?? renderIcon(app.icon, size) })
+  const builtIn = catalog.builtIn.map(item), unavailable = catalog.unavailable.map(({ app, reason }) => ({ ...item(app), reason }))
+  const hub = catalog.hub.map(app => ({
     appId: installedEvenHubAppId(app.packageId), title: app.name, version: app.version,
     draw: (size: number) => renderInstalledEvenHubIcon(app.packageId, size, app) ?? renderIcon('package', size),
   }))

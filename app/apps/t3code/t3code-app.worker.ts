@@ -117,6 +117,7 @@ import {
 import { parsePairingInput, baseUrlLabel } from "./t3-pairing";
 import type { RpcSocketFactory } from "./t3-rpc";
 import { TranscriptLayout } from "./t3-transcript";
+import { APP_NAME } from "../../branding";
 
 declare const global: any;
 
@@ -1176,7 +1177,7 @@ async function pairFromDraft(): Promise<void> {
       throw new Error(
         descriptor.orchestrationProtocolVersion < T3_ORCHESTRATION_PROTOCOL
           ? `That server runs an older T3 Code (${descriptor.serverVersion || "unknown version"}). Update it with \`t3 update\`.`
-          : "That server runs a newer T3 Code protocol than Faceclaw supports.",
+          : `That server runs a newer T3 Code protocol than ${APP_NAME} supports.`,
       );
     }
     if (screen.kind !== "pair") return;

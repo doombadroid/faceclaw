@@ -59,7 +59,9 @@ function harness({ windows = [], installed = [], apps = [], whiteIcon = () => 'w
     '../../native/gray-image-preview': { grayImageToWhiteIconSource: whiteIcon },
   });
   const api = load('app/phone-ui/ios/apps-page.ts');
-  return { api, calls, settingListeners, windowListeners, controller,
+  // Shared with My Glasses (and the Hub tab's tile colours); same loader cache, same mocks.
+  const catalog = load('app/phone-ui/ios/app-catalog.ts');
+  return { api, catalog, calls, settingListeners, windowListeners, controller,
     get page() { return page; }, get builds() { return builds; },
     setWindows: next => { windows = next; }, setInstalled: next => { installed = next; },
     set confirm(value) { confirmAnswer = value; } };
@@ -77,7 +79,7 @@ const win = (windowId, appId, title, ink = true) => ({ windowId, appId, title,
   drawIcon: (image, x, y, size) => { image.drawn = size; if (ink) image.pixels[0] = 255; } });
 
 test('Apps tab tile colours are stable per app and spread across the palette', () => {
-  const { api } = harness();
+  const { catalog: api } = harness();
   const ids = ['timer', 'calendar', 'terminal', 'ai-chat', 'weather', 'navigate', 'compass', 'notifications', 'files', 'teleprompter'];
   const colors = ids.map(api.tileColor);
   assert.deepEqual(ids.map(api.tileColor), colors, 'same appId, same colour');
@@ -88,7 +90,7 @@ test('Apps tab tile colours are stable per app and spread across the palette', (
 });
 
 test('Apps tab lists real windows, launchable built-ins, installed packages and iOS-unavailable apps', () => {
-  const { api } = harness({ apps: builtins,
+  const { api, catalog } = harness({ apps: builtins,
     windows: [win('launcher', 'launcher', 'Apps'), win('window:timer', 'timer', 'Timer'), win('evenhub:app:3', 'hub:dev.app', 'Dev App')],
     installed: [{ packageId: 'z.app', name: 'Zed', version: '2.0.1' }, { packageId: 'a.app', name: 'Alpha', version: '1.0.0' }] });
   const { open, builtIn, hub, unavailable } = api.listApps();
@@ -96,6 +98,7 @@ test('Apps tab lists real windows, launchable built-ins, installed packages and 
   assert.deepEqual(plain(builtIn.map(app => app.title)), ['Calendar', 'Timer'], 'alphabetical; no launcher, onboarding, glasses Settings or unavailable apps');
   assert.deepEqual(plain(hub.map(app => [app.appId, app.title, app.version])), [['hub:a.app', 'Alpha', '1.0.0'], ['hub:z.app', 'Zed', '2.0.1']]);
   assert.deepEqual(plain(unavailable.map(app => [app.title, app.reason])), [['Music', 'Media-player integration is not available on iOS yet.']]);
+  assert.equal(catalog.launchableAppCount(), builtIn.length + hub.length, "My Glasses' count is what this tab lists");
   assert.deepEqual(plain(builtIn[0].draw(54)), { date: true, size: 54 }, "an app's own renderer wins over its Lucide name");
   assert.deepEqual(plain(builtIn[1].draw(54)), { name: 'timer', size: 54 });
   assert.equal(open[0].draw(54).drawn, 54, 'window icons are what the glasses sidebar draws');

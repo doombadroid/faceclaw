@@ -1,3 +1,5 @@
+import { APP_NAME } from '../branding';
+
 /** Local input API v1. Transport: one UTF-8 JSON line per TCP connection. */
 export const REMOTE_PORT = 8791;
 export const PERMISSIONS = ['input', 'text', 'assistant'] as const;
@@ -82,7 +84,7 @@ export async function handleRequest(body: string, tokens: TokenStore, host: Remo
   } else if (typeof request.text !== 'string' || !request.text.trim() || request.text.length > 8000 || request.text.includes('\0')) {
     return error('bad_request', 'Text must contain 1–8000 characters without NUL.');
   }
-  if (!host.ready()) return error('unavailable', 'Faceclaw is not ready for input.');
+  if (!host.ready()) return error('unavailable', `${APP_NAME} is not ready for input.`);
   // Gestures follow the normal lock-screen path. Text must never bypass it.
   if (request.action !== 'input' && host.locked()) return error('locked', 'The glasses are locked.');
   try {
@@ -95,5 +97,5 @@ export async function handleRequest(body: string, tokens: TokenStore, host: Remo
       host.assistant(request.text);
     }
     return { ok: true };
-  } catch { return error('failed', 'Faceclaw could not deliver the request.'); }
+  } catch { return error('failed', `${APP_NAME} could not deliver the request.`); }
 }

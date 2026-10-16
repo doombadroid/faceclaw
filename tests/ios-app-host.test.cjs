@@ -167,9 +167,15 @@ function remotePageHarness({ enabled = () => false, totals = () => ({ messages: 
     getViewById() { return null; }
     static setRow() {} static setColumn() {}
   }
+  // NativeScript's iOS Image: src wraps an ImageSource in a copy; teardown nulls the held imageSource's native image.
+  class Image extends View {
+    get src() { return this._src; }
+    set src(value) { this._src = value; this.imageSource = { ios: value.ios }; }
+    dispose() { if (this.imageSource) this.imageSource.ios = null; }
+  }
   const core = { Application: { suspendEvent: 'suspend', resumeEvent: 'resume',
     on: (key, fn) => appEvents.set(key, fn), off: key => appEvents.delete(key) },
-    ActionItem: View, Builder: { load: () => new View() }, Observable: View, Color: class {}, GridLayout: View, Image: View, Label: View, Page: View };
+    ActionItem: View, Builder: { load: () => new View() }, Observable: View, Color: class {}, GridLayout: View, Image, Label: View, Page: View };
   const controller = { pauses: 0, resumes: 0, pause() { this.pauses++; }, resume() { this.resumes++; } };
   const runtime = { controller, frame: null, keyboardSession: null, on(event, fn) {
     runtimeListeners.set(event, fn); return () => runtimeListeners.delete(event);
@@ -221,7 +227,10 @@ test('iOS Remote subscribes to the runtime while loaded and never pauses the sha
   page.events.get('loaded')();
   assert.deepEqual([...runtimeListeners.keys()].sort(), ['frame', 'keyboardSession']);
   const mirror = views.find(v => v.accessibilityIdentifier === 'glasses-preview');
-  runtimeListeners.get('frame')({ image: 'png', focus: 'Clock' }); assert.equal(mirror.imageSource, 'png');
+  const frame = { image: { ios: 'png' }, focus: 'Clock' };
+  runtimeListeners.get('frame')(frame); assert.equal(mirror.imageSource.ios, 'png');
+  // Remote is a pushed page now: popping it tears the mirror down, and the runtime's cached frame must survive.
+  mirror.dispose(); assert.equal(frame.image.ios, 'png', 'the shared cached frame keeps its image after Remote is popped');
   page.events.get('unloaded')(); page.events.get('loaded')(); page.events.get('unloaded')();
   assert.equal(runtimeListeners.size, 0);
   assert.deepEqual([controller.pauses, controller.resumes], [0, 0], 'TabView unloads hidden tabs; the runtime owns pause/resume');
@@ -229,15 +238,16 @@ test('iOS Remote subscribes to the runtime while loaded and never pauses the sha
   assert.deepEqual(navBar, { title: 'black', tintColor: null }, 'the CSS text colour styles the title, not the bar tint');
 });
 
-test('iOS runtime fans controller callbacks out to subscribers and caches the latest values', () => {
+test('iOS runtime fans controller callbacks out to subscribers and caches the latest values', async () => {
   let callbacks, connects = 0, pauses = 0, resumes = 0;
-  const appEvents = new Map(), alerts = [];
+  const appEvents = new Map(), alerts = [], order = [];
   const { getRuntime } = load('app/phone-ui/ios/runtime.ts', { require: id => ({
     '@nativescript/core': { Application: { suspendEvent: 'suspend', resumeEvent: 'resume', on: (key, fn) => appEvents.set(key, fn) },
       Dialogs: { alert: options => { alerts.push(options); return Promise.resolve(); } } },
     '../../g2/ios-preview-controller': { IosPreviewController: class {
       constructor(...args) { callbacks = args; }
-      connect() { connects++; } pause() { pauses++; } resume() { resumes++; } disconnect() { return Promise.resolve(); }
+      connect() { connects++; } pause() { pauses++; } resume() { resumes++; }
+      disconnect() { order.push('disconnect'); return Promise.resolve(); } forgetSessionReport() { order.push('forget'); }
     } },
     '../onboarding-state': { isPreviewOnlyMode: () => false },
     '../../g2/reconnect-policy': { isAutoReconnectSuppressed: () => false, suppressAutoReconnect() {} },
@@ -266,6 +276,22 @@ test('iOS runtime fans controller callbacks out to subscribers and caches the la
   runtime.setDetour(false); assert.deepEqual([resumes, connects], [3, 2], 'closing a detour re-runs the auto-connect check');
   const detours = []; runtime.on('detour', open => detours.push(open));
   runtime.setDetour(true); runtime.setDetour(false); assert.deepEqual(detours, [true, false], 'pages under a detour learn it closed');
+  await runtime.withDisconnected(() => order.push('present'));
+  assert.deepEqual(order, ['disconnect', 'forget', 'present'], 'a device detour starts from no stale firmware report');
+});
+
+test('forgetSessionReport clears what a halted session reported, and never touches a live one', () => {
+  const api = load('app/g2/ios-preview-controller.ts', { require: () => ({}), console, setTimeout, clearTimeout });
+  const host = Object.create(api.IosPreviewController.prototype);
+  let emitted = 0;
+  host.emitState = () => emitted++;
+  const halted = { phase: 'error', status: 'Incompatible firmware', battery: 60, charging: false, ring: true, frames: 3,
+    capabilities: '', leftVersion: '2.3.0.24', rightVersion: '2.3.0.24', firmwareWarning: 'The glasses report stock firmware' };
+  host.communicator = {}; host.state = { ...halted };
+  host.forgetSessionReport(); assert.deepEqual([host.state, emitted], [halted, 0]);
+  host.communicator = null; host.forgetSessionReport();
+  assert.deepEqual(JSON.parse(JSON.stringify(host.state)), { ...halted, battery: null, charging: null, ring: false, leftVersion: '', rightVersion: '', firmwareWarning: '' });
+  assert.equal(emitted, 1);
 });
 
 test('iOS configures an in-process surface before submitting constructor-triggered frames', async () => {
@@ -402,4 +428,25 @@ test('iOS curve editor retains invalid draft and retries Save with a validation 
   assert.deepEqual(prompts, ['0:0,8:100', '0:0,5:']);
   assert.equal(errors.length, 1);
   assert.deepEqual(saved, ['0:0,5:100']);
+});
+
+test('a glasses keyboard session under a detour opens Remote only once the detour closes', () => {
+  const listeners = new Map(), navs = [];
+  class Frame { navigate(entry) { navs.push(entry.moduleName); this.currentEntry = entry; } }
+  class TabView { on() {} }
+  const runtime = { inDetour: false, keyboardSession: null, start() {},
+    on(event, fn) { listeners.set(event, fn); return () => listeners.delete(event); } };
+  const shell = load('app/phone-ui/ios/shell.ts', { require: id => id === './runtime' ? { getRuntime: () => runtime }
+    : { Color: class {}, Frame, TabView, TabViewItem: class {} } });
+  const tabs = shell.createShell();
+  tabs.selectedIndex = 3; navs.length = 0;
+  // Navigating a tab frame would make it Frame.topmost(), stranding the detour's own Done/Back.
+  runtime.inDetour = true; runtime.keyboardSession = { id: 1 }; listeners.get('keyboardSession')(runtime.keyboardSession);
+  assert.deepEqual([navs, tabs.selectedIndex], [[], 3], 'no tab navigation under a detour');
+  runtime.inDetour = false; listeners.get('detour')(false);
+  assert.deepEqual([navs, tabs.selectedIndex], [['ocusmart/remote'], 0], 'the waiting session reaches Remote on the Glasses tab');
+  listeners.get('keyboardSession')(runtime.keyboardSession);
+  assert.deepEqual(navs, ['ocusmart/remote'], 'Remote already on top is not pushed again');
+  runtime.keyboardSession = null; listeners.get('detour')(false);
+  assert.equal(navs.length, 1, 'a detour closing with no session opens nothing');
 });

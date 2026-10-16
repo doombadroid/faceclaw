@@ -10,7 +10,9 @@ const STOCK = session(''), CURRENT = session(`Faceclaw/${REQUIRED}`), OLDER = se
   LEGACY = session('EVENCFW/1 caps'), OTHER = session('Homebrew/2'), UNREPORTED = session('', '', ''),
   NEWER = session(`Faceclaw/${REQUIRED + 1}`), NEWER_STOCK = session('', '2.3.3.0', '2.3.3.0'),
   // disconnect() keeps the last report; it is stale once the session drops.
-  STALE = { ...CURRENT, phase: 'disconnected' };
+  STALE = { ...CURRENT, phase: 'disconnected' },
+  // Stock firmware halts the session; what it reported is why, so it stays current until the next connect().
+  HALTED = { ...NEWER_STOCK, phase: 'error', status: 'Incompatible firmware', firmwareWarning: 'The glasses report stock firmware' };
 
 test('firmware-info classifies reported firmware for the update, channel and alert screens', () => {
   const info = loader()('app/phone-ui/ios/firmware-info.ts');
@@ -22,6 +24,9 @@ test('firmware-info classifies reported firmware for the update, channel and ale
   assert.equal(info.updateStatus(ext(NEWER)), 'newer', 'reinstalling the bundled revision would downgrade');
   assert.equal(info.reportedState(STALE), null);
   assert.equal(info.reportedState(CURRENT), CURRENT);
+  assert.equal(info.reportedState(HALTED), HALTED);
+  assert.equal(info.reportedState({ ...HALTED, firmwareWarning: '' }), null, 'a failed connect reports nothing');
+  assert.equal(info.reportedState({ ...HALTED, phase: 'disconnected' }), null);
   assert.deepEqual([STOCK, CURRENT, NEWER, LEGACY, OTHER].map(s => info.firmwareKindLabel(ext(s))),
     ['Stock firmware', `Faceclaw r${REQUIRED}`, `Faceclaw r${REQUIRED + 1}`, 'Older Faceclaw', 'Third-party']);
   assert.deepEqual([UNREPORTED, STOCK, CURRENT, OLDER, LEGACY, OTHER].map(s => info.firmwareChannel(ext(s))),
@@ -50,7 +55,7 @@ test('the advertised image size and revision come from the pinned patch set', ()
   assert.match(fs.readFileSync('app/phone-ui/ios/update-page.ts', 'utf8'), new RegExp(`at least ${floor}% battery`));
 });
 
-function uiHarness(state) {
+function uiHarness(state, extraMocks = {}) {
   const calls = [], confirms = [], built = [];
   let confirmAnswer = true;
   const listeners = new Map();
@@ -70,7 +75,7 @@ function uiHarness(state) {
   const core = { Label: View, StackLayout: View, GridLayout: Object.assign(class extends View {}, { setColumn() {}, setRow() {}, setColumnSpan() {} }),
     Dialogs: { confirm: async options => { confirms.push(options); return confirmAnswer; } } };
   const mocks = { '@nativescript/core': core, './ui-kit': kit, './runtime': { getRuntime: () => runtime },
-    './detour': { presentDetour: async (name, context) => calls.push(['detour', name, JSON.parse(JSON.stringify(context))]) } };
+    './detour': { presentDetour: async (name, context) => calls.push(['detour', name, JSON.parse(JSON.stringify(context))]) }, ...extraMocks };
   const load = loader({ global: { isIOS: true } }, mocks);
   return { load, calls, confirms, built, listeners, runtime, answer: value => { confirmAnswer = value; },
     rows: () => built.at(-1).flatMap(s => s.rows), last: () => built.at(-1) };
@@ -137,6 +142,14 @@ test('Software Update is honest about newer, third-party and unvalidated stock f
   const stock = uiHarness(NEWER_STOCK);
   stock.load('app/phone-ui/ios/update-page.ts').createPage();
   assert.match(stock.last()[1].footer, /stock firmware 2\.3\.3\.0, newer than .* carries extra risk/);
+
+  // The firmware warning's own page: stock firmware never stays connected, so the halted session is what it shows.
+  const halted = uiHarness(HALTED);
+  halted.load('app/phone-ui/ios/update-page.ts').createPage();
+  assert.equal(titled(halted.rows(), 'Left').value, '2.3.3.0');
+  assert.equal(titled(halted.rows(), 'Firmware').value, 'Stock firmware');
+  assert.match(halted.last()[1].footer, /carries extra risk/);
+  assert.doesNotMatch(JSON.stringify(halted.last()), /Connect your glasses/);
 });
 
 test('Software Update without a firmware report asks to connect and keeps Restore reachable', () => {
@@ -187,7 +200,11 @@ test('firmware alert is a native three-action alert titled by firmware kind', as
   const UIAlertAction = { actionWithTitleStyleHandler: (title, style, handler) => ({ title, style, handler }) };
   let state = OLDER;
   const load = loader({ UIAlertController, UIAlertAction, UIAlertActionStyle, UIAlertControllerStyle: { Alert: 1 }, Promise }, {
-    '@nativescript/core': { Utils: { ios: { getRootViewController: () => ({ presentViewControllerAnimatedCompletion: alert => presented.push(alert) }) } } },
+    // A detour is up: the root refuses a second presentation, the topmost presented controller takes it.
+    '@nativescript/core': { Utils: { ios: { getRootViewController: () => ({
+      presentViewControllerAnimatedCompletion: () => { throw new Error('the root is already presenting'); },
+      presentedViewController: { beingDismissed: false, presentViewControllerAnimatedCompletion: alert => presented.push(alert) },
+    }) } } },
     './detour': { presentDetour: async (name, context) => calls.push(['detour', name, JSON.parse(JSON.stringify(context))]) },
     './shell': { pushInTab: (tab, name) => calls.push(['push', tab, name]) },
     './runtime': { getRuntime: () => ({ controller: { get connectionState() { return state; } } }) },
@@ -211,4 +228,23 @@ test('firmware alert is a native three-action alert titled by firmware kind', as
   const count = calls.length;
   assert.equal((await shown(OTHER, 'Not Now')).title, 'Unrecognized Firmware');
   assert.equal(calls.length, count, 'Not Now does nothing');
+});
+
+test('Device, Settings and General read firmware and battery through the same rule as Software Update', () => {
+  const live = { ...CURRENT, battery: 80, charging: false };
+  const device = uiHarness(live, {
+    '../onboarding-state': { isPreviewOnlyMode: () => false }, '../../g2/reconnect-policy': {},
+    '../../g2/device-addresses': { loadDeviceAddresses: () => null, loadPairedGlassesIdentityForAddresses: () => null },
+    '../../g2/ios-peripheral-identity': { deviceAddressError: () => 'none' },
+  }).load('app/phone-ui/ios/device-page.ts');
+  assert.equal(device.deviceLine(live), `Connected · 80% · Faceclaw firmware r${REQUIRED} · base 2.3.0.24`);
+  assert.equal(device.deviceLine({ ...live, phase: 'disconnected' }), 'Not Connected · Firmware not reported yet', 'no hours-old battery or firmware');
+  assert.equal(device.deviceLine({ ...HALTED, battery: 50 }), 'Connection Failed · 50% · Even firmware 2.3.3.0');
+
+  const general = uiHarness(OTHER, { './settings-category-page': { documentPage() {} }, '../../version': { FACECLAW_VERSION: 'test' } });
+  general.load('app/phone-ui/ios/about-page.ts').createPage();
+  assert.equal(titled(general.rows(), 'Firmware').value, 'Third-party', "Software Update's word for it");
+  const stale = uiHarness({ ...OTHER, phase: 'disconnected' }, { './settings-category-page': { documentPage() {} }, '../../version': { FACECLAW_VERSION: 'test' } });
+  stale.load('app/phone-ui/ios/about-page.ts').createPage();
+  assert.deepEqual(['Left', 'Right', 'Firmware'].map(title => titled(stale.rows(), title).value), ['Not reported', 'Not reported', 'Not reported']);
 });

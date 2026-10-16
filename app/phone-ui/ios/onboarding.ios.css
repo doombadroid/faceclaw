@@ -1,6 +1,6 @@
 /* iOS-only restyle of the shared onboarding, unpair, pairing, config,
  * permissions, firmware-check, flash and document pages, to the OcuSmart
- * tokens (ocusmart.css). Their XML Pages carry no class, so the scope is
+ * tokens (kit.css). Their XML Pages carry no class, so the scope is
  * "every Page that is neither an OcuSmart page nor Remote": that is 21+ in
  * specificity, above app.ios.css (Page, Button, .h1, .body-text), the theme
  * (.ns-dark Page, .ns-ios Button) and pairing.css, and it keeps the Remote

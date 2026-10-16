@@ -13,6 +13,7 @@
     "outDir": "../.test-build"
   },
   "include": [
+    "test-globals.d.ts",
     "../app/remote/protocol.ts",
     "../app/remote/listeners.ts",
     "../app/g2/ancs-client.ts",

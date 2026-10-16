@@ -7,6 +7,7 @@ import { sampleBleTraffic } from '../../native/ble-traffic'
 import { onAnySettingChanged, mirrorTouchSetting, showBleBandwidthSetting } from '../../ui/dashboard-settings'
 import { getRuntime, type RuntimeEvents } from './runtime'
 import { inheritBarTint } from './ui-kit'
+import { presentOnTop } from './present'
 import type { KeyboardInputSession } from '../../ui/shell/keyboard-input'
 
 /** The old main page: mirror with touch input, shared remote controls, keyboard panel. */
@@ -26,7 +27,7 @@ export function createRemotePage(): Page {
     if (!mirror.imageSource) return
     const share = UIActivityViewController.alloc().initWithActivityItemsApplicationActivities([mirror.imageSource.ios], null)
     if (share.popoverPresentationController) share.popoverPresentationController.sourceView = page.ios.view
-    page.ios.presentViewControllerAnimatedCompletion(share, true, null)
+    presentOnTop(share)
   })
   page.actionBar.actionItems.addItem(shareItem)
   const root = new GridLayout()
@@ -52,7 +53,9 @@ export function createRemotePage(): Page {
   let focusTimer: ReturnType<typeof setTimeout> | null = null
   const keyboardField = () => keyboardPanel.getViewById<TextView>('keyboardInputField')
   const showFrame = ({ image, focus }: RuntimeEvents['frame']) => {
-    mirror.imageSource = image; model.set('padFocusLine', focus)
+    // Through src: popping Remote tears its Image down, which nulls the native image
+    // of whatever imageSource it holds; the wrapper src makes keeps the runtime's cached frame intact.
+    mirror.src = image; model.set('padFocusLine', focus)
   }
   const showKeyboard = (session: KeyboardInputSession | null) => {
     keyboardModel.setSession(session)

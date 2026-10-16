@@ -1,10 +1,11 @@
 import { Button, Dialogs, GridLayout, Image, ImageSource, Label, SearchBar, SegmentedBar, SegmentedBarItem, StackLayout, type Page, type ScrollView, type View } from '@nativescript/core'
-import { groupedPage, section, buttonRow, valueRow, type TileColor } from './ui-kit'
+import { groupedPage, section, buttonRow, valueRow } from './ui-kit'
+import { tileColor } from './app-catalog'
 import { getRuntime } from './runtime'
 import { pushInTab } from './shell'
 import { APP_NAME } from '../../branding'
 import { evenHubApi, EvenHubAuthenticationError, type EvenHubStoreApp, type EvenHubStorePage } from '../../apps/evenhub/even-api'
-import { clearEvenHubSession, evenHubEmailSetting, hasEvenHubCredentials } from '../../apps/evenhub/credentials'
+import { clearEvenHubSession, evenHubEmailSetting, hasEvenHubCredentials, onTransientEvenHubSessionChanged } from '../../apps/evenhub/credentials'
 import { getInstalledEvenHubApp, getInstalledEvenHubFingerprint, installedEvenHubAppId } from '../../apps/evenhub/installed-apps'
 import { checkForEvenHubUpdates, describeUpdate } from '../../apps/evenhub/updates'
 import { cleanError, installStoreApp, type PermissionRequest } from '../../apps/evenhub/store-install'
@@ -77,13 +78,6 @@ export async function runHubAction(app: EvenHubStoreApp, onStatus: (status: stri
   } finally { busy.delete(app.packageId) }
 }
 
-const PALETTE: TileColor[] = ['blue', 'red', 'purple', 'green', 'orange', 'indigo', 'teal', 'gray']
-export function paletteFor(id: string): TileColor {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0
-  return PALETTE[Math.abs(hash) % PALETTE.length]
-}
-
 // Keyed by CDN path; null = undecodable (SVG included: Image cannot draw it), the
 // tile keeps its initial. A failed download is forgotten so the next build retries.
 const icons = new Map<string, Promise<ImageSource | null>>()
@@ -101,7 +95,8 @@ function storeIcon(path: string): Promise<ImageSource | null> {
 /** Store artwork on a palette tile, initial first so a missing icon still reads. */
 export function artworkTile(app: EvenHubStoreApp, size: number): GridLayout {
   const box = new GridLayout()
-  box.className = `os-hub-art os-tile-${paletteFor(app.packageId)}`
+  // Keyed like the Apps tab, so an installed app keeps its colour there.
+  box.className = `os-hub-art os-tile-${tileColor(installedEvenHubAppId(app.packageId))}`
   box.width = size; box.height = size; box.borderRadius = Math.round(size * 0.23)
   const initial = new Label()
   initial.text = (app.name.trim()[0] ?? '?').toUpperCase(); initial.className = 'os-hub-initial'
@@ -110,7 +105,8 @@ export function artworkTile(app: EvenHubStoreApp, size: number): GridLayout {
   if (app.iconPath) void storeIcon(app.iconPath).then(icon => {
     if (!icon) return
     const image = new Image()
-    image.imageSource = icon
+    // Through src: NativeScript wraps it, so teardown nulls the wrapper, not the cached icon.
+    image.src = icon
     image.stretch = 'aspectFill'
     initial.visibility = 'collapse'
     box.addChild(image)
@@ -237,11 +233,14 @@ export function createPage(): Page {
     else refresh()
   })
 
+  const forget = () => {
+    for (const key of Object.keys(listings) as Mode[]) { listings[key] = emptyListing(); errors[key] = '' }
+    updates = []; updatesChecked = false
+  }
   // The list and the update check fail together on an expired session; say it once.
   let alerting = false
   const signedOut = async (error: unknown) => {
-    for (const key of Object.keys(listings) as Mode[]) { listings[key] = emptyListing(); errors[key] = '' }
-    updates = []; updatesChecked = false
+    forget()
     refresh()
     if (alerting) return
     alerting = true
@@ -309,8 +308,7 @@ export function createPage(): Page {
       ...(email ? [valueRow({ title: 'Signed In As', value: email })] : []),
       buttonRow({ title: 'Sign Out', role: 'destructive', onTap: () => {
         clearEvenHubSession()
-        for (const key of Object.keys(listings) as Mode[]) { listings[key] = emptyListing(); errors[key] = '' }
-        updates = []; updatesChecked = false
+        forget()
         refresh()
       } }),
     ] }))
@@ -323,20 +321,26 @@ export function createPage(): Page {
   scroll.content = top
   top.addChild(search); top.addChild(tabs); top.addChild(body)
 
-  let off: (() => void) | null = null
+  let offs: (() => void)[] = []
   const sync = () => {
     if (shownKey() !== shown) refresh()
     if (!hasEvenHubCredentials()) return
     if (!listings[mode].apps.length && !errors[mode] && !loading.has(mode) && mode !== 'search') void loadMore(mode)
     if (!updatesChecked) void checkUpdates()
   }
+  const changed = () => {
+    if (shownKey() === shown) return
+    if (!hasEvenHubCredentials()) forget()
+    refresh()
+  }
   page.on('loaded', () => {
-    off?.()
-    // Sign-in and installs from the glasses land in the settings store too.
-    off = onSettingsStoreChanged(() => { if (shownKey() !== shown) refresh() })
+    for (const off of offs) off()
+    // Sign-in and installs from the glasses land in the settings store too; a
+    // This Session Only token ends (the glasses Even Hub window closing) in memory.
+    offs = [onSettingsStoreChanged(changed), onTransientEvenHubSessionChanged(changed)]
     sync()
   })
   page.on('navigatedTo', sync)
-  page.on('unloaded', () => { off?.(); off = null })
+  page.on('unloaded', () => { for (const off of offs) off(); offs = [] })
   return page
 }

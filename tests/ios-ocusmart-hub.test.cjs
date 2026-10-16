@@ -111,12 +111,17 @@ class FakeView {
   dismissSoftInput() {}
 }
 class FakeGrid extends FakeView { static setColumn() {} }
+// NativeScript's iOS Image: src wraps an ImageSource in a copy; teardown nulls the held imageSource's native image.
+class FakeImage extends FakeView {
+  set src(value) { this.imageSource = { ios: value.ios }; }
+  dispose() { if (this.imageSource) this.imageSource.ios = null; }
+}
 const descendants = (view) => [view, ...(view?.children ?? []).flatMap(descendants)];
 const findClass = (view, className) => descendants(view).filter((child) => child.className?.split(' ').includes(className));
 const shownText = (view) => descendants(view).flatMap((child) => [child.text, child.button?.title, child.section?.footer]).filter(Boolean);
 
 const loadHub = ({ installed = {}, present = () => true, confirm = [], install, api = {}, alert, signedIn = true, fingerprint = () => '', updates } = {}) => {
-  const calls = [];
+  const calls = [], session = { signedIn, listeners: new Set() };
   const kit = { builds: 0 };
   const installedApps = {
     getInstalledEvenHubApp: (id) => installed[id] ?? null,
@@ -129,9 +134,9 @@ const loadHub = ({ installed = {}, present = () => true, confirm = [], install, 
   class AuthError extends Error {}
   const evenApi = { evenHubApi: api, EvenHubAuthenticationError: AuthError };
   const answers = [...confirm];
-  const load = loader({}, {
+  const load = loader({ UIImage: { imageWithData: () => 'uiimage' }, NSData: { dataWithBytesLength: () => ({}) }, interop: { handleof: () => 0 } }, {
     '@nativescript/core': {
-      Button: FakeView, GridLayout: FakeGrid, Image: FakeView, ImageSource: class {}, Label: FakeView, StackLayout: FakeView,
+      Button: FakeView, GridLayout: FakeGrid, Image: FakeImage, ImageSource: class { constructor(ios) { this.ios = ios; } }, Label: FakeView, StackLayout: FakeView,
       SearchBar: FakeView, SegmentedBar: FakeView, SegmentedBarItem: FakeView,
       Dialogs: {
         confirm: async (options) => { calls.push(['confirm', options]); return answers.shift(); },
@@ -157,7 +162,10 @@ const loadHub = ({ installed = {}, present = () => true, confirm = [], install, 
     '../../branding': { APP_NAME: 'OcuSmart' },
     '../../apps/evenhub/even-api': evenApi,
     './even-api': evenApi,
-    '../../apps/evenhub/credentials': { hasEvenHubCredentials: () => signedIn, evenHubEmailSetting: { get: () => '' }, clearEvenHubSession() {} },
+    '../../apps/evenhub/credentials': { hasEvenHubCredentials: () => session.signedIn, evenHubEmailSetting: { get: () => '' }, clearEvenHubSession() {},
+      onTransientEvenHubSessionChanged: (fn) => { session.listeners.add(fn); return () => session.listeners.delete(fn); } },
+    // app-catalog (tile colours) reads the app list; the Hub never lists built-ins.
+    '../../apps/all-apps': { ALL_APPS: [] },
     '../../apps/evenhub/installed-apps': installedApps,
     './installed-apps': installedApps,
     '../../native/file-access': { statPath: (path) => (present(path) ? { isDirectory: false, sizeBytes: 10 } : null) },
@@ -170,7 +178,7 @@ const loadHub = ({ installed = {}, present = () => true, confirm = [], install, 
     // Real updates.ts unless a test replaces it, so the button mapping is production code.
     ...(updates ? { '../../apps/evenhub/updates': updates } : {}),
   });
-  return { hub: load('app/phone-ui/ios/hub-page.ts'), load, calls, kit, AuthError };
+  return { hub: load('app/phone-ui/ios/hub-page.ts'), load, calls, kit, AuthError, session };
 };
 
 test('the store button follows the installed copy', () => {
@@ -334,4 +342,46 @@ test('the app page rechecks the installed copy when its tab loads again', async 
   fingerprint = 'after';
   detail.emit('loaded');
   assert.equal(kit.builds, builds + 1);
+});
+
+test('a raster store icon survives a list rebuild: the cache is never the Image a teardown disposes', async () => {
+  const api = { downloadPublicAsset: async () => ({ bytes: new Uint8Array([1]), extension: 'png' }) };
+  const { hub } = loadHub({ api });
+  const app = { ...storeApp('demo'), iconPath: 'icons/demo.png' };
+  const first = hub.artworkTile(app, 56);
+  await tick();
+  const image = first.children.find((child) => child instanceof FakeImage);
+  assert.equal(image.imageSource.ios, 'uiimage');
+  image.dispose();
+  const again = hub.artworkTile(app, 56);
+  await tick();
+  assert.equal(again.children.find((child) => child instanceof FakeImage).imageSource.ios, 'uiimage', 'the rebuilt row still has its icon');
+});
+
+test('a Hub tile takes the colour the Apps tab gives the installed app', () => {
+  const { hub, load } = loadHub();
+  const { tileColor } = load('app/phone-ui/ios/app-catalog.ts');
+  for (const id of ['com.even.tesla', 'com.displayplus.music', 'notion.g2']) {
+    assert.ok(hub.artworkTile(storeApp(id), 56).className.split(' ').includes(`os-tile-${tileColor(`evenhub-installed:${id}`)}`), id);
+  }
+});
+
+test('a This Session Only sign-in that ends on the glasses signs the Hub tab out at once', async () => {
+  const { hub, session } = loadHub({ api: { listApps: async () => page(['a'], { total: 1 }) }, updates: noUpdates });
+  const { page: tab, body } = openHub(hub);
+  await tick();
+  assert.ok(shownText(body).includes('Sign Out'));
+  // The Even Hub window on the glasses closes: the in-memory token goes, no setting is written.
+  session.signedIn = false;
+  for (const fn of [...session.listeners]) fn();
+  assert.ok(shownText(body).includes('Sign In to Even Hub'));
+  assert.ok(!shownText(body).includes('Sign Out'));
+  tab.emit('unloaded');
+  assert.equal(session.listeners.size, 0);
+});
+
+test('Hub sizes use decimal units, like Software Update and iOS Settings', () => {
+  const { load } = loadHub();
+  const { formatBytes } = load('app/phone-ui/ios/hub-detail-page.ts');
+  assert.deepEqual([999, 1500, 5_000_000].map(formatBytes), ['999 B', '1.5 KB', '5.0 MB']);
 });

@@ -11,7 +11,7 @@ const TABS: { name: TabName; title: string; icon: string; moduleName: string }[]
 const LIGHT_TINT = new Color('#0A62D0'), DARK_TINT = new Color('#4DA3FF')
 
 let shell: { tabs: TabView; frames: Record<TabName, Frame> } | null = null
-let offKeyboard: (() => void) | null = null
+let offRuntime: (() => void)[] = []
 
 export function hasShell(): boolean { return shell !== null }
 
@@ -38,8 +38,14 @@ export function createShell(): TabView {
   })
   shell = { tabs, frames }
   // The keyboard panel lives on Remote; a glasses-started session must reach it from any tab.
-  offKeyboard?.()
-  offKeyboard = runtime.on('keyboardSession', session => { if (session) showRemote() })
+  // Not under a detour: navigating a tab frame makes it Frame.topmost(), and the
+  // shared pages' Frame.topmost().goBack() would then miss the detour, which
+  // cannot be swiped away. The session waits for the detour to close.
+  for (const off of offRuntime) off()
+  offRuntime = [
+    runtime.on('keyboardSession', session => { if (session && !runtime.inDetour) showRemote() }),
+    runtime.on('detour', open => { if (!open && runtime.keyboardSession) showRemote() }),
+  ]
   return tabs
 }
 

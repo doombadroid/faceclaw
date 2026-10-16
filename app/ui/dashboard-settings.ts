@@ -25,6 +25,7 @@ import { Layer, type LayerContext } from "./layers";
 import { GrayImage } from "~/graphics/image";
 import type { DataCollectionLevel } from "../analytics/analytics-store";
 import { IOS_PRIVACY_SUMMARY } from "../analytics/privacy-disclosure";
+import { APP_NAME } from "../branding";
 
 export type NightscoutSettings = {
   siteUrl: string;
@@ -521,7 +522,7 @@ export const brightnessSetting = new ConfigSettingEnum<BrightnessSetting>({
   values: BRIGHTNESS_VALUES,
   normalize: (value) => value === "0" ? "2" : BRIGHTNESS_VALUES.includes(value as BrightnessSetting) ? value as BrightnessSetting : "auto",
   formatValue: brightnessLabel,
-  description: "Auto uses Faceclaw's ambient-light curve; numbers set a fixed level. 2 is the dimmest level.",
+  description: `Auto uses ${APP_NAME}'s ambient-light curve; numbers set a fixed level. 2 is the dimmest level.`,
 });
 
 const AUTO_BRIGHTNESS_LEVELS = ["2", "5", "10", "20", "25", "30", "40", "50", "60", "70", "80", "90", "100"] as const;
@@ -740,15 +741,15 @@ export function dataCollectionSummary(level: DataCollectionLevel): string {
 /** Chosen in the on-glasses onboarding; changeable in Settings > Privacy. */
 export const dataCollectionSetting = new ConfigSettingEnum<DataCollectionLevel>({
   id: "data-collection",
-  label: "Faceclaw statistics",
+  label: `${APP_NAME} statistics`,
   storageKey: DATA_COLLECTION_KEY,
   defaultValue: "none",
   values: ["none", "minimal", "full"],
   formatValue: (value) => DATA_COLLECTION_LABELS[value],
   description:
     (global.isIOS ? IOS_PRIVACY_SUMMARY + " " : "") +
-    "Optional statistics Faceclaw may send its developers once a day, to help fix problems and improve the " +
-    "app. None: no Faceclaw statistics are stored or sent. Minimal: the app version, which devices are " +
+    `Optional statistics ${APP_NAME} may send its developers once a day, to help fix problems and improve the ` +
+    `app. None: no ${APP_NAME} statistics are stored or sent. Minimal: the app version, which devices are ` +
     "paired and in use, and how reliable the connection to them is. Full: also settings chosen from fixed " +
     "options, and which kinds of API key are set (never the keys themselves).",
 });

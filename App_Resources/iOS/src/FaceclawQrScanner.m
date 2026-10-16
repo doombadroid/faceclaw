@@ -63,7 +63,7 @@
     _completion = [completion copy];
     _cameraQueue = dispatch_queue_create("com.faceclaw.qr-camera", DISPATCH_QUEUE_SERIAL);
     if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
-        [self finish:nil error:@"Open Faceclaw on your iPhone to scan a QR code."]; return;
+        [self finish:nil error:@"Open OcuSmart on your iPhone to scan a QR code."]; return;
     }
     if (![FaceclawQrScanner isAvailable]) {
         [self finish:nil error:@"No camera is available on this device."]; return;
@@ -76,11 +76,11 @@
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (self.finished) return;
                 if (granted) [self presentScanner];
-                else [self finish:nil error:@"Camera access denied. Allow Camera for Faceclaw in iPhone Settings, then scan again."];
+                else [self finish:nil error:@"Camera access denied. Allow Camera for OcuSmart in iPhone Settings, then scan again."];
             });
         }];
     } else if (status == AVAuthorizationStatusAuthorized) [self presentScanner];
-    else [self finish:nil error:@"Camera access is unavailable. Check Camera permission for Faceclaw in iPhone Settings."];
+    else [self finish:nil error:@"Camera access is unavailable. Check Camera permission for OcuSmart in iPhone Settings."];
 }
 - (void)presentScanner {
     if (_finished) return;
@@ -94,7 +94,7 @@
     if (!presenter) presenter = UIApplication.sharedApplication.keyWindow.rootViewController;
     while (presenter.presentedViewController) presenter = presenter.presentedViewController;
     if (!presenter.view.window || presenter.isBeingDismissed || presenter.isBeingPresented || [presenter isKindOfClass:UIAlertController.class]) {
-        [self finish:nil error:@"Close the phone dialog and open Faceclaw to scan again."]; return;
+        [self finish:nil error:@"Close the phone dialog and open OcuSmart to scan again."]; return;
     }
     _screen = [FaceclawQrScreen new];
     __weak FaceclawQrScanner *weakSelf = self;
@@ -154,7 +154,7 @@
     dispatch_async(dispatch_get_main_queue(), ^{ [self finish:nil error:@"The camera stopped. Try scanning again."]; });
 }
 - (void)cameraInterrupted:(NSNotification *)notification {
-    dispatch_async(dispatch_get_main_queue(), ^{ [self finish:nil error:@"Camera interrupted. Return to Faceclaw and scan again."]; });
+    dispatch_async(dispatch_get_main_queue(), ^{ [self finish:nil error:@"Camera interrupted. Return to OcuSmart and scan again."]; });
 }
 - (void)backgrounded:(NSNotification *)notification { [self cancel]; }
 - (void)cancel { [self finish:nil error:nil]; }

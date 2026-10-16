@@ -3,7 +3,7 @@ import { groupedPage, section, navRow, buttonRow, valueRow, customRow, type Row 
 import { getRuntime } from './runtime'
 import type { SessionState } from '../../g2/ios-preview-controller'
 import { presentDetour } from './detour'
-import { firmwareSummary } from './firmware-info'
+import { firmwareSummary, reportedState } from './firmware-info'
 import { isPreviewOnlyMode } from '../onboarding-state'
 import { resumeAutoReconnect, suppressAutoReconnect } from '../../g2/reconnect-policy'
 import { loadDeviceAddresses, loadPairedGlassesIdentityForAddresses } from '../../g2/device-addresses'
@@ -11,20 +11,22 @@ import { deviceAddressError } from '../../g2/ios-peripheral-identity'
 import { GlassesHardwareIdentity } from '../../g2/glasses-hardware-identity'
 import { glassesImagePath } from '../../g2/glasses-artwork'
 
-export const PHASE_LABELS: Record<SessionState['phase'], string> = { connected: 'Connected', disconnected: 'Not connected',
-  connecting: 'Connecting', retrying: 'Reconnecting', disconnecting: 'Disconnecting', error: 'Failed' }
+/** The one wording for a session phase, on every page. */
+export const PHASE_LABELS: Record<SessionState['phase'], string> = { connected: 'Connected', disconnected: 'Not Connected',
+  connecting: 'Connecting…', retrying: 'Reconnecting…', disconnecting: 'Disconnecting…', error: 'Connection Failed' }
 
 export const phaseLabel = (state: SessionState | null) => PHASE_LABELS[state?.phase ?? 'disconnected']
 
-/** The one headset battery value the glasses report, or '' while unknown. */
+/** The one headset battery value the session still reports, or '' while unknown. */
 export function batteryText(state: SessionState | null): string {
-  if (state?.battery == null) return ''
-  return state.charging ? `${state.battery}% · Charging` : `${state.battery}%`
+  const reported = reportedState(state)
+  if (reported?.battery == null) return ''
+  return reported.charging ? `${reported.battery}% · Charging` : `${reported.battery}%`
 }
 
 /** The device cell's second line: status, battery when known, what the firmware reported. */
 export function deviceLine(state: SessionState | null): string {
-  return [phaseLabel(state), batteryText(state), firmwareSummary(state).line].filter(Boolean).join(' · ')
+  return [phaseLabel(state), batteryText(state), firmwareSummary(reportedState(state)).line].filter(Boolean).join(' · ')
 }
 
 /** The serial saved at pairing, while it still describes the configured addresses. */
@@ -81,7 +83,7 @@ export function createPage(): Page {
     const status: Row[] = []
     const battery = batteryText(state)
     if (battery) status.push(valueRow({ title: 'Battery', value: battery }))
-    status.push(valueRow({ title: 'Firmware', value: firmwareSummary(state).line }))
+    status.push(valueRow({ title: 'Firmware', value: firmwareSummary(reportedState(state)).line }))
     if (state?.phase === 'connected') status.push(valueRow({ title: 'Ring', value: state.ring ? 'Connected' : 'Not connected' }))
     status.push(navRow({ title: 'Connection Details', onTap: () => {
       void Dialogs.alert({ title: 'Connection Details', message: controller.connectionDetails, okButtonText: 'OK' })
