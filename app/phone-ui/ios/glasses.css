@@ -1,1 +1,20 @@
 /* OcuSmart glasses screens. Tokens and shared row styles live in ocusmart.css. */
+.os-glasses-card { padding: 18 16 14 16; }
+.os-glasses-art { height: 74; horizontal-align: center; }
+.os-glasses-title { font-size: 20; font-weight: 600; text-align: center; margin-top: 10; color: #000000; }
+.os-glasses-status { font-size: 13; text-align: center; color: #6E6E73; }
+.os-battery { margin-top: 16; }
+.os-battery-track { height: 6; border-radius: 3; background-color: #E5E5EA; }
+.os-battery-fill { height: 6; border-radius: 3; background-color: #248A3D; }
+.os-battery-label { font-size: 12; color: #6E6E73; margin-top: 5; }
+.os-battery-value { font-size: 15; font-weight: 600; margin-top: 3; color: #000000; }
+.os-lens { padding: 12 12 4 12; }
+.os-lens-mirror { background-color: #000000; border-radius: 6; }
+
+.ns-dark .os-glasses-title,
+.ns-dark .os-battery-value { color: #FFFFFF; }
+.ns-dark .os-glasses-status,
+.ns-dark .os-battery-label { color: #98989F; }
+.ns-dark .os-battery-track { background-color: #3A3A3C; }
+.ns-dark .os-battery-fill { background-color: #30D158; }
+.ns-dark .os-lens-mirror { border-width: 1; border-color: #2C2C2E; }

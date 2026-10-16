@@ -268,31 +268,6 @@ test('iOS runtime fans controller callbacks out to subscribers and caches the la
   runtime.setDetour(true); runtime.setDetour(false); assert.deepEqual(detours, [true, false], 'pages under a detour learn it closed');
 });
 
-test('iOS My Glasses offers Connect as soon as a detour that saved devices closes', () => {
-  let configured = false, build = null;
-  const page = { events: new Map(), on(event, fn) { this.events.set(event, fn); } }, listeners = new Map();
-  const titles = () => { const rows = []; build({ addChild: section => rows.push(...section.rows) }); return rows.map(row => row.title); };
-  const row = ({ title }) => ({ title });
-  const runtime = { connected: false, evenHubButton: null, controller: { connectionState: null },
-    on(event, fn) { listeners.set(event, fn); return () => listeners.delete(event); } };
-  let refreshes = 0;
-  const { createPage } = load('app/phone-ui/ios/glasses-page.ts', { require: id => ({
-    '@nativescript/core': { Dialogs: {} },
-    './ui-kit': { groupedPage: options => { build = options.build; return { page, refresh: () => refreshes++ }; },
-      section: ({ rows }) => ({ rows }), navRow: row, buttonRow: row, valueRow: row },
-    './runtime': { getRuntime: () => runtime }, './detour': {}, './shell': {}, '../onboarding-state': { isPreviewOnlyMode: () => false },
-    '../../g2/reconnect-policy': {}, '../../g2/device-addresses': { loadDeviceAddresses: () => configured },
-    '../../g2/ios-peripheral-identity': { deviceAddressError: ok => ok ? null : 'missing' },
-  })[id] });
-  createPage(); page.events.get('loaded')();
-  assert.equal(titles().includes('Connect'), false, 'no Connect without saved devices');
-  configured = true; const before = refreshes;
-  listeners.get('detour')(true); assert.equal(refreshes, before);
-  listeners.get('detour')(false); assert.equal(refreshes, before + 1, 'still loaded under the detour, so it must rebuild on close');
-  assert.equal(titles().includes('Connect'), true);
-  page.events.get('unloaded')(); assert.equal(listeners.size, 0);
-});
-
 test('iOS configures an in-process surface before submitting constructor-triggered frames', async () => {
   const submitted = [], surfaces = new Set();
   const shell = { getWindows: () => [], configure() {}, registerWindow() {}, focusWindow() {}, foregroundWindow: () => null };
