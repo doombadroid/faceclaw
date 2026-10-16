@@ -131,7 +131,7 @@ test('iOS webview adapter defers loading until handles attach and destroys a not
   const { createEvenHubWebView } = load('app/apps/evenhub/webview.ios.ts');
   const session = { manifest: { name: 'Probe', entrypoint: 'index.html' }, distDir: '/app/dist' };
   const host = createEvenHubWebView(session); assert.equal(calls.length, 0);
-  timers.get(1)(); assert.equal(calls[0][0], '/app/dist'); assert.match(calls[0][2], /postMessage/); assert.match(calls[0][2], /BRIDGEEXT$/);
+  timers.get(1)(); assert.equal(calls[0][0], '/app/dist'); assert.match(calls[0][2], /postMessage/); assert.match(calls[0][2], /BRIDGEEXT\n}$/, 'the extensions script ends the origin-scoped block');
   host.destroy(); assert.equal(timers.size, 0); assert.equal(calls.at(-1), 'destroy');
   const remote = createEvenHubWebView({ ...session, remoteUrl: 'https://example.test' });
   timers.get(1)(); assert.equal(calls.at(-1)[0], 'https://example.test');

@@ -1,6 +1,7 @@
 @import '@nativescript/theme/css/core.css';
 @import './phone-ui/remote-controls.css';
 @import './phone-ui/pairing.css';
+@import './phone-ui/ios/ocusmart.css';
 
 .body-text { font-size: 18; }
 .h1 { font-size: 28; font-weight: bold; }

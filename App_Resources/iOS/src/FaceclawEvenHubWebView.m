@@ -96,7 +96,7 @@
     [_host addSubview:_webView];
     _webView.translatesAutoresizingMaskIntoConstraints = NO;
     _back = [UIButton buttonWithType:UIButtonTypeSystem];
-    [_back setTitle:@"Back to Faceclaw" forState:UIControlStateNormal];
+    [_back setTitle:@"Back to OcuSmart" forState:UIControlStateNormal];
     _back.accessibilityIdentifier = @"evenhub-back";
     [_back addTarget:self action:@selector(hideOnPhone) forControlEvents:UIControlEventTouchUpInside];
     [_host addSubview:_back]; _back.translatesAutoresizingMaskIntoConstraints = NO;

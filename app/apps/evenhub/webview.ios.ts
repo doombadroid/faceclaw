@@ -91,7 +91,7 @@ export function createEvenHubWebView(session: EvenHubSession): EvenHubWebView {
     } catch (error) { console.warn(`EvenHub bridge: ${error}`) }
   }
   // Defer loading until manager.ts has attached the session/window handles.
-  const declared = declaredOrigins(session.manifest.networkWhitelist)
+  const declared = declaredOrigins(session.manifest.networkWhitelist ?? [])
   host.allowedOrigins = declared
   const script = scopeToAppOrigin(
     IOS_EVENHUB_TRANSPORT_SCRIPT + EVENHUB_BRIDGE_INJECT_SCRIPT + buildFaceclawExtensionsScript(`Faceclaw/${FACECLAW_VERSION}`),

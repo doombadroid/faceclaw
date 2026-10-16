@@ -152,11 +152,12 @@ test('settings-driven repaint runs after font cache invalidation, regardless of 
   assert.deepEqual(painted, ['Bold']);
 });
 
-test('iOS bandwidth footer toggles live, polls only in foreground and resets its rate window on resume', () => {
-  const views = [], intervals = new Map(), appEvents = new Map(), settingListeners = new Set();
-  let enabled = false, atMs = 0, totals = { messages: 0, bytes: 0, frames: 0 }, nextId = 0;
+function remotePageHarness({ enabled = () => false, totals = () => ({ messages: 0, bytes: 0, frames: 0 }), now = () => 0, intervals = new Map() } = {}) {
+  const views = [], appEvents = new Map(), settingListeners = new Set(), runtimeListeners = new Map();
+  let nextId = 0;
   class View {
-    events = new Map(); children = [];
+    events = new Map(); children = []; ios = {};
+    actionBar = { actionItems: { addItem() {} }, set() {}, setColor(navBar, color) { navBar.title = color; navBar.tintColor = color; } };
     constructor() { views.push(this); }
     on(event, fn) { this.events.set(event, fn); }
     addChild(view) { this.children.push(view); }
@@ -168,41 +169,39 @@ test('iOS bandwidth footer toggles live, polls only in foreground and resets its
   }
   const core = { Application: { suspendEvent: 'suspend', resumeEvent: 'resume',
     on: (key, fn) => appEvents.set(key, fn), off: key => appEvents.delete(key) },
-    Builder: { load: () => new View() }, Observable: View, Button: View, Color: class {}, Dialogs: {}, GridLayout: View, Image: View, Label: View, Page: View, StackLayout: View };
+    ActionItem: View, Builder: { load: () => new View() }, Observable: View, Color: class {}, GridLayout: View, Image: View, Label: View, Page: View };
+  const controller = { pauses: 0, resumes: 0, pause() { this.pauses++; }, resume() { this.resumes++; } };
+  const runtime = { controller, frame: null, keyboardSession: null, on(event, fn) {
+    runtimeListeners.set(event, fn); return () => runtimeListeners.delete(event);
+  } };
   const modules = {
-    "../ui/input-monitor": load("app/ui/input-monitor.ts", {}),
-    '../assistant/system-tools': { registerSystemTools() {} },
-    '../assistant/window-tools': { registerWindowTools() {} },
-    '../assistant/navigate-tools': { registerNavigateTools() {} },
-    '../assistant/roam-tools': { registerRoamTools() {} },
-    "../native/ios-navigation-sensors": {},
-    '../native/notification-icons.ios': { bindIosNotifications() {}, iosNotificationsChanged() {}, onIosNotificationPopup: () => () => {}, readActiveNotifications: () => [] },
-    '../native/notification-sources': { shouldShowNotificationOnGlasses: () => true },
-    '../native/compass.ios': { bindCompassSession() {}, receiveCompassEvent() {} },
     '@nativescript/core': core,
-    '../apps/launcher': { launcherEntries: () => [] },
-    '../apps/all-apps': { ALL_APPS: [] },
-    '../g2/ios-preview-controller': { IosPreviewController: class { resume() {} pause() {} } },
-    './phone-gestures': { PhoneGestureRecognizer: class { cancel() {} } },
-    './ble-bandwidth-meter': require('../.test-build/app/phone-ui/ble-bandwidth-meter.js'),
-    '../native/ble-traffic': { sampleBleTraffic: () => totals },
-    '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, displayLayoutSetting: { displayValue: () => 'Tall' }, showBleBandwidthSetting: { get: () => enabled },
+    './runtime': { getRuntime: () => runtime },
+    '../phone-gestures': { PhoneGestureRecognizer: class { cancel() {} } },
+    '../ble-bandwidth-meter': require('../.test-build/app/phone-ui/ble-bandwidth-meter.js'),
+    '../../native/ble-traffic': { sampleBleTraffic: () => totals() },
+    '../../ui/dashboard-settings': { showBleBandwidthSetting: { get: () => enabled() }, mirrorTouchSetting: { get: () => true },
       onAnySettingChanged: fn => { settingListeners.add(fn); return () => settingListeners.delete(fn); } },
-    '../g2/device-addresses': { loadDeviceAddresses: () => ({}) },
-    '../g2/ios-peripheral-identity': { deviceAddressError: () => 'no test devices' },
-    './onboarding-state': { isPreviewOnlyMode: () => false },
-    '../g2/reconnect-policy': { isAutoReconnectSuppressed: () => false },
   };
-  modules['./keyboard-input-view-model'] = load('app/phone-ui/keyboard-input-view-model.ts', { require: id => modules[id] });
-  modules['./remote-controls-view-model'] = load('app/phone-ui/remote-controls-view-model.ts', { require: id => modules[id] });
-  const { createMainPage } = load('app/phone-ui/main-page.ios.ts', {
-    require: id => modules[id] ?? {}, Date: { now: () => atMs },
+  // The shared view models resolve their own imports relative to phone-ui/.
+  const shared = { '@nativescript/core': core, '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, displayLayoutSetting: { displayValue: () => 'Tall' } } };
+  modules['./ui-kit'] = load('app/phone-ui/ios/ui-kit.ts', { require: id => id === '@nativescript/core' ? core : {} });
+  modules['../keyboard-input-view-model'] = load('app/phone-ui/keyboard-input-view-model.ts', { require: id => shared[id] ?? {} });
+  modules['../remote-controls-view-model'] = load('app/phone-ui/remote-controls-view-model.ts', { require: id => shared[id] ?? {} });
+  const { createRemotePage } = load('app/phone-ui/ios/remote-page.ts', {
+    require: id => modules[id] ?? {}, Date: { now },
     NSNotificationCenter: { defaultCenter: { addObserverForNameObjectQueueUsingBlock: () => ({}), removeObserver() {} } },
     UIKeyboardWillChangeFrameNotification: 'keyboard', NSOperationQueue: { mainQueue: {} },
     setInterval: fn => { const id = ++nextId; intervals.set(id, fn); return id; }, clearInterval: id => intervals.delete(id),
     setTimeout: () => 1, clearTimeout() {},
   });
-  const page = createMainPage(), footer = views.find(v => v.accessibilityIdentifier === 'ble-bandwidth-indicator');
+  return { page: createRemotePage(), views, appEvents, settingListeners, runtimeListeners, controller, intervals };
+}
+
+test('iOS Remote bandwidth footer toggles live, polls only in foreground and resets its rate window on resume', () => {
+  let enabled = false, atMs = 0, totals = { messages: 0, bytes: 0, frames: 0 };
+  const { page, views, appEvents, settingListeners, intervals } = remotePageHarness({ enabled: () => enabled, totals: () => totals, now: () => atMs });
+  const footer = views.find(v => v.accessibilityIdentifier === 'ble-bandwidth-indicator');
   page.events.get('loaded')(); assert.equal(intervals.size, 0); assert.equal(footer.visibility, 'collapse');
   enabled = true; for (const fn of settingListeners) fn();
   assert.equal(intervals.size, 1); assert.equal(footer.visibility, 'visible');
@@ -215,6 +214,83 @@ test('iOS bandwidth footer toggles live, polls only in foreground and resets its
   appEvents.get('resume')(); assert.equal(intervals.size, 1); assert.doesNotMatch(footer.text, /fps/);
   enabled = false; for (const fn of settingListeners) fn(); assert.equal(footer.visibility, 'collapse'); assert.equal(intervals.size, 0);
   page.events.get('unloaded')(); assert.equal(appEvents.size, 0); assert.equal(settingListeners.size, 0);
+});
+
+test('iOS Remote subscribes to the runtime while loaded and never pauses the shared controller', () => {
+  const { page, views, runtimeListeners, controller } = remotePageHarness();
+  page.events.get('loaded')();
+  assert.deepEqual([...runtimeListeners.keys()].sort(), ['frame', 'keyboardSession']);
+  const mirror = views.find(v => v.accessibilityIdentifier === 'glasses-preview');
+  runtimeListeners.get('frame')({ image: 'png', focus: 'Clock' }); assert.equal(mirror.imageSource, 'png');
+  page.events.get('unloaded')(); page.events.get('loaded')(); page.events.get('unloaded')();
+  assert.equal(runtimeListeners.size, 0);
+  assert.deepEqual([controller.pauses, controller.resumes], [0, 0], 'TabView unloads hidden tabs; the runtime owns pause/resume');
+  const navBar = {}; page.actionBar.setColor(navBar, 'black');
+  assert.deepEqual(navBar, { title: 'black', tintColor: null }, 'the CSS text colour styles the title, not the bar tint');
+});
+
+test('iOS runtime fans controller callbacks out to subscribers and caches the latest values', () => {
+  let callbacks, connects = 0, pauses = 0, resumes = 0;
+  const appEvents = new Map(), alerts = [];
+  const { getRuntime } = load('app/phone-ui/ios/runtime.ts', { require: id => ({
+    '@nativescript/core': { Application: { suspendEvent: 'suspend', resumeEvent: 'resume', on: (key, fn) => appEvents.set(key, fn) },
+      Dialogs: { alert: options => { alerts.push(options); return Promise.resolve(); } } },
+    '../../g2/ios-preview-controller': { IosPreviewController: class {
+      constructor(...args) { callbacks = args; }
+      connect() { connects++; } pause() { pauses++; } resume() { resumes++; } disconnect() { return Promise.resolve(); }
+    } },
+    '../onboarding-state': { isPreviewOnlyMode: () => false },
+    '../../g2/reconnect-policy': { isAutoReconnectSuppressed: () => false, suppressAutoReconnect() {} },
+    '../../g2/device-addresses': { loadDeviceAddresses: () => ({}) },
+    '../../g2/ios-peripheral-identity': { deviceAddressError: () => null },
+    '../../branding': { APP_NAME: 'OcuSmart' },
+  })[id] });
+  const runtime = getRuntime();
+  assert.equal(getRuntime(), runtime, 'one controller per process');
+  const [onFrame, onError, onConnection, onKeyboard, onButton] = callbacks;
+  const a = [], b = [];
+  const offA = runtime.on('connection', s => a.push(s.phase));
+  runtime.on('connection', s => b.push(s.phase));
+  onConnection({ phase: 'connecting' }); offA(); onConnection({ phase: 'connected' });
+  assert.deepEqual([a, b], [['connecting'], ['connecting', 'connected']]);
+  onFrame('img', 'Clock'); onKeyboard({ targets: [] }); onButton({ windowId: 'w', title: 'App', icon: null });
+  assert.deepEqual(JSON.parse(JSON.stringify([runtime.connection, runtime.frame, runtime.keyboardSession, runtime.evenHubButton])),
+    [{ phase: 'connected' }, { image: 'img', focus: 'Clock' }, { targets: [] }, { windowId: 'w', title: 'App', icon: null }]);
+  const errors = []; runtime.on('error', m => errors.push(m)); runtime.on('error', m => errors.push(m));
+  onError('boom'); assert.deepEqual(errors, ['boom', 'boom']); assert.equal(alerts.length, 1, 'one alert, not one per page');
+  assert.equal(alerts[0].title, 'OcuSmart');
+  runtime.start(); runtime.start();
+  assert.deepEqual([resumes, connects], [1, 1], 'start runs once and auto-connects');
+  appEvents.get('suspend')(); appEvents.get('resume')(); assert.deepEqual([pauses, resumes], [1, 2]);
+  runtime.setDetour(true); appEvents.get('resume')(); assert.deepEqual([pauses, resumes], [2, 2], 'a detour holds the controller paused');
+  runtime.setDetour(false); assert.deepEqual([resumes, connects], [3, 2], 'closing a detour re-runs the auto-connect check');
+  const detours = []; runtime.on('detour', open => detours.push(open));
+  runtime.setDetour(true); runtime.setDetour(false); assert.deepEqual(detours, [true, false], 'pages under a detour learn it closed');
+});
+
+test('iOS My Glasses offers Connect as soon as a detour that saved devices closes', () => {
+  let configured = false, build = null;
+  const page = { events: new Map(), on(event, fn) { this.events.set(event, fn); } }, listeners = new Map();
+  const titles = () => { const rows = []; build({ addChild: section => rows.push(...section.rows) }); return rows.map(row => row.title); };
+  const row = ({ title }) => ({ title });
+  const runtime = { connected: false, evenHubButton: null, controller: { connectionState: null },
+    on(event, fn) { listeners.set(event, fn); return () => listeners.delete(event); } };
+  let refreshes = 0;
+  const { createPage } = load('app/phone-ui/ios/glasses-page.ts', { require: id => ({
+    '@nativescript/core': { Dialogs: {} },
+    './ui-kit': { groupedPage: options => { build = options.build; return { page, refresh: () => refreshes++ }; },
+      section: ({ rows }) => ({ rows }), navRow: row, buttonRow: row, valueRow: row },
+    './runtime': { getRuntime: () => runtime }, './detour': {}, './shell': {}, '../onboarding-state': { isPreviewOnlyMode: () => false },
+    '../../g2/reconnect-policy': {}, '../../g2/device-addresses': { loadDeviceAddresses: () => configured },
+    '../../g2/ios-peripheral-identity': { deviceAddressError: ok => ok ? null : 'missing' },
+  })[id] });
+  createPage(); page.events.get('loaded')();
+  assert.equal(titles().includes('Connect'), false, 'no Connect without saved devices');
+  configured = true; const before = refreshes;
+  listeners.get('detour')(true); assert.equal(refreshes, before);
+  listeners.get('detour')(false); assert.equal(refreshes, before + 1, 'still loaded under the detour, so it must rebuild on close');
+  assert.equal(titles().includes('Connect'), true);
+  page.events.get('unloaded')(); assert.equal(listeners.size, 0);
 });
 
 test('iOS configures an in-process surface before submitting constructor-triggered frames', async () => {

@@ -11,7 +11,7 @@
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleDisplayName</key>
-  <string>Faceclaw</string>
+  <string>OcuSmart</string>
   <key>CFBundleShortVersionString</key>
   <!-- Apple requires a numeric version; the app displays 0.8.3-rc1. -->
   <string>0.8.3</string>

@@ -119,14 +119,55 @@ test('iOS firmware prompt maps addresses to identifiers, forwards the Kotlin flo
   failed.start(); await settle(); assert.deepEqual(errors, ['Wake the glasses.']); assert.equal(instances.length, 1);
 });
 
-test('iOS onboarding returns to the existing main controller, or creates it after first setup', () => {
-  const calls = [], main = { entry: { moduleName: 'phone-ui/main-page' } }, stack = [main];
+test('iOS onboarding finishes by closing the presented detour, or by swapping first-run onboarding for the shell', async () => {
+  const calls = [], navs = [], modals = [], resets = [];
+  let shellExists = true;
+  class Frame { backStack = []; navigate(entry) { navs.push(entry); } goBack() { calls.push('back'); } canGoBack() { return this.backStack.length > 0; } closeModal() { calls.push('close'); } }
+  class Page { events = new Map(); on(event, fn) { this.events.set(event, fn); } }
+  const root = { modal: null, showModal(view, options) { modals.push({ view, options }); this.modal = view; } };
+  const runtime = { withDisconnected: async fn => { calls.push('disconnect'); fn(); }, setDetour: open => calls.push(`detour:${open}`) };
+  const createShell = () => 'shell';
+  const detour = load('app/phone-ui/ios/detour.ts', {
+    '@nativescript/core': { Application: { getRootView: () => root, resetRootView: entry => resets.push(entry) }, Frame, Page },
+    './runtime': { getRuntime: () => runtime }, './shell': { createShell, hasShell: () => shellExists },
+  });
+  const { finishOnboardingNavigation } = load('app/phone-ui/onboarding-navigation.ios.ts', { './ios/detour': detour });
+  assert.equal(finishOnboardingNavigation, detour.finishDetour);
+  await detour.presentDetour('phone-ui/onboarding-flash-page', { mode: 'install', fromOnboarding: false });
+  assert.deepEqual(calls, ['disconnect', 'detour:true']);
+  assert.equal(modals.length, 1); assert.equal(modals[0].options.fullscreen, true);
+  assert.equal(modals[0].options.cancelable, false, 'no swipe-to-dismiss');
+  assert.deepEqual(navs.map(n => n.moduleName), ['phone-ui/onboarding-flash-page'], 'the requested page is what slides up');
+  assert.deepEqual(JSON.parse(JSON.stringify(navs[0].context)), { mode: 'install', fromOnboarding: false });
+  // Shared pages leave a detour by goBack() from their first screen or by navigating to the legacy main page.
+  const frame = modals[0].view; calls.length = 0;
+  frame.goBack(); frame.navigate('phone-ui/main-page'); frame.navigate({ moduleName: 'phone-ui/main-page', clearHistory: true });
+  assert.deepEqual(calls, ['close', 'close', 'close']); assert.equal(navs.length, 1);
+  frame.backStack.push({}); frame.goBack(); frame.navigate({ moduleName: 'phone-ui/config-page' });
+  assert.deepEqual([calls.at(-1), navs.at(-1).moduleName], ['back', 'phone-ui/config-page'], 'deeper pages still navigate normally');
+  await detour.presentDetour('phone-ui/config-page'); assert.equal(modals.length, 1, 'one detour at a time');
+  finishOnboardingNavigation(); assert.equal(calls.at(-1), 'close');
+  modals[0].options.closeCallback(); root.modal = null; assert.equal(calls.at(-1), 'detour:false');
+  finishOnboardingNavigation(); assert.equal(calls.at(-1), 'detour:false'); assert.equal(resets.length, 0);
+  shellExists = false; finishOnboardingNavigation(); assert.equal(resets[0].create, createShell);
+  // Landing on the legacy main page outside a detour's own frame also closes it.
+  shellExists = true; calls.length = 0;
+  await detour.presentDetour('phone-ui/permissions-page', undefined, false);
+  assert.deepEqual(calls, ['detour:true'], 'Permissions keeps the connection');
+  detour.createReturnPage().events.get('navigatedTo')(); assert.equal(calls.at(-1), 'close');
+  // UIKit can refuse to present (another sheet is up): nothing may stay paused or half-open.
+  modals[1].options.closeCallback(); calls.length = 0; root.modal = null; root.showModal = () => {};
+  await detour.presentDetour('phone-ui/config-page', undefined, false); assert.deepEqual(calls, []);
+  shellExists = false; finishOnboardingNavigation(); assert.equal(resets.length, 2, 'no stale detour to close');
+});
+
+test('Android onboarding finishes by replacing the stack with the main page', () => {
+  const navs = [];
   const { finishOnboardingNavigation } = load('app/phone-ui/onboarding-navigation.ts', {
-    '@nativescript/core': { Frame: { topmost: () => ({ backStack: stack, goBack: entry => calls.push(entry), navigate: entry => calls.push(entry) }) } },
-  }, { global: { isIOS: true } });
-  finishOnboardingNavigation(); assert.equal(calls[0], main);
-  stack.length = 0; finishOnboardingNavigation();
-  assert.equal(calls[1].moduleName, 'phone-ui/main-page'); assert.equal(calls[1].clearHistory, true);
+    '@nativescript/core': { Frame: { topmost: () => ({ navigate: entry => navs.push(entry) }) } },
+  });
+  finishOnboardingNavigation();
+  assert.deepEqual(JSON.parse(JSON.stringify(navs)), [{ moduleName: 'phone-ui/main-page', clearHistory: true }]);
 });
 
 test('pinned stock firmware reproduces the custom image, extracts fonts, and passes OTA validation', {
