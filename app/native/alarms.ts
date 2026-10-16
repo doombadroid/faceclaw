@@ -1,5 +1,4 @@
 import { Utils } from "@nativescript/core";
-import { APP_NAME } from "../branding";
 
 declare const com: any;
 
@@ -11,6 +10,13 @@ declare const com: any;
  * at first) and adds phone sound if the glasses cannot carry it. Ids are the
  * engine's item ids.
  */
+
+// The Permissions page's phone-alert card (alarms.ios.ts has the iOS versions).
+export {
+  hasPostNotificationsPermission as hasPhoneAlertPermission,
+  requestPostNotificationsPermission as requestPhoneAlertPermission,
+} from "../g2/android-permissions";
+export const refreshPhoneAlertPermission = (): Promise<void> => Promise.resolve();
 
 export type AlarmKind = "timer" | "alarm";
 
@@ -125,7 +131,6 @@ export function drainPhoneAlarmJournal(): PhoneAlarmAction[] {
 
 /** Conditions under which the phone may fail to ring, most serious first. */
 export function checkPhoneAlarmReliability(): AlarmReliabilityIssue[] {
-  if (global.isIOS) return [{ code: "ios-foreground-only", message: `Keep ${APP_NAME} open: background timer and alarm alerts are not available on iOS yet.`, fixable: false }];
   const context = getContext();
   if (!context) return [];
   let parsed: any;

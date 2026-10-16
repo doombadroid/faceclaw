@@ -1,9 +1,8 @@
 import { iosBluetooth } from "../native/ios-bluetooth";
-import { Application, Dialogs, EventData, Frame, Observable, View } from "@nativescript/core";
+import { Application, Dialogs, EventData, Frame, Observable, Utils, View } from "@nativescript/core";
 import { APP_NAME } from "../branding";
 
 import {
-  ensureFineLocationPermission,
   hasBlePermissions,
   hasFineLocationPermission,
   hasMicrophonePermission,
@@ -12,7 +11,9 @@ import {
   requestMicrophonePermission,
   requestPostNotificationsPermission,
 } from "../g2/android-permissions";
+import { hasPhoneAlertPermission, refreshPhoneAlertPermission, requestPhoneAlertPermission } from "../native/alarms";
 import { ensureCalendarPermission, hasCalendarPermission } from "../native/calendar-permissions";
+import { ensureFineLocationPermission, hasLocationPermission } from "../native/location-permissions";
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import { hasAllFilesAccess, requestAllFilesAccess } from "../native/file-access";
 import { isNotificationListenerEnabled, requestNotificationListenerAccess } from "../native/notification-access";
@@ -102,11 +103,65 @@ const ANDROID_PERMISSIONS: PermissionDefinition[] = [
   },
 ];
 
+declare const FaceclawSpeech: any;
+declare const CLLocationManager: any;
+
+/** iOS prompts only once; after a denial the switch is on the app's Settings page. */
+async function openIosSettings(title: string): Promise<void> {
+  const open = await Dialogs.confirm({
+    title: `${title} Access`,
+    message: `Allow ${title} for ${APP_NAME} in iPhone Settings.`,
+    okButtonText: "Open Settings",
+    cancelButtonText: "Cancel",
+  });
+  if (open) Utils.openUrl("app-settings:");
+}
+
+/** AVAuthorizationStatus / SFSpeechRecognizerAuthorizationStatus: 0 not asked yet, 3 authorized. */
+function iosStatusPermission(id: string, title: string, description: string, status: () => number, ask: (done: (status: number) => void) => void): PermissionDefinition {
+  return {
+    id, title, description, optional: true,
+    isGranted: () => status() === 3,
+    request: () => (status() === 0 ? new Promise<number>(ask) : openIosSettings(title)),
+  };
+}
+
+/** CLAuthorizationStatus 1 restricted, 2 denied. */
+function iosLocationBlocked(): boolean {
+  const status = Number(CLLocationManager.new().authorizationStatus);
+  return status === 1 || status === 2;
+}
+
 const PERMISSIONS: PermissionDefinition[] = global.isIOS ? [{
   id: "nearby-devices", title: "Nearby Devices",
   description: "Needed to communicate with your smart glasses over Bluetooth.", optional: false,
   isGranted: () => iosBluetooth().state === 5,
   request: () => iosBluetooth().ensureReady(),
+}, {
+  id: "post-notifications", title: "Notifications",
+  description: "Optional: phone alerts for timers and alarms when the glasses cannot show them.", optional: true,
+  isGranted: hasPhoneAlertPermission,
+  request: requestPhoneAlertPermission,
+},
+iosStatusPermission("microphone", "Microphone", "Optional: voice input from the iPhone microphone when the glasses are not connected.",
+  () => FaceclawSpeech.microphoneAuthorizationStatus(), (done) => FaceclawSpeech.requestMicrophoneAuthorization(done)),
+iosStatusPermission("speech-recognition", "Speech Recognition", "Optional: on-device Apple transcription for voice input.",
+  () => FaceclawSpeech.authorizationStatus(), (done) => FaceclawSpeech.requestAuthorization(done)),
+{
+  id: "location", title: "Location",
+  description: "Optional: navigation, weather and true-north compass on the glasses.", optional: true,
+  isGranted: hasLocationPermission,
+  request: () => (iosLocationBlocked() ? openIosSettings("Location") : ensureFineLocationPermission()),
+}, {
+  id: "read-notifications", title: "iPhone Notifications",
+  description: "Optional: show iPhone notifications on the glasses.", optional: true,
+  isGranted: isNotificationListenerEnabled,
+  // No API or deep link reaches this per-device Bluetooth setting.
+  request: () => Dialogs.alert({
+    title: "iPhone Notifications",
+    message: "Open iPhone Settings > Bluetooth, tap (i) next to the right lens, and turn on Share System Notifications.",
+    okButtonText: "OK",
+  }),
 }, {
   id: "calendar", title: "Calendar",
   description: "Optional: display upcoming events in Calendar and Glanceboard on your glasses. Choose Full Access when asked.",
@@ -147,11 +202,15 @@ export class PermissionsViewModel extends Observable {
    * leave the app for a system screen; re-check everything whenever the app
    * comes back.
    */
-  private readonly onAppResume = (): void => this.refresh();
+  private readonly onAppResume = (): void => {
+    this.refresh();
+    // The notification status is only known asynchronously on iOS.
+    if (global.isIOS) void refreshPhoneAlertPermission().then(() => this.refresh());
+  };
 
   onPageLoaded(): void {
     Application.on(Application.resumeEvent, this.onAppResume);
-    this.refresh();
+    this.onAppResume();
   }
 
   onPageUnloaded(): void {
@@ -169,7 +228,7 @@ export class PermissionsViewModel extends Observable {
   }
 
   get instructions(): string {
-    if (global.isIOS) return `${APP_NAME} uses Bluetooth to communicate with your smart glasses. Calendar access is optional. Tap a card to allow access; a checkmark means it is ready.`;
+    if (global.isIOS) return `${APP_NAME} uses Bluetooth to communicate with your smart glasses; everything else is optional. Tap a card to allow access; a checkmark means it is ready. iOS asks only once, so a card you declined opens Settings.`;
     return this.onboarding
       ? `Faceclaw uses these ${global.isIOS ? "iOS" : "Android"} permissions. Tap a card to grant one; a checkmark means it is already granted. ` +
           "Optional permissions can also be granted later, from the Permissions item in the main-screen menu."
