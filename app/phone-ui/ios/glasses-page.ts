@@ -4,7 +4,7 @@ import { getRuntime } from './runtime'
 import { showConnectionDetails } from './connection-details'
 import type { SessionState } from '../../g2/ios-preview-controller'
 import { presentDetour } from './detour'
-import { showFirmwareAlert } from './firmware-alert'
+import { showFirmwareAlert, showFontsAlert } from './firmware-alert'
 import { firmwareSummary, reportedState } from './firmware-info'
 import { pushInTab, selectTab } from './shell'
 import { launchableAppCount } from './app-catalog'
@@ -14,6 +14,7 @@ import { phoneTitle } from '../../ui/dashboard/settings-catalog'
 import { resumeAutoReconnect, suppressAutoReconnect } from '../../g2/reconnect-policy'
 import { loadDeviceAddresses, loadPairedGlassesIdentityForAddresses } from '../../g2/device-addresses'
 import { deviceAddressError } from '../../g2/ios-peripheral-identity'
+import { hasExtractedEvenHubFonts } from '../../g2/firmware-builder'
 import { GlassesHardwareIdentity } from '../../g2/glasses-hardware-identity'
 import { glassesImagePath } from '../../g2/glasses-artwork'
 import { brightnessLabel, brightnessSetting, mirrorTouchSetting, onAnySettingChanged } from '../../ui/dashboard-settings'
@@ -86,6 +87,9 @@ export function lensMirrorWidth(available: number, pageHeight: number): number {
   return Math.max(0, Math.min(available, (pageHeight - 160) * 4 / 3, 560))
 }
 
+// The check parses a large JSON file, so like Android it runs only until it succeeds.
+let fontsConfirmed = false
+
 export function createPage(): Page {
   const runtime = getRuntime(), controller = runtime.controller
   let shown = ''
@@ -100,6 +104,8 @@ export function createPage(): Page {
     const top: Row[] = []
     if (warning) top.push(navRow({ tile: tile('exclamationmark.triangle.fill', 'red'), title: 'Attention Needed',
       onTap: () => { void showFirmwareAlert(warning) } }))
+    if (!deviceAddressError(loadDeviceAddresses()) && !(fontsConfirmed ||= hasExtractedEvenHubFonts()))
+      top.push(navRow({ tile: tile('textformat', 'orange'), title: 'G2 Fonts Missing', onTap: () => { void showFontsAlert() } }))
     const phoneUi = runtime.evenHubButton
     if (phoneUi?.icon) {
       const appTile = tile('app', 'teal')

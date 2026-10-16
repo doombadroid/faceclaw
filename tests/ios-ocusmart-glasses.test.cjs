@@ -27,9 +27,9 @@ const teardown = node => {
   [...(node.children ?? []), ...(node.rows ?? []), node.view, node.tile].forEach(teardown);
 };
 
-function setup({ state = null, configured = true, serial = '', apps = [], installed = [], notifications = '2 of 3' } = {}) {
+function setup({ state = null, configured = true, serial = '', apps = [], installed = [], notifications = '2 of 3', fonts = true } = {}) {
   const calls = [], listeners = new Map(), settingListeners = new Set();
-  const settings = { brightness: 'auto', mirrorTouch: true, notifications }, env = { configured, installed };
+  const settings = { brightness: 'auto', mirrorTouch: true, notifications }, env = { configured, installed, fonts, fontChecks: 0 };
   let build = null, container = null, refreshes = 0;
   const page = { handlers: {}, height: 800, on(event, fn) { this.handlers[event] = fn; }, getActualSize() { return { width: 0, height: this.height }; } };
   const row = kind => options => ({ kind, ...options });
@@ -58,7 +58,8 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
     './runtime': { getRuntime: () => runtime },
     './detour': { presentDetour: (...args) => calls.push(['detour', ...args]) },
     './connection-details': { showConnectionDetails: () => calls.push(['details']) },
-    './firmware-alert': { showFirmwareAlert: message => calls.push(['firmwareAlert', message]) },
+    './firmware-alert': { showFirmwareAlert: message => calls.push(['firmwareAlert', message]), showFontsAlert: () => calls.push(['fontsAlert']) },
+    '../../g2/firmware-builder': { hasExtractedEvenHubFonts: () => { env.fontChecks++; return env.fonts; } },
     './shell': { pushInTab: (...args) => calls.push(['push', ...args]), selectTab: name => calls.push(['tab', name]) },
     '../onboarding-state': { isPreviewOnlyMode: () => false },
     '../../g2/reconnect-policy': { suppressAutoReconnect() {}, resumeAutoReconnect() {} },
@@ -282,4 +283,18 @@ test('My Glasses counts its lens mirror as shown exactly while loaded', () => {
   page.page.handlers.unloaded(); assert.equal(page.runtime.mirrors, 0, 'another tab, or Remote pushed over it');
   page.page.handlers.unloaded(); assert.equal(page.runtime.mirrors, 0, 'a repeated unloaded releases nothing more');
   page.page.handlers.loaded(); assert.equal(page.runtime.mirrors, 1, 'back on the tab, or Remote popped');
+});
+
+test('My Glasses warns about missing G2 fonts only for paired glasses, until extraction succeeds', () => {
+  assert.equal(setup({ configured: false, fonts: false }).find('G2 Fonts Missing'), undefined, 'nothing to prepare fonts for unpaired');
+  assert.equal(setup().find('G2 Fonts Missing'), undefined);
+  const page = setup({ fonts: false });
+  page.find('G2 Fonts Missing').onTap();
+  assert.deepEqual(page.calls.at(-1), ['fontsAlert']);
+  // The firmware-check detour extracts them; closing it rebuilds the page.
+  page.env.fonts = true; page.listeners.get('detour')(false);
+  assert.equal(page.find('G2 Fonts Missing'), undefined, 'cleared once extracted');
+  const checks = page.env.fontChecks;
+  page.listeners.get('detour')(false); page.setState(connected);
+  assert.equal(page.env.fontChecks, checks, 'a confirmed extraction is not parsed again');
 });
