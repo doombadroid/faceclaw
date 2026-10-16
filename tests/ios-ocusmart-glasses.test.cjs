@@ -57,6 +57,7 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
     },
     './runtime': { getRuntime: () => runtime },
     './detour': { presentDetour: (...args) => calls.push(['detour', ...args]) },
+    './connection-details': { showConnectionDetails: () => calls.push(['details']) },
     './firmware-alert': { showFirmwareAlert: message => calls.push(['firmwareAlert', message]) },
     './shell': { pushInTab: (...args) => calls.push(['push', ...args]), selectTab: name => calls.push(['tab', name]) },
     '../onboarding-state': { isPreviewOnlyMode: () => false },
@@ -214,7 +215,7 @@ test('My Glasses routes rows to their pages', () => {
   assert.deepEqual(tap('Pair Glasses'), ['detour', 'ocusmart/setup']);
   assert.deepEqual(tap('Device Settings'), ['push', 'glasses', 'ocusmart/device']);
   tap('Connection Details');
-  assert.deepEqual(page.calls.at(-1), ['alert', 'details']);
+  assert.deepEqual(page.calls.at(-1), ['details']);
   // One entry point per device action: Device Settings holds them.
   for (const title of ['Configure Devices', 'Check Firmware', 'Install Custom Firmware', 'Uninstall Custom Firmware', 'Permissions']) {
     assert.equal(page.find(title), undefined, title);

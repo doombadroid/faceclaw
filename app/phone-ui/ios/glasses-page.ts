@@ -1,6 +1,7 @@
-import { Dialogs, GridLayout, Image, Label, StackLayout, type Page } from '@nativescript/core'
+import { GridLayout, Image, Label, StackLayout, type Page } from '@nativescript/core'
 import { groupedPage, section, navRow, buttonRow, switchRow, customRow, tile, type Row } from './ui-kit'
 import { getRuntime } from './runtime'
+import { showConnectionDetails } from './connection-details'
 import type { SessionState } from '../../g2/ios-preview-controller'
 import { presentDetour } from './detour'
 import { showFirmwareAlert } from './firmware-alert'
@@ -156,7 +157,7 @@ export function createPage(): Page {
       else { resumeAutoReconnect(); void controller.connect() }
     } }))
     rows.push(
-      navRow({ title: 'Connection Details', onTap: () => { void Dialogs.alert({ title: 'Connection Details', message: controller.connectionDetails, okButtonText: 'OK' }) } }),
+      navRow({ title: 'Connection Details', onTap: () => { void showConnectionDetails() } }),
       navRow({ title: 'Pair Glasses', onTap: () => { void presentDetour('ocusmart/setup') } }),
       // Configure, firmware check/install/uninstall and Permissions live there.
       navRow({ title: 'Device Settings', onTap: () => pushInTab('glasses', 'ocusmart/device') }),

@@ -1,6 +1,7 @@
-import { Dialogs, GridLayout, Image, Label, StackLayout, type Page } from '@nativescript/core'
+import { GridLayout, Image, Label, StackLayout, type Page } from '@nativescript/core'
 import { groupedPage, section, navRow, buttonRow, valueRow, customRow, type Row } from './ui-kit'
 import { getRuntime } from './runtime'
+import { showConnectionDetails } from './connection-details'
 import type { SessionState } from '../../g2/ios-preview-controller'
 import { presentDetour } from './detour'
 import { firmwareSummary, reportedState } from './firmware-info'
@@ -84,7 +85,7 @@ export function createPage(): Page {
     status.push(valueRow({ title: 'Firmware', value: firmwareSummary(reportedState(state)).line }))
     if (state?.phase === 'connected') status.push(valueRow({ title: 'Ring', value: state.ring ? 'Connected' : 'Not connected' }))
     status.push(navRow({ title: 'Connection Details', onTap: () => {
-      void Dialogs.alert({ title: 'Connection Details', message: controller.connectionDetails, okButtonText: 'OK' })
+      void showConnectionDetails()
     } }))
     container.addChild(section({ header: 'Status', footer: state?.status, rows: status }))
     const connection: Row[] = []

@@ -152,6 +152,7 @@ export class IosPreviewController {
   private lockEnabled = lockScreenEnabledSetting.get()
   private acknowledgedFrames = 0
   private logLines: string[] = []
+  private recentErrors: string[] = []
   private logTimer: ReturnType<typeof setTimeout> | null = null
   private readonly actions: LayerActions = {
     ...noopLayerActions,
@@ -546,6 +547,10 @@ export class IosPreviewController {
     const message = error instanceof Error ? error.stack ?? error.message : String(error)
     console.error(`[ios-preview] ${message}`)
     this.logBluetooth(`App error: ${message}`)
+    // Kept apart from the log tail: glasses input adds a line per event, which
+    // pushes an error out of Connection Details within seconds.
+    this.recentErrors.push(`${new Date().toISOString()} ${message}`)
+    if (this.recentErrors.length > 3) this.recentErrors.shift()
     if (this.active) this.onError(error instanceof Error ? error.message : String(error))
   }
   gesture(gesture: PhoneGesture, origin: 'watch' | 'ring' | 'mirror', nx = 0, ny = 0): void {
@@ -734,7 +739,7 @@ export class IosPreviewController {
   get connectionState(): SessionState | null { return this.sessionCreated ? this.state : null }
   get connectionDetails(): string {
     const state = this.connectionState
-    return state ? `${state.status}\nL: ${state.leftVersion || 'unknown'}\nR: ${state.rightVersion || 'unknown'}\nBattery: ${state.battery ?? '?'}%\nRing: ${state.ring ? 'connected' : 'disconnected'}\nFrames acknowledged: ${state.frames}\n${state.capabilities}\n\n${this.logLines.slice(-12).join('\n')}` : 'Preview only. Configure devices, then connect.'
+    return state ? `${state.status}\nL: ${state.leftVersion || 'unknown'}\nR: ${state.rightVersion || 'unknown'}\nBattery: ${state.battery ?? '?'}%\nRing: ${state.ring ? 'connected' : 'disconnected'}\nFrames acknowledged: ${state.frames}\n${state.capabilities}\n\n${this.recentErrors.length ? `Recent errors:\n${this.recentErrors.join('\n\n')}\n\n` : ''}${this.logLines.slice(-12).join('\n')}` : 'Preview only. Configure devices, then connect.'
   }
   /**
    * Forget what the ended session reported. A halted session keeps its versions and
@@ -995,6 +1000,11 @@ export class IosPreviewController {
   }
   /** Append to the app log (Connection Details, bluetooth.log and the system log). */
   log(message: string): void { this.logBluetooth(message) }
+  /** Path of the whole app log on disk, written out first so it is current. */
+  logFile(): string {
+    this.flushBluetoothLog()
+    return path.join(knownFolders.documents().path, 'bluetooth.log')
+  }
   private logBluetooth(message: string): void {
     const line = `${new Date().toISOString()} [${this.active ? 'foreground' : 'background'}${UIApplication.sharedApplication.protectedDataAvailable ? '' : ',protected-data-unavailable'}] ${message}`
     console.log(`[ios-ble] ${line}`); this.logLines.push(line)
