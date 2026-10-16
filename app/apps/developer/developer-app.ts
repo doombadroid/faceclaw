@@ -68,8 +68,6 @@ function debugTestsMenu(openInputEvents: OpenPage, openMicrophones: OpenPage): M
       },
       {
         label: "Microphones",
-        disabled: global.isIOS,
-        description: global.isIOS ? "Not available on iOS yet." : undefined,
         onSelect: openMicrophones,
       },
       {

@@ -105,7 +105,7 @@ test('iOS bandwidth benchmark calls the Kotlin session and parses its status', (
   offline.cancelBandwidthBenchmark();
 });
 
-test('iOS Developer debug tests enable the buzzer, accelerometer and light sensor demos', () => {
+test('iOS Developer debug tests enable the buzzer, accelerometer, light sensor and microphones demos', () => {
   let debugMenu;
   const MenuLayer = class { constructor(title, items) { this.title = title; this.items = items; } };
   const load = loader({ global: { isIOS: true } }, {
@@ -119,7 +119,7 @@ test('iOS Developer debug tests enable the buzzer, accelerometer and light senso
   const root = load('app/apps/developer/developer-app.ts').createDeveloperAppWindow({}, {});
   root.items.find(i => i.label === 'Debug tests').onSelect({ stack: { push: layer => { debugMenu = layer; } } });
   const byLabel = Object.fromEntries(debugMenu.items.map(i => [i.label, i]));
-  for (const label of ['Buzzer demo', 'Accelerometer demo', 'Light sensor', 'BLE bandwidth']) {
+  for (const label of ['Buzzer demo', 'Accelerometer demo', 'Light sensor', 'Microphones', 'BLE bandwidth']) {
     assert.ok(!byLabel[label].disabled, label); assert.equal(byLabel[label].description, undefined, label);
   }
 });
@@ -158,4 +158,28 @@ test('iOS bridge exposes NSData audio forwarding, the passive audio monitor and 
   offStatus();
   assert.deepEqual(calls.at(-1), ['removeMicStatusListenerListener', status]);
   assert.deepEqual(records, [[77, 67, 'L']]);
+});
+
+test('iOS audio monitor follows the active bridge and maps arms', () => {
+  let active = null;
+  const calls = [];
+  const fake = {
+    getNativeCommunicator: () => ({ isAudioCaptureActive: () => true }),
+    addAudioMonitorListener: l => { calls.push(['packet', l]); return () => calls.push(['offPacket']); },
+    addMicStatusListener: l => { calls.push(['status', l]); return () => { throw new Error('torn down'); }; },
+  };
+  const api = loader({}, { './faceclaw-communicator.ios': { FaceclawCommunicatorBridge: { getActive: () => active } } })(
+    'app/native/audio-monitor.ios.ts');
+  assert.equal(api.audioMonitorCommunicator(), null);
+  assert.equal(api.isFaceclawAudioCaptureActive(), false);
+  api.addAudioMonitorListeners(null, () => {}, () => {})();
+  active = fake;
+  assert.equal(api.audioMonitorCommunicator(), fake);
+  assert.equal(api.isFaceclawAudioCaptureActive(), true);
+  const got = [];
+  const off = api.addAudioMonitorListeners(fake, (d, arm, ms) => got.push([d, arm, ms]), (b, arm) => got.push([b, arm]));
+  calls[0][1]('pcm', 'R', 5); calls[0][1]('pcm', 'x', 6); calls[1][1]('st', 'L');
+  assert.deepEqual(got, [['pcm', 'R', 5], ['pcm', '?', 6], ['st', 'L']]);
+  off();
+  assert.deepEqual(calls.at(-1), ['offPacket'], 'a torn-down session does not throw out of unsubscribe');
 });
