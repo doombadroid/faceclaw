@@ -21,7 +21,8 @@
     if (!_directory.length) return NO;
     nw_parameters_t parameters = nw_parameters_create_secure_tcp(
         NW_PARAMETERS_DISABLE_PROTOCOL, NW_PARAMETERS_DEFAULT_CONFIGURATION);
-    nw_parameters_set_local_only(parameters);
+    // Binding the local endpoint to 127.0.0.1 is what keeps this off every
+    // other interface; port 0 asks the kernel for an ephemeral one.
     nw_endpoint_t local = nw_endpoint_create_host("127.0.0.1", "0");
     nw_parameters_set_local_endpoint(parameters, local);
     _listener = nw_listener_create(parameters);
