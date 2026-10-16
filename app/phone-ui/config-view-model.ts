@@ -40,8 +40,8 @@ export class ConfigViewModel extends Observable {
       ? "Scan for glasses to pick yours by model and serial, load the addresses of devices paired with this phone, or enter them by hand, then Continue."
       : "Edit addresses manually, scan for glasses, or load them from paired devices.";
     if (global.isIOS) this.status = this.onboarding
-      ? "Scan for glasses to pick yours by model and serial, or enter the addresses by hand, then Continue."
-      : "Edit addresses manually or scan for glasses.";
+      ? "Scan for glasses to pick yours by model and serial, load devices this iPhone has found before, or enter the addresses by hand, then Continue."
+      : "Edit addresses manually, scan for glasses, or load devices this iPhone has found before.";
   }
 
   // --- paired identity card --------------------------------------------------
@@ -187,14 +187,13 @@ export class ConfigViewModel extends Observable {
     this.ringAddress = args.object?.text ?? args.value ?? "";
   }
 
-  get pairedDevicesVisibility(): "visible" | "collapse" { return global.isIOS ? "collapse" : "visible"; }
-  // Scan spans the row where Load is collapsed; iOS buttons are Title Case.
-  get scanColumn(): number { return global.isIOS ? 0 : 1; }
-  get scanColumnSpan(): number { return global.isIOS ? 2 : 1; }
+  // iOS has no bond list, only the devices its own scans identified; iOS buttons are Title Case.
+  get loadLabel(): string { return global.isIOS ? "Load Remembered Devices" : "Load paired devices"; }
   get scanLabel(): string { return global.isIOS ? "Scan for Glasses" : "Scan for glasses"; }
 
   async onLoadPairedTap(): Promise<void> {
-    await this.populateFromDiscovery(async () => this.discovery.getBondedCandidates(), "Loaded paired devices.");
+    await this.populateFromDiscovery(async () => this.discovery.getBondedCandidates(),
+      global.isIOS ? "Loaded remembered devices." : "Loaded paired devices.");
   }
 
   /** The live scan page identifies pairs by serial, model, and distance; hand off to it. */

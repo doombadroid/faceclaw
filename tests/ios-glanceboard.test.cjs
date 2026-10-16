@@ -27,10 +27,13 @@ function fixture() {
   let now = 1000, nextTask = 0, screenOn = true, shellOptions;
   const tasks = new Map(), sent = [], previews = [], received = [], errors = [];
   const boardStats = { starts: 0, stops: 0, paints: 0 };
-  const settings = { lock: true, enabled: true, tap: true, hold: true, tilt: true, duration: 3000, depth: 0 };
+  const settings = { lock: true, enabled: true, tap: true, hold: true, tilt: true, duration: 3000, depth: 0,
+    timeout: 'never', ringMode: 'direct', ring: '', debugFlags: false };
+  let lastInputAt = now;
   const clock = { Date: class extends Date { static now() { return now; } },
     setTimeout: (fn, ms) => { tasks.set(++nextTask, { fn, at: now + ms }); return nextTask; },
-    clearTimeout: id => tasks.delete(id), setInterval: () => ++nextTask, clearInterval() {} };
+    clearTimeout: id => tasks.delete(id), clearInterval: id => tasks.delete(id),
+    setInterval: (fn, ms) => { const id = ++nextTask; const arm = () => tasks.set(id, { fn: () => { arm(); fn(); }, at: now + ms }); arm(); return id; } };
   const { GlanceHost } = load('app/g2/glance-host.ts', {
     '../graphics/image': images, '../graphics/plane': planes,
     '../graphics/glyph-wire': { prepareFrameDraws: () => null }, '../native/frame-timings': timings,
@@ -47,11 +50,16 @@ function fixture() {
     wake: () => { screenOn = true; shellOptions.onScreenStateChanged(true); },
     sleep: () => { screenOn = false; shellOptions.onScreenStateChanged(false); },
     isScreenOn: () => screenOn, getWindows: () => [window], foregroundWindow: () => window,
+    applyScreenTimeout: () => {
+      const timeout = shellOptions.getScreenTimeoutMs();
+      if (timeout === null || !screenOn || now - lastInputAt < timeout) return false;
+      shell.sleep(); return true;
+    },
     setBatteryLevels() {}, underlayDim: () => 1, getFocus: () => 'app', hasOverlay: () => false,
     describeInputTarget: () => 'test app',
     paintScene: () => new Uint8Array([0, 0]), paintSurface: () => [{ image: new images.GrayImage(640, 480, 0), x: 0, y: 0 }],
     receiveInput: async input => {
-      received.push(input);
+      received.push(input); lastInputAt = now;
       if (input.type === 'display-wake' || !screenOn && input.type === 'double-click') shell.wake();
     },
   };
@@ -103,7 +111,7 @@ function fixture() {
   const imu = load('app/native/imu.ios.ts', { './imu-types': {} }), imuSent = [];
   class FaceclawCommunicatorBridge extends Display {
     phase = 'disconnected'; listeners = {};
-    constructor() { super(); bridge = this; }
+    constructor(identifiers) { super(); bridge = this; this.identifiers = identifiers; }
     on(kind, fn) { this.listeners[kind] = fn; return () => { if (this.listeners[kind] === fn) delete this.listeners[kind]; }; }
     onStateChange(fn) { return this.on('state', fn); } onRingEvent(fn) { return this.on('ring', fn); }
     onWearState(fn) { return this.on('wear', fn); } onBatteryState() { return noop(); } onFirmwareInfo() { return noop(); }
@@ -116,6 +124,7 @@ function fixture() {
     async start() { this.emitState('connected', 'Connected.'); }
     async disconnect() { this.emitState('disconnected', 'Disconnected.'); }
     waitForFrameFinished() { return Promise.resolve('sent'); }
+    async setFirmwareDebugFlags(enabled) { (this.debugFlags ??= []).push(enabled); }
     changed() { if (this.phase === 'connected') sent.push(this.getCompositePreview()); }
   }
   const provider = {
@@ -149,9 +158,9 @@ function fixture() {
     './glance-host': { GlanceHost }, './events': events,
     // Whole-panel mirror: the pixel assertions below index the full 640x480 preview.
     './phone-preview-crop': { phonePreviewCrop: () => null, mirrorToPanelFraction: (_crop, nx, ny) => ({ nx, ny }) },
-    './lock-screen': { LOCK_SCREEN_SURFACE_ID: 'lock-screen', createLockScreenImage: () => new images.GrayImage(640, 480, 123) },
+    './lock-screen': { LOCK_SCREEN_SURFACE_ID: 'lock-screen', LOCK_SCREEN_TIMEOUT_MS: 15_000, createLockScreenImage: () => new images.GrayImage(640, 480, 123) },
     './glasses-presence': load('app/g2/glasses-presence.ts', {}),
-    './device-addresses': { loadDeviceAddresses: () => ({ right: 'AA', left: 'BB', ring: '' }) }, './ios-peripheral-identity': { deviceAddressError: () => null },
+    './device-addresses': { loadDeviceAddresses: () => ({ right: 'AA', left: 'BB', ring: settings.ring }) }, './ios-peripheral-identity': { deviceAddressError: () => null },
     './firmware-compat': load('app/g2/firmware-compat.ts', { '../branding': { APP_NAME: 'OcuSmart' } }), './reconnect-policy': load('app/g2/reconnect-policy.ts', {}),
     '../apps/launcher': { launcherEntries: () => [] },
     '../apps/evenhub/installed-apps': {}, '../apps/evenhub/manager': { onPhoneShownChanged: () => () => {}, phoneUiButton: () => null },
@@ -161,7 +170,9 @@ function fixture() {
     '../apps/onboarding/onboarding-progress': { claimGlassesOnboardingAutoLaunch: () => false },
     '../branding': { APP_NAME: 'OcuSmart' },
     '../ui/shell/worker-window': {}, '../ui/shell/in-process-window': {},
-    '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, brightnessSettingToLevel: () => null, getBrightnessPreferences: () => ({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0,1000:100', fadeMs: 280 }), lockScreenEnabledSetting: { get: () => settings.lock }, onAnySettingChanged: fn => { settingsChanged = fn; return () => {}; }, previewColorSetting: { get: () => 'white' } },
+    '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, brightnessSettingToLevel: () => null, getBrightnessPreferences: () => ({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0,1000:100', fadeMs: 280 }), lockScreenEnabledSetting: { get: () => settings.lock }, onAnySettingChanged: fn => { settingsChanged = fn; return () => {}; }, previewColorSetting: { get: () => 'white' },
+      screenTimeoutSetting: { get: () => settings.timeout }, screenTimeoutSettingToMs: value => value === 'never' ? null : parseInt(value, 10) * 1000,
+      ringConnectionModeSetting: { get: () => settings.ringMode }, firmwareDebugFlagsSetting: { get: () => settings.debugFlags } },
     '../native/phone-battery': { readPhoneBatteryState: () => ({ battery: 80, charging: false }) },
     '../apps/ios-availability': { iosAppUnavailableReason: () => null },
     '../graphics/glyph-wire': { prepareFrameDraws: () => null },
@@ -245,6 +256,38 @@ test('keyboard sessions cannot deliver text after the glasses lock or phone leav
   editor.discard(); assert.deepEqual(calls.at(-1), ['discard']);
 });
 
+
+test('the screen times out after the configured idle time, or 15 s while the glasses are locked', async () => {
+  const f = fixture();
+  f.settings.timeout = '30s';
+  await f.connect();
+  await f.hardware(0);
+  for (let i = 0; i < 29; i++) await f.advance(1000);
+  assert.equal(f.shell.isScreenOn(), true);
+  await f.advance(2000);
+  assert.equal(f.shell.isScreenOn(), false);
+  assert.equal(f.bridge.blanked, true);
+  await f.hardware(12);
+  assert.equal(f.bridge.blanked, false, 'a head-up wakes it');
+  f.controller.glassesLocked = true;
+  for (let i = 0; i < 16; i++) await f.advance(1000);
+  assert.equal(f.shell.isScreenOn(), false, 'the lock notice ignores the setting');
+});
+
+test('ring mode decides whether the ring is resolved, and firmware debug flags follow the setting', async () => {
+  const f = fixture();
+  f.settings.ring = 'CC';
+  await f.connect();
+  assert.equal(f.bridge.identifiers.ring, 'CC');
+  assert.deepEqual(f.bridge.debugFlags, [false]);
+  f.settings.debugFlags = true; f.settingsChanged();
+  assert.deepEqual(f.bridge.debugFlags, [false, true]);
+  await f.controller.disconnect();
+  f.settings.ringMode = 'glasses';
+  await f.connect();
+  assert.equal(f.bridge.identifiers.ring, '');
+  assert.equal(f.bridge.identifiers.left, 'BB');
+});
 
 test('a firmware halt keeps a status line that names this app, like its alert', async () => {
   const f = fixture();

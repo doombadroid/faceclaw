@@ -91,7 +91,10 @@ test('the phone catalog lists exactly the settings the glasses offer on iOS, min
     const glasses = glassesSettings(load);
     for (const name of IOS_INERT) assert.ok(glasses.has(settings[name]), `${name} is still listed on the glasses (else drop it from IOS_INERT)`);
     // The iOS filter in settings-menus.ts already removed these; the catalog must not bring them back.
-    assert.ok(!glasses.has(settings.screenTimeoutSetting) && !glasses.has(settings.watchRemoteEnabledSetting));
+    for (const name of ['watchRemoteEnabledSetting', 'saveVoiceRecordingsSetting', 'suspendEvenHubWhenScreenOffSetting', 'useMicControlSetting'])
+      assert.ok(!glasses.has(settings[name]), name);
+    for (const name of ['screenTimeoutSetting', 'ringConnectionModeSetting', 'firmwareDebugFlagsSetting'])
+      assert.ok(glasses.has(settings[name]), name);
     const expected = new Set([...glasses].filter(setting => !IOS_INERT.some(name => settings[name] === setting)));
     // Glanceboard's settings live in its app, not in the glasses Settings app.
     const phone = catalogSettings(catalog, new Set(['glanceboard']));
@@ -155,6 +158,23 @@ test('Glanceboard slots keep one widget per board, offer Music on iOS and ask fo
   slots[1].onChange('music');
   assert.deepEqual([...slots].map(slot => slot.setting.get()), ['calendar', 'music', 'none', 'none']);
   assert.equal(prompts, 1);
+});
+
+test('iOS keeps connecting to the ring directly unless the user picks glasses-only', () => {
+  const { settings } = harness();
+  assert.equal(settings.ringConnectionModeSetting.get(), 'direct');
+  settings.ringConnectionModeSetting.set('glasses');
+  assert.equal(settings.ringConnectionModeSetting.get(), 'glasses');
+});
+
+test('a phone Screen Timeout change restarts the idle timer, as on the glasses', () => {
+  const { settings, mocks, load } = harness();
+  let noted = 0;
+  mocks['../shell/shell'].shell.noteUserActivity = () => noted++;
+  const row = load('app/ui/dashboard/settings-catalog.ts').settingsCategory('display').sections()
+    .flatMap(section => section.items).find(item => item.setting === settings.screenTimeoutSetting);
+  row.onChange('30s');
+  assert.equal(noted, 1);
 });
 
 test('every catalog row title is Title Case on the phone', () => {

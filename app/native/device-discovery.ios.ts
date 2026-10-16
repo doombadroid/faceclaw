@@ -30,7 +30,8 @@ export class DeviceDiscoveryBridge {
   // CoreBluetooth does not expose the phone's bond list. Fresh advertisements
   // supply both identity and the UUID mapping that iOS needs for connections.
   emitBondedDevices(): void {}
-  async getBondedCandidates(): Promise<RawAdvertisement[]> { return [...this.ble.devices.values()] }
+  /** What past scans identified (Load Remembered Devices), then this session's live scan results. */
+  async getBondedCandidates(): Promise<RawAdvertisement[]> { return [...this.ble.rememberedDevices(), ...this.ble.devices.values()] }
   async scanCandidates(timeoutMs = 6000): Promise<RawAdvertisement[]> {
     const generation = this.generation
     await this.ble.ensureReady()

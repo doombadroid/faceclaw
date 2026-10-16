@@ -16,6 +16,7 @@ import {
   dataCollectionSetting,
   displayLayoutSetting,
   elevenLabsApiKeySetting,
+  firmwareDebugFlagsSetting,
   glassesBatteryVisibilitySetting,
   lockScreenEnabledSetting,
   mapboxApiKeySetting,
@@ -25,7 +26,9 @@ import {
   phoneBatteryVisibilitySetting,
   previewColorSetting,
   previewScalingSetting,
+  ringConnectionModeSetting,
   screenFadeSetting,
+  screenTimeoutSetting,
   showBleBandwidthSetting,
   sonioxApiKeySetting,
   statusBarPositionSetting,
@@ -39,6 +42,7 @@ import {
   type ConfigSettingEnum,
   type ConfigSettingString,
 } from "../dashboard-settings";
+import { shell } from "../shell/shell";
 import {
   clearConflictingSlots,
   glanceboardEnabledSetting,
@@ -107,6 +111,7 @@ const PHONE_TITLES: Record<string, string> = {
   autoBrightnessCurve: "Light Curve",
   "display-mode": "Display Mode",
   "lock-screen-enabled": "Lock Screen",
+  "screen-timeout": "Screen Timeout",
   "glanceboard-tap-duration": "Show on Tap",
   "glanceboard-show-on-long-press": "Show on Long Press",
   "glanceboard-show-on-head-tilt": "Show on Head Tilt",
@@ -138,6 +143,8 @@ const PHONE_TITLES: Record<string, string> = {
   "mapbox-api-key": "Mapbox Token",
   "data-collection": dataCollectionSetting.label.replace(/ statistics$/, " Statistics"),
   "show-ble-bandwidth": "Show BLE Bandwidth Usage",
+  "ring-connection-mode": "Ring Connection",
+  "firmware-debug-flags": "Firmware Debug Flags",
 };
 
 export const phoneTitle = (setting: CatalogSetting): string => PHONE_TITLES[setting.id] ?? setting.label;
@@ -180,7 +187,14 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
         footer: "The minimum, maximum and ambient-light curve that Auto-Brightness uses.",
         items: [item(autoBrightnessMinSetting), item(autoBrightnessMaxSetting), item(autoBrightnessCurveSetting)],
       },
-      { items: [item(displayLayoutSetting), item(lockScreenEnabledSetting)] },
+      {
+        items: [
+          item(displayLayoutSetting),
+          // As the glasses menu: a new timeout counts from now, not from the last input.
+          { kind: "setting", setting: screenTimeoutSetting, onChange: () => shell.noteUserActivity() },
+          item(lockScreenEnabledSetting),
+        ],
+      },
     ],
   },
   {
@@ -280,7 +294,11 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
     id: "developer",
     title: "Developer",
-    sections: () => [{ footer: showBleBandwidthSetting.description, items: [item(showBleBandwidthSetting)] }],
+    sections: () => [
+      { footer: ringConnectionModeSetting.description, items: [item(ringConnectionModeSetting)] },
+      { footer: firmwareDebugFlagsSetting.description, items: [item(firmwareDebugFlagsSetting)] },
+      { footer: showBleBandwidthSetting.description, items: [item(showBleBandwidthSetting)] },
+    ],
   },
 ];
 

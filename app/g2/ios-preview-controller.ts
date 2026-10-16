@@ -24,7 +24,7 @@ import { FaceclawCommunicatorBridge, resolveIosPeripherals, type CommunicatorSta
 import { PreviewDisplayTarget, type DisplayTarget } from '../native/preview-display.ios'
 import { AncsClient, ANCS_FIRMWARE_VERSION } from './ancs-client'
 import { GlanceHost, type GlanceDisplay } from './glance-host'
-import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID } from './lock-screen'
+import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID, LOCK_SCREEN_TIMEOUT_MS } from './lock-screen'
 import { OsEventTypeList } from './events'
 import { loadDeviceAddresses } from './device-addresses'
 import { updateGlassesPresence } from './glasses-presence'
@@ -50,7 +50,8 @@ import { mirrorToPanelFraction, phonePreviewCrop } from './phone-preview-crop'
 import { onAnySettingChanged,
   previewColorSetting, lockScreenEnabledSetting, getBrightnessPreferences, getStringSettingById,
   nightscoutSiteUrlSetting, nightscoutApiTokenSetting, voiceProviderSetting, elevenLabsApiKeySetting,
-  openAiApiKeySetting, sonioxApiKeySetting } from '../ui/dashboard-settings'
+  openAiApiKeySetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs,
+  ringConnectionModeSetting, firmwareDebugFlagsSetting } from '../ui/dashboard-settings'
 import type { VoiceProviderSelection } from '../native/cloud-stt-provider'
 import type { PhoneGesture } from '../phone-ui/phone-gestures'
 import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from '../apps/onboarding/onboarding-progress'
@@ -127,6 +128,7 @@ export class IosPreviewController {
   /** The screen area the mirror's image shows (Preview scaling), or null for the whole panel. */
   private previewCrop: ScreenRect | null = null
   private clockTimer: ReturnType<typeof setInterval> | null = null
+  private screenTimeoutTimer: ReturnType<typeof setInterval> | null = null
   private offSettings: (() => void) | null = null
   private lastBrightness: string | null = null
   private active = false
@@ -193,7 +195,7 @@ export class IosPreviewController {
         discard: () => session.discard(),
       } : null),
       prepareVoiceCapture: () => this.prepareVoiceCapture(),
-      getScreenTimeoutMs: () => null,
+      getScreenTimeoutMs: () => this.glassesLocked ? LOCK_SCREEN_TIMEOUT_MS : screenTimeoutSettingToMs(screenTimeoutSetting.get()),
       requestShellRender: () => this.requestShellRender(),
       onWindowsChanged: () => this.windowsChanged(),
       onSwitcherBarHeightChanged: () => {
@@ -349,8 +351,9 @@ export class IosPreviewController {
       for (const observer of this.lockObservers.splice(0)) NSNotificationCenter.defaultCenter.removeObserver(observer)
       UIDevice.currentDevice.batteryMonitoringEnabled = false
       if (this.clockTimer !== null) clearInterval(this.clockTimer)
+      if (this.screenTimeoutTimer !== null) clearInterval(this.screenTimeoutTimer)
       if (this.previewTimer !== null) clearTimeout(this.previewTimer)
-      this.clockTimer = this.previewTimer = null
+      this.clockTimer = this.screenTimeoutTimer = this.previewTimer = null
       return
     }
     UIDevice.currentDevice.batteryMonitoringEnabled = true
@@ -373,6 +376,7 @@ export class IosPreviewController {
     const phone = readPhoneBatteryState()
     this.logBluetooth(`Phone battery ${phone.battery ?? "unknown"}% charging=${phone.charging}`)
     this.offSettings = onAnySettingChanged(() => {
+      void this.communicator?.setFirmwareDebugFlags(firmwareDebugFlagsSetting.get()).catch(() => {})
       this.syncLockSetting()
       this.pushBrightness()
       syncAssistantBridgeFromSettings()
@@ -381,6 +385,8 @@ export class IosPreviewController {
       this.requestShellRender()
     })
     this.clockTimer = setInterval(() => this.refreshClock(), 60_000)
+    // ponytail: JS timers stop while iOS suspends the app, so a backgrounded timeout fires late, on the next glasses traffic (onActivity).
+    this.screenTimeoutTimer = setInterval(() => shell.applyScreenTimeout(), 1000)
   }
   private pushBrightness(): void {
     const communicator = this.communicator
@@ -788,13 +794,18 @@ export class IosPreviewController {
       this.firmwareCompatible = false
       this.update('connecting', 'Finding configured devices…')
       let identifiers
-      try { identifiers = await resolveIosPeripherals(addresses) }
+      // The setting only decides whether the phone opens its own link; the glasses relay ring gestures either way.
+      const ring = ringConnectionModeSetting.get() === 'direct' ? addresses.ring : ''
+      if (addresses.ring) this.logBluetooth(`Ring connection: ${ring ? 'direct' : 'only via glasses'}`)
+      try { identifiers = await resolveIosPeripherals({ ...addresses, ring }) }
       catch (failure) {
         this.update('error', failure instanceof Error ? failure.message : String(failure))
         return
       }
       if (this.communicator) await this.closeCommunicator()
       const communicator = new FaceclawCommunicatorBridge(identifiers)
+      // The shared core only records it; its drive loop sends it once the display is idle.
+      void communicator.setFirmwareDebugFlags(firmwareDebugFlagsSetting.get()).catch(() => {})
       this.teardownPreviewDisplay()
       this.communicator = communicator
       this.wearDetectionRequested = false
@@ -924,6 +935,7 @@ export class IosPreviewController {
   private onActivity(): void {
     if (!UIApplication.sharedApplication.protectedDataAvailable) this.handlePhoneLockState(true)
     this.refreshClock()
+    shell.applyScreenTimeout()
   }
   /** Start iPhone notification relay once the firmware is known to support it and ANCS is authorized. */
   private syncNotifications(communicator: FaceclawCommunicatorBridge): void {

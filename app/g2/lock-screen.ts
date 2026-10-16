@@ -3,6 +3,9 @@ import { getDefaultMediumFont } from "../graphics/ui-fonts";
 import { wrapText } from "../graphics/textwrap";
 
 export const LOCK_SCREEN_SURFACE_ID = "lock-screen";
+// The lock screen is a short notice, not something to read at leisure; it
+// ignores the screen-timeout setting (including "never").
+export const LOCK_SCREEN_TIMEOUT_MS = 15_000;
 const LOCK_SCREEN_MESSAGE = "Glasses locked; unlock the phone to unlock the glasses.";
 
 export function createLockScreenImage(): GrayImage {
