@@ -1,6 +1,7 @@
 import { resumeAutoReconnect } from "../g2/reconnect-policy";
 import { finishOnboardingNavigation } from "./onboarding-navigation";
 import { Frame, Observable } from "@nativescript/core";
+import { APP_NAME } from "../branding";
 
 import { ensureBlePermissions } from "../native/ble-permissions";
 import { isValidMacAddress, loadDeviceAddresses } from "../g2/device-addresses";
@@ -237,7 +238,7 @@ export class OnboardingFirmwareCheckViewModel extends Observable {
         this.headline = "Firmware Update Available";
         this.status =
           `Your glasses run ${describeFirmwareExtension(extension)}${version ? `, based on stock ${version}` : ""}. ` +
-          `This version of Faceclaw needs revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}. ` +
+          `This version of ${APP_NAME} needs revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}. ` +
           "Tap Install Firmware to update it.";
         break;
       case "other-custom":
@@ -245,7 +246,7 @@ export class OnboardingFirmwareCheckViewModel extends Observable {
         this.headline = "Other Custom Firmware";
         this.status =
           `Your glasses run ${describeFirmwareExtension(extension)}${version ? `, based on stock ${version}` : ""}. ` +
-          `Faceclaw needs its own custom firmware (revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}). ` +
+          `${APP_NAME} needs ${global.isIOS ? "Faceclaw's" : "its own"} custom firmware (revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}). ` +
           "Tap Install Firmware to replace the current firmware with it.";
         break;
       case "flashable-stock":
