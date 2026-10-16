@@ -71,8 +71,8 @@ function deviceCard(state: SessionState | null): StackLayout {
   return card
 }
 
-/** Pads a headerless section like the design's 22pt gap between cards. */
-function spaced(box: StackLayout, top = 22): StackLayout {
+/** Overrides kit.css's 24pt gap above a section. */
+function spaced(box: StackLayout, top: number): StackLayout {
   box.marginTop = top
   return box
 }
@@ -107,7 +107,7 @@ export function createPage(): Page {
       ;(appTile.getChildAt(0) as Image).src = phoneUi.icon
       top.push(navRow({ tile: appTile, title: `Open ${phoneUi.title} on iPhone`, onTap: () => controller.showEvenHubPhoneUi(phoneUi.windowId) }))
     }
-    if (top.length) container.addChild(spaced(section({ rows: top })))
+    if (top.length) container.addChild(section({ rows: top }))
 
     const view = mirror = new Image()
     view.className = 'os-lens-mirror'; view.stretch = 'fill'
@@ -140,7 +140,7 @@ export function createPage(): Page {
       ? 'A live copy of what the glasses show. Tap it to open Remote. With touch input on, touches on the Remote mirror act on the glasses: tap selects, double-tap goes back, hold opens the menu, swipes navigate.'
       : 'What OcuSmart draws for the glasses, running as a preview while no glasses are connected. Tap it to open Remote.' }))
 
-    container.addChild(spaced(section({ rows: [
+    container.addChild(section({ rows: [
       navRow({ tile: tile('sun.max.fill', 'blue'), title: 'Display & Brightness', value: brightnessLabel(brightnessSetting.get()),
         onTap: () => pushInTab('glasses', 'ocusmart/settings-category', { category: 'display' }) }),
       navRow({ tile: tile('bell.badge.fill', 'red'), title: 'Notifications', value: categoryValue('notifications'),
@@ -150,7 +150,7 @@ export function createPage(): Page {
       navRow({ tile: tile('hand.tap.fill', 'green'), title: 'Remote & Touchpads', onTap: () => pushInTab('glasses', 'ocusmart/remote') }),
       navRow({ tile: tile('arrow.down.circle.fill', 'gray'), title: 'Software Update', badge: warning ? '1' : undefined,
         onTap: () => pushInTab('glasses', 'ocusmart/update') }),
-    ] })))
+    ] }))
 
     const rows: Row[] = []
     if (!deviceAddressError(loadDeviceAddresses())) rows.push(buttonRow({ title: connected ? 'Disconnect' : 'Connect', onTap: () => {

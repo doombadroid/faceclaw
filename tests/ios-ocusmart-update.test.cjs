@@ -166,7 +166,8 @@ test('Firmware Channel checks the reported channel and confirms before switching
   h.load('app/phone-ui/ios/firmware-channel-page.ts').createPage();
   const rows = h.rows();
   assert.deepEqual(rows.map(r => [r.title, r.checked, r.enabled !== false]),
-    [['Faceclaw', true, true], ['Even Realities', false, true]]);
+    [['Faceclaw', true, true], ['xeyes', false, false], ['Even Realities', false, true]]);
+  assert.equal(titled(rows, 'xeyes').subtitle, 'Not built yet');
   assert.equal(titled(rows, 'Even Realities').subtitle, 'Installs stock firmware 2.3.0.24');
   titled(rows, 'Faceclaw').onTap(); await settle();
   assert.equal(h.confirms.length, 0, 'the current channel is not re-flashed');

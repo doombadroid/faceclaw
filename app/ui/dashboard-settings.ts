@@ -529,7 +529,7 @@ const AUTO_BRIGHTNESS_LEVELS = ["2", "5", "10", "20", "25", "30", "40", "50", "6
 export const autoBrightnessMinSetting = new ConfigSettingEnum({
   id: "autoBrightnessMin", label: "Auto minimum", storageKey: "display.autoBrightnessMin",
   defaultValue: "20", values: AUTO_BRIGHTNESS_LEVELS, formatValue: (value) => `${value}%`,
-  description: "Lowest brightness Auto will select. Screen fades can still reach 2.",
+  description: "Lowest brightness Auto will select. Screen fades can still reach 2%.",
 });
 export const autoBrightnessMaxSetting = new ConfigSettingEnum({
   id: "autoBrightnessMax", label: "Auto maximum", storageKey: "display.autoBrightnessMax",
