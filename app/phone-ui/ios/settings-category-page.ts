@@ -1,10 +1,11 @@
-import { Dialogs, type NavigatedData, type Page } from '@nativescript/core'
+import { Dialogs, Label, knownFolders, type NavigatedData, type NavigationEntry, type Page } from '@nativescript/core'
 import { groupedPage, section, navRow, switchRow, buttonRow, type Row } from './ui-kit'
 import { getRuntime } from './runtime'
 import { settingsCategory, type CatalogItem, type CatalogSection, type SettingsCategory } from '../../ui/dashboard/settings-catalog'
 import { ConfigSettingBoolean, ConfigSettingEnum, onAnySettingChanged, type ConfigSettingString } from '../../ui/dashboard-settings'
 import { readNotificationSources, setNotificationSourceEnabled } from '../../native/notification-sources'
 import { isNotificationListenerEnabled, notificationEmptyMessage } from '../../native/notification-access'
+import { onAndroidNotificationsChanged } from '../../native/notification-icons'
 import { remoteTokens, remoteInputStatus, remoteInterfaceSelection, selectRemoteInterface } from '../../remote/service'
 import { PERMISSIONS, type Permission } from '../../remote/protocol'
 import { isTunnelInterface } from '../../remote/listeners'
@@ -18,6 +19,20 @@ type TextEditor = { editSetting(setting: ConfigSettingString): Promise<boolean> 
 export const editTextSetting = (setting: ConfigSettingString) =>
   (getRuntime().controller as unknown as TextEditor).editSetting(setting)
 
+/**
+ * A bundled doc (webpack.config.js copies them into about/) as an OcuSmart
+ * page: the shared document-page has no dark styling or bar tint.
+ */
+export function documentPage(fileName: string, title: string): Page {
+  let text = ''
+  try { text = knownFolders.currentApp().getFile(`about/${fileName}`).readTextSync() } catch { /* shown as missing */ }
+  return groupedPage({ title, largeTitle: false, build: container => {
+    const label = new Label()
+    label.text = text || `(${fileName} is missing from this build)`; label.textWrap = true; label.className = 'os-document-text'
+    container.addChild(label)
+  } }).page
+}
+
 const shortValue = (text: string) => !text ? 'Not set' : text.length <= 22 ? text : `${text.slice(0, 21)}…`
 
 // Same wording as the glasses token menu (remote-input-menu.ts).
@@ -25,13 +40,13 @@ const PERMISSION_LABELS: Record<Permission, string> = { input: 'Provide input', 
 const permissionSummary = (permissions: Permission[]) => permissions.map(p => PERMISSION_LABELS[p]).join(', ') || 'No permissions'
 
 /** One row per catalog entry: bool → switch, enum → choice list, string → the controller's prompt. */
-export function settingRows(item: CatalogItem, open: (moduleName: string, context: object) => void, written: () => void = () => {}): Row[] {
+export function settingRows(item: CatalogItem, open: (entry: NavigationEntry) => void, written: () => void = () => {}): Row[] {
   switch (item.kind) {
     case 'setting': {
       const setting = item.setting
       if (setting instanceof ConfigSettingBoolean) return [switchRow({ title: setting.label, value: setting.get(), onChange: value => { setting.set(value); written() } })]
       if (setting instanceof ConfigSettingEnum) return [navRow({ title: setting.label, value: setting.displayValue(),
-        onTap: () => open('ocusmart/settings-choice', { item }) })]
+        onTap: () => open({ moduleName: 'ocusmart/settings-choice', context: { item } }) })]
       return [navRow({ title: setting.label, value: shortValue(setting.displayValue()), onTap: () => { void editTextSetting(setting) } })]
     }
     case 'notification-sources':
@@ -51,7 +66,7 @@ export function settingRows(item: CatalogItem, open: (moduleName: string, contex
         void Dialogs.alert({ title: 'iOS / TestFlight Privacy', message: IOS_PRIVACY_NOTICE, okButtonText: 'OK' })
       } })]
     case 'document':
-      return [navRow({ title: item.title, onTap: () => open('phone-ui/document-page', { fileName: item.fileName, title: item.title }) })]
+      return [navRow({ title: item.title, onTap: () => open({ create: () => documentPage(item.fileName, item.title) }) })]
   }
 }
 
@@ -80,7 +95,7 @@ export function createPage(): Page {
   const { page, refresh } = groupedPage({ title: 'Settings', largeTitle: false, build: container => {
     shown = categoryKey(category)
     if (!category) return
-    const open = (moduleName: string, context: object) => page.frame?.navigate({ moduleName, context })
+    const open = (entry: NavigationEntry) => page.frame?.navigate(entry)
     for (const entry of category.sections()) {
       // A switch already shows its new value; rebuilding under it would cut its animation.
       const rows = entry.items.flatMap(item => settingRows(item, open, () => { shown = categoryKey(category) }))
@@ -94,14 +109,16 @@ export function createPage(): Page {
     page.actionBar.title = category?.title ?? 'Settings'
     refresh()
   })
-  let off: (() => void) | null = null
+  let offs: (() => void)[] = []
   page.on('loaded', () => {
-    off?.()
-    // Glasses-side changes and the rows that depend on other settings.
-    off = onAnySettingChanged(() => { if (categoryKey(category) !== shown) refresh() })
-    if (categoryKey(category) !== shown) refresh()
+    for (const off of offs) off()
+    const update = () => { if (categoryKey(category) !== shown) refresh() }
+    // Glasses-side changes, the rows that depend on other settings, and the
+    // ANCS session state behind the Notifications footer (not a stored setting).
+    offs = [onAnySettingChanged(update), onAndroidNotificationsChanged(update)]
+    update()
   })
-  page.on('unloaded', () => { off?.(); off = null })
+  page.on('unloaded', () => { for (const off of offs) off(); offs = [] })
   return page
 }
 

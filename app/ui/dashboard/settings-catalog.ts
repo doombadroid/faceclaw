@@ -53,9 +53,10 @@ import { iosAppUnavailableReason } from "../../apps/ios-availability";
 /**
  * The iPhone Settings tab's catalog: the same ConfigSetting objects the
  * glasses Settings app lists (settings-menus.ts, after its iOS filter),
- * regrouped into phone categories. tests/ios-ocusmart-settings.test.cjs
- * walks the glasses menus and fails when the two disagree, so a setting added
- * there must land here (or in the test's list of iOS-inert settings).
+ * plus the Glanceboard app's own Settings (glanceboard-app.ts), regrouped
+ * into phone categories. tests/ios-ocusmart-settings.test.cjs walks both
+ * glasses menus and fails when either disagrees with this file, so a setting
+ * added there must land here (or in the test's list of iOS-inert settings).
  *
  * Left out on purpose: settings no iOS code reads (phone rotation, watch and
  * ring battery indicators), and the glasses-only composite pickers (UI font,

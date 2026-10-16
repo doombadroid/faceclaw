@@ -32,7 +32,7 @@ function harness() {
   const calls = [];
   const mocks = {
     '../dashboard-settings': { ...settings, enumSettingMenuItem: menuItem, toggleSettingMenuItem: menuItem, textSettingMenuItem: menuItem },
-    '../../ui/dashboard-settings': settings,
+    '../../ui/dashboard-settings': { ...settings, enumSettingMenuItem: menuItem, toggleSettingMenuItem: menuItem },
     './settings-panel': { SettingsPanelLayer: class { constructor(sections) { this.sections = sections; } },
       openSettingsSubMenu: (ctx, _title, items) => ctx.opened.push(...items) },
     '../menu': { submenuItem: (label, onSelect) => ({ label, onSelect }), drawRightValueMenuItem() {}, openModalMenu() {} },
@@ -46,7 +46,13 @@ function harness() {
     '../../apps/files/text-viewer': { TextViewerLayer: class {} },
     '../../analytics/privacy-disclosure': { IOS_PRIVACY_NOTICE: 'notice' },
     '../shell/shell': { shell: {} }, '../../native/wear-bridge': { wearBridge: {} },
-    './widgets': { glanceWidgetSpans: () => false },
+    './widgets': { glanceWidgetSpans: () => false, findGlanceWidget: () => null },
+    // glanceboard-app.ts: menus that keep their items, so its Settings page can be walked.
+    '../../graphics/image': {}, '../../ui/metrics': {}, '../../ui/shell/in-process-window': { createInProcessWindow: options => options },
+    '../../ui/font-picker': { uiFontOverridePickerMenuItem: () => ({ label: 'Glanceboard font' }) },
+    '../../ui/menu': { MenuLayer: class { constructor(title, items) { this.items = items; } }, submenuItem: (label, onSelect) => ({ label, onSelect }), isMenuItemDisabled() {} },
+    '../../ui/menu-core': { Menu: class { constructor({ items }) { this.items = items; } } },
+    '../../ui/shell/shell': { shell: {} }, './board': { GlanceBoard: class {} }, './glance-font': { glanceFont: {} },
     '../../native/notification-sources': { readNotificationSources: () => [], setNotificationSourceEnabled() {} },
   };
   const load = loader({ global: { isIOS: true } }, mocks);
@@ -93,6 +99,33 @@ test('the phone catalog lists exactly the settings the glasses offer on iOS, min
   }
 });
 
+/** The Glanceboard app's entry toggle and every setting on its Settings page (font and per-widget submenus stay on the glasses). */
+function glanceboardAppSettings(load) {
+  const home = load('app/apps/glanceboard/glanceboard-app.ts').createGlanceboardAppWindow({ actions: {} }).baseLayer.menu.items;
+  const pushed = [];
+  home.find(item => item.label === 'Settings').onSelect({ stack: { push: layer => pushed.push(layer), getBaseSize: () => ({ width: 576 }) } });
+  assert.equal(pushed.length, 1);
+  return new Set([...home, ...pushed[0].items].filter(item => item.setting).map(item => item.setting));
+}
+
+test('the Glanceboard category lists exactly the Glanceboard app\'s settings, plus its slots', () => {
+  const { load } = harness();
+  const catalog = load('app/ui/dashboard/settings-catalog.ts');
+  const glance = load('app/apps/glanceboard/glanceboard-settings.ts');
+  for (const layout of glance.glanceLayoutSetting.values) {
+    glance.glanceLayoutSetting.set(layout);
+    const glasses = glanceboardAppSettings(load);
+    assert.ok(glasses.size >= 7, 'the walk reached the Settings page');
+    const sections = catalog.settingsCategory('glanceboard').sections();
+    // Slot settings are built per call, so they match by id: the board's slots, in order.
+    const slots = sections.find(section => section.header === 'Slots').items.map(item => item.setting.id);
+    assert.deepEqual(slots, glance.glanceSlotSettings(glance.glanceLayout()).map(setting => setting.id), layout);
+    const phone = new Set([...catalogSettings({ SETTINGS_CATEGORIES: [catalog.settingsCategory('glanceboard')] })].filter(setting => !slots.includes(setting.id)));
+    assert.deepEqual(labels(phone), labels(glasses), layout);
+    for (const setting of glasses) assert.ok(phone.has(setting), `${setting.label} is the app's own object (${layout})`);
+  }
+});
+
 test('categories have stable unique ids, including the ones other tabs link to, and all appear on the root page', () => {
   const { load, mocks } = harness();
   Object.assign(mocks, rootMocks(null));
@@ -134,9 +167,12 @@ const rows = page => page.container.children.flatMap(section => section.rows);
 
 test('category rows: bool → switch, enum → choice page, string → the controller prompt', () => {
   const { load, mocks, settings } = harness();
-  const edits = [];
+  const edits = [], ancs = new Set();
+  let ancsReady = false;
+  mocks['@nativescript/core'].Label = class {};
   Object.assign(mocks, { './ui-kit': uiKit(), './runtime': { getRuntime: () => ({ controller: { editSetting: async setting => { edits.push(setting); return true; } } }) },
-    '../../native/notification-access': { isNotificationListenerEnabled: () => false, notificationEmptyMessage: () => 'Connect glasses.' },
+    '../../native/notification-access': { isNotificationListenerEnabled: () => ancsReady, notificationEmptyMessage: () => 'Connect glasses.' },
+    '../../native/notification-icons': { onAndroidNotificationsChanged: fn => { ancs.add(fn); return () => ancs.delete(fn); } },
     '../../remote/service': { remoteTokens: { list: () => [] }, remoteInterfaceSelection: () => 'tailscale' },
     '../../remote/listeners': { isTunnelInterface: () => true }, '../../native/remote-input': { remoteInterfaces: () => [] } });
   const { createPage } = load('app/phone-ui/ios/settings-category-page.ts');
@@ -169,6 +205,18 @@ test('category rows: bool → switch, enum → choice page, string → the contr
   const notifications = createPage();
   notifications.emit('navigatingTo', { context: { category: 'notifications' } });
   assert.match(notifications.container.children[0].footer, /Connect glasses\.[\s\S]*post a notification/);
+  // ANCS readiness is session state, not a setting: its change alone must update the footer.
+  notifications.emit('loaded');
+  ancsReady = true; for (const fn of ancs) fn();
+  assert.doesNotMatch(notifications.container.children[0].footer, /Connect glasses/);
+  notifications.emit('unloaded');
+  assert.equal(ancs.size, 0);
+  // Documents open as an OcuSmart page (dark-aware), not the shared XML page.
+  const privacy = createPage();
+  privacy.emit('navigatingTo', { context: { category: 'privacy' } });
+  rows(privacy).find(row => row.title === 'Privacy Policy').onTap();
+  assert.equal(privacy.navigations[0].moduleName, undefined);
+  assert.match(privacy.navigations[0].create().container.children[0].text, /PRIVACY is missing/);
 });
 
 test('choice rows honour isDisabled and unavailable values, and run the catalog onChange', () => {

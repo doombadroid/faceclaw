@@ -3,6 +3,7 @@ import { groupedPage, section, navRow, valueRow, customRow } from './ui-kit'
 import { getRuntime } from './runtime'
 import type { SessionState } from '../../g2/ios-preview-controller'
 import { presentDetour } from './detour'
+import { documentPage } from './settings-category-page'
 import { firmwareSummary } from './firmware-info'
 import { APP_NAME } from '../../branding'
 import { FACECLAW_VERSION } from '../../version'
@@ -44,7 +45,7 @@ export function createPage(): Page {
       valueRow({ title: 'Firmware', value: firmwareKind(state) }),
     ], footer: state?.leftVersion || state?.rightVersion ? undefined : 'The glasses report their versions after they connect.' }))
     container.addChild(section({ header: 'Documents', rows: DOCUMENTS.map(([fileName, title]) =>
-      navRow({ title, onTap: () => page.frame?.navigate({ moduleName: 'phone-ui/document-page', context: { fileName, title } }) })) }))
+      navRow({ title, onTap: () => page.frame?.navigate({ create: () => documentPage(fileName, title) }) })) }))
     // The old menu opened Permissions without dropping the connection.
     container.addChild(section({ rows: [navRow({ title: 'Permissions', onTap: () => { void presentDetour('phone-ui/permissions-page', undefined, false) } })] }))
   } })
