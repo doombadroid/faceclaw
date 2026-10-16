@@ -1,20 +1,35 @@
 /* OcuSmart hub screens. Tokens and shared row styles live in ocusmart.css. */
 
+/* The storefront is a plain list on the cell colour (EvenHub.dc.html); the
+ * account and sign-in cards keep the grouped look on it. */
+Page.os-page.os-hub-page { background-color: #FFFFFF; }
+.os-hub-page .os-card { background-color: #F2F2F7; }
 .os-hub-search { margin: 4 8 0 8; }
 .os-hub-segments { margin: 8 16 0 16; }
-.os-hub-row { padding: 9 16; }
+.os-hub-list { margin: 0 16; }
+/* letter-spacing is in em: -0.014em is ~-0.3pt at 22pt. */
+.os-hub-heading { font-size: 22; font-weight: 700; letter-spacing: -0.014; color: #000000; margin: 22 2 10 2; }
+.os-hub-row { padding: 9 0; border-bottom-width: 1; border-bottom-color: #E5E5EA; }
+.os-hub-list .os-row { padding: 6 0; }
+.os-hub-note { font-size: 13; color: #6E6E73; margin: 16 2 0 2; }
 .os-hub-name { font-size: 16; color: #000000; }
 .os-hub-title { font-size: 20; font-weight: 600; color: #000000; }
-.os-hub-header { padding: 14 16; }
-.os-hub-paragraph { padding: 11 16; }
+/* Compound selectors: same-specificity .os-row (ocusmart.css, after this import) would win. */
+.os-row.os-hub-header { padding: 14 16; }
+.os-row.os-hub-paragraph { padding: 11 16; }
 .os-hub-initial { color: #FFFFFF; font-weight: 700; horizontal-align: center; vertical-align: center; }
-/* Outranks .os-page Button's transparent reset. */
+/* Outranks .os-page Button's transparent reset; 44pt tall like the design, a full tap target. */
 .os-page Button.os-hub-pill {
-  background-color: #E9E9EB; color: #0A62D0; border-radius: 15;
+  background-color: #E9E9EB; color: #0A62D0; border-radius: 22;
   font-size: 15; font-weight: 700; letter-spacing: 0.015;
-  padding: 5 18; min-width: 74; height: 30;
+  padding: 0 18; min-width: 74; min-height: 44;
 }
 
+.ns-dark Page.os-page.os-hub-page { background-color: #000000; }
+.ns-dark .os-hub-page .os-card { background-color: #1C1C1E; }
+.ns-dark .os-hub-row { border-bottom-color: #38383A; }
+.ns-dark .os-hub-note { color: #98989F; }
+.ns-dark .os-hub-heading,
 .ns-dark .os-hub-name,
 .ns-dark .os-hub-title { color: #FFFFFF; }
 .ns-dark .os-page Button.os-hub-pill { background-color: #2C2C2E; color: #4DA3FF; }

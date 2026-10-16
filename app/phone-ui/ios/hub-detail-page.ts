@@ -115,10 +115,12 @@ export function createPage(): Page {
       if (detail && app?.packageId === packageId) { app = { ...app, ...detail }; refresh() }
     }).catch(error => console.log(`hub: details unavailable for ${packageId}: ${String((error as Error)?.message ?? error)}`))
   })
+  // Installs from the glasses change the button too, including while this tab was unloaded.
+  const sync = () => { if (app && getInstalledEvenHubFingerprint() !== fingerprint) refresh() }
   page.on('loaded', () => {
     off?.()
-    // Installs from the glasses change the button too.
-    off = onSettingsStoreChanged(() => { if (app && getInstalledEvenHubFingerprint() !== fingerprint) refresh() })
+    off = onSettingsStoreChanged(sync)
+    sync()
   })
   page.on('unloaded', () => { off?.(); off = null })
   return page
