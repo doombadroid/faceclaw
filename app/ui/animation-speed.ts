@@ -1,14 +1,14 @@
 /**
  * Speeds offered by the Settings > Customization > Animations settings.
  * Animation durations are tuned at Normal; the other speeds play them faster
- * or slower, and Disabled makes them instant.
+ * or slower, and Off makes them instant.
  */
 export const ANIMATION_SPEEDS = ["disabled", "very-fast", "fast", "normal", "slow"] as const;
 export type AnimationSpeed = typeof ANIMATION_SPEEDS[number];
 
 const SPEED_FACTORS: Record<AnimationSpeed, number> = { disabled: 0, "very-fast": 5, fast: 2, normal: 1, slow: 0.5 };
 const SPEED_LABELS: Record<AnimationSpeed, string> = {
-  disabled: "Disabled", "very-fast": "Very Fast", fast: "Fast", normal: "Normal", slow: "Slow",
+  disabled: "Off", "very-fast": "Very Fast", fast: "Fast", normal: "Normal", slow: "Slow",
 };
 
 export function animationSpeedLabel(speed: AnimationSpeed): string {

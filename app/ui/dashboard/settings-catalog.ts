@@ -73,6 +73,8 @@ export type CatalogItem =
       onChange?: (value: string) => void;
       /** Why a value cannot be chosen on iOS, or null. */
       unavailable?: (value: string) => string | null;
+      /** The phone row's title when phoneTitle has none (settings with generated ids). */
+      title?: string;
     }
   /** Rows backed by stores other than a ConfigSetting; the phone page draws them. */
   | { kind: "notification-sources" | "input-tokens" | "ios-privacy-notice" }
@@ -90,6 +92,49 @@ export type SettingsCategory = {
 
 const item = (setting: CatalogSetting): CatalogItem => ({ kind: "setting", setting });
 
+/**
+ * Phone row titles, by setting id. The labels stay sentence case for the
+ * glasses menus; iOS Settings rows are Title Case. No text-transform: it
+ * would turn "BLE" into "Ble".
+ */
+const PHONE_TITLES: Record<string, string> = {
+  autoBrightnessMin: "Minimum",
+  autoBrightnessMax: "Maximum",
+  autoBrightnessCurve: "Light Curve",
+  "display-mode": "Display Mode",
+  "lock-screen-enabled": "Lock Screen",
+  "glanceboard-tap-duration": "Show on Tap",
+  "glanceboard-show-on-long-press": "Show on Long Press",
+  "glanceboard-show-on-head-tilt": "Show on Head Tilt",
+  "glanceboard-show-lines": "Show Lines",
+  "app-switcher-position": "App Switcher Position",
+  "status-bar-position": "Status Bar Position",
+  "status-bar-visibility": "Status Bar Visibility",
+  "window-border": "Window Border",
+  timeFormat: "Time Format",
+  glassesBatteryVisibility: "Glasses",
+  "menu-animation": "Menu Animation",
+  "screen-fade": "Screen Fade",
+  "preview-color": "Mirror Color",
+  "preview-scaling": "Mirror Scaling",
+  "mirror-touch": "Touch Mirror",
+  "wake-word-action": "Wake Word",
+  "voice-provider": "Transcription Provider",
+  "assistant-backend": "Assistant Backend",
+  "assistant-model": "Assistant Model",
+  "assistant-skip-confirmation": "Send Without Confirming",
+  "elevenlabs-api-key": "ElevenLabs API Key",
+  "openai-api-key": "OpenAI API Key",
+  "soniox-api-key": "Soniox API Key",
+  "anthropic-api-key": "Anthropic API Key",
+  "mapbox-api-key": "Mapbox Token",
+  "data-collection": dataCollectionSetting.label.replace(/ statistics$/, " Statistics"),
+  "show-ble-bandwidth": "Show BLE Bandwidth Usage",
+};
+
+export const phoneTitle = (setting: CatalogSetting): string => PHONE_TITLES[setting.id] ?? setting.label;
+export const itemTitle = (entry: Extract<CatalogItem, { kind: "setting" }>): string => entry.title ?? phoneTitle(entry.setting);
+
 // Mirrors customizationRows() in settings-menus.ts: depth and status bar
 // only exist with a bottom or popup switcher, visibility and border only with
 // the popup.
@@ -106,6 +151,7 @@ function glanceSlotItems(): CatalogItem[] {
   return glanceSlotSettings(layout).map((setting, index): CatalogItem => ({
     kind: "setting",
     setting,
+    title: setting.label.replace(/ \w/g, (initial) => initial.toUpperCase()),
     // Each widget appears once per board, as the glasses slot picker enforces.
     onChange: (value) => clearConflictingSlots(layout, index, value as GlanceSlotChoice),
     unavailable: (value) => iosAppUnavailableReason(value),
@@ -119,8 +165,8 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     sections: () => [
       { items: [item(brightnessSetting)] },
       {
-        header: "Auto-brightness",
-        footer: "The minimum, maximum and ambient-light curve that Auto brightness uses.",
+        header: "Auto-Brightness",
+        footer: "The minimum, maximum and ambient-light curve that Auto-Brightness uses.",
         items: [item(autoBrightnessMinSetting), item(autoBrightnessMaxSetting), item(autoBrightnessCurveSetting)],
       },
       { items: [item(displayLayoutSetting), item(lockScreenEnabledSetting)] },
@@ -210,7 +256,8 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     id: "privacy",
     title: "Privacy",
     sections: () => [
-      { footer: dataCollectionSetting.description, items: [item(dataCollectionSetting)] },
+      // The shared summary names the glasses row ("TestFlight privacy"); the phone row is Title Case.
+      { footer: dataCollectionSetting.description?.replace("TestFlight privacy", "TestFlight Privacy"), items: [item(dataCollectionSetting)] },
       { items: [{ kind: "ios-privacy-notice" }, { kind: "document", fileName: "PRIVACY", title: "Privacy Policy" }] },
     ],
   },

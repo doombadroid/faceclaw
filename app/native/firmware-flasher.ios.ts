@@ -109,7 +109,7 @@ export class FirmwareFlasher {
     UIApplication.sharedApplication.idleTimerDisabled = this.previousIdle
     try { this.flasher?.close() } catch { /* ignore */ }
     const message = success ? detail
-      : this.foregroundError || (this.cancelled ? 'Cancelled. Retry with both lenses powered on to complete installation.' : detail)
+      : this.foregroundError || (this.cancelled ? 'Cancelled. Try again with both lenses powered on to complete installation.' : detail)
     this.emit(this.stateListeners, success ? 'done' : 'error', message)
     this.emit(this.completeListeners, success, message)
   }

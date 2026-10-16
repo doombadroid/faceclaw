@@ -4,14 +4,14 @@ import { getRuntime } from './runtime'
 import { showConnectionDetails } from './connection-details'
 import type { SessionState } from '../../g2/ios-preview-controller'
 import { presentDetour } from './detour'
-import { firmwareSummary, reportedState } from './firmware-info'
+import { firmwareKindLabel, firmwareSummary, reportedState, updateStatus } from './firmware-info'
 import { isPreviewOnlyMode } from '../onboarding-state'
 import { resumeAutoReconnect, suppressAutoReconnect } from '../../g2/reconnect-policy'
 import { loadDeviceAddresses, loadPairedGlassesIdentityForAddresses } from '../../g2/device-addresses'
 import { deviceAddressError } from '../../g2/ios-peripheral-identity'
 import { GlassesHardwareIdentity } from '../../g2/glasses-hardware-identity'
 import { glassesImagePath } from '../../g2/glasses-artwork'
-import { flash, restore } from './update-page'
+import { flash, installLabel, restore } from './update-page'
 
 /** The one wording for a session phase, on every page. */
 export const PHASE_LABELS: Record<SessionState['phase'], string> = { connected: 'Connected', disconnected: 'Not Connected',
@@ -82,9 +82,10 @@ export function createPage(): Page {
     const status: Row[] = []
     const battery = batteryText(state)
     if (battery) status.push(valueRow({ title: 'Battery', value: battery }))
-    status.push(valueRow({ title: 'Firmware', value: firmwareSummary(reportedState(state)).line }))
-    if (state?.phase === 'connected') status.push(valueRow({ title: 'Ring', value: state.ring ? 'Connected' : 'Not connected' }))
-    status.push(navRow({ title: 'Connection Details', onTap: () => {
+    const extension = firmwareSummary(reportedState(state)).extension
+    status.push(valueRow({ title: 'Firmware', value: extension ? firmwareKindLabel(extension) : 'Not reported' }))
+    if (state?.phase === 'connected') status.push(valueRow({ title: 'Ring', value: state.ring ? PHASE_LABELS.connected : PHASE_LABELS.disconnected }))
+    status.push(buttonRow({ title: 'Connection Details', onTap: () => {
       void showConnectionDetails()
     } }))
     container.addChild(section({ header: 'Status', footer: state?.status, rows: status }))
@@ -95,14 +96,14 @@ export function createPage(): Page {
       else { resumeAutoReconnect(); void controller.connect() }
     } }))
     connection.push(
-      navRow({ title: 'Pair Glasses', onTap: () => { void presentDetour('ocusmart/setup') } }),
-      navRow({ title: 'Configure Devices', onTap: () => { void presentDetour('phone-ui/config-page', { onboarding: isPreviewOnlyMode() }) } }),
+      buttonRow({ title: 'Pair Glasses', onTap: () => { void presentDetour('ocusmart/setup') } }),
+      buttonRow({ title: 'Configure Devices', onTap: () => { void presentDetour('phone-ui/config-page', { onboarding: isPreviewOnlyMode() }) } }),
     )
     container.addChild(section({ header: 'Connection', rows: connection }))
     container.addChild(section({ header: 'Firmware', rows: [
-      navRow({ title: 'Check Firmware', onTap: () => { void presentDetour('phone-ui/onboarding-firmware-check-page') } }),
-      buttonRow({ title: 'Install Custom Firmware', onTap: () => { void flash('install') } }),
-      buttonRow({ title: 'Uninstall Custom Firmware', role: 'destructive', onTap: () => { void restore('Uninstall Custom Firmware?', 'Continue') } }),
+      buttonRow({ title: 'Check Firmware', onTap: () => { void presentDetour('phone-ui/onboarding-firmware-check-page') } }),
+      buttonRow({ title: installLabel(updateStatus(extension)), onTap: () => { void flash('install') } }),
+      buttonRow({ title: 'Uninstall Custom Firmware', role: 'destructive', onTap: () => { void restore() } }),
     ] }))
     // The old menu opened Permissions without dropping the connection.
     container.addChild(section({ rows: [navRow({ title: 'Permissions', onTap: () => { void presentDetour('phone-ui/permissions-page', undefined, false) } })] }))

@@ -68,11 +68,12 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
     '../../ui/dashboard-settings': {
       brightnessSetting: { get: () => settings.brightness },
       brightnessLabel: value => value === 'auto' ? 'Auto' : value,
-      mirrorTouchSetting: { label: 'Touch mirror', get: () => settings.mirrorTouch, set: value => { settings.mirrorTouch = value; } },
+      mirrorTouchSetting: { id: 'mirror-touch', label: 'Touch mirror', get: () => settings.mirrorTouch, set: value => { settings.mirrorTouch = value; } },
       onAnySettingChanged: fn => { settingListeners.add(fn); return () => settingListeners.delete(fn); },
     },
     '../../apps/all-apps': { ALL_APPS: apps },
     '../../apps/evenhub/installed-apps': { getInstalledEvenHubApps: () => env.installed, getInstalledEvenHubFingerprint: () => JSON.stringify(env.installed) },
+    '../../ui/dashboard/settings-catalog': { phoneTitle: setting => setting.id === 'mirror-touch' ? 'Touch Mirror' : setting.label },
     './settings-page': { categoryValue: id => id === 'notifications' ? settings.notifications : '' },
   });
   const api = load('app/phone-ui/ios/glasses-page.ts');
@@ -213,15 +214,15 @@ test('My Glasses routes rows to their pages', () => {
   assert.equal(page.find('Software Update').tile.symbol, 'arrow.down.circle.fill', 'the same glyph as on Settings');
   // The Set Up intro first, as from the Device page; its Back/Cancel closes the detour.
   assert.deepEqual(tap('Pair Glasses'), ['detour', 'ocusmart/setup']);
-  assert.deepEqual(tap('Device Settings'), ['push', 'glasses', 'ocusmart/device']);
+  assert.deepEqual(tap('Even G2'), ['push', 'glasses', 'ocusmart/device']);
   tap('Connection Details');
   assert.deepEqual(page.calls.at(-1), ['details']);
-  // One entry point per device action: Device Settings holds them.
+  // One entry point per device action: the Even G2 page holds them.
   for (const title of ['Configure Devices', 'Check Firmware', 'Install Custom Firmware', 'Uninstall Custom Firmware', 'Permissions']) {
     assert.equal(page.find(title), undefined, title);
   }
   assert.equal(page.sections().some(section => section.header === 'Firmware & Devices'), false);
-  assert.equal(page.rows().find(r => r.kind === 'switch').title, 'Touch mirror', "the setting's own name, as in Settings");
+  assert.equal(page.rows().find(r => r.kind === 'switch').title, 'Touch Mirror', "the setting's phone title, as in Settings");
 });
 
 test('My Glasses shows firmware and battery only while the session still reports them', () => {

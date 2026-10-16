@@ -195,6 +195,15 @@ export class PermissionsViewModel extends Observable {
       : "-primary";
   }
 
+  /** Done spans the row once Back is collapsed. */
+  get primaryColumn(): number {
+    return this.onboarding ? 1 : 0;
+  }
+
+  get primaryColumnSpan(): number {
+    return this.onboarding ? 1 : 2;
+  }
+
   get secondaryVisibility(): "visible" | "collapse" {
     return this.onboarding ? "visible" : "collapse";
   }

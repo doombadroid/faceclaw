@@ -70,9 +70,9 @@ export const glanceTapDurationSetting = new ConfigSettingEnum<GlanceTapDuration>
   storageKey: "glanceboard.tapDuration",
   defaultValue: DEFAULT_TAP_DURATION,
   values: ["off", "3s", "5s", "7s", "10s"],
-  formatValue: (value) => (value === "off" ? "Disabled" : value.replace("s", " s")),
+  formatValue: (value) => (value === "off" ? "Off" : value.replace("s", " s")),
   description:
-    "How long a single tap (or a head-tilt) keeps the Glanceboard on screen. Disabled: a single tap does not show the Glanceboard.",
+    "How long a single tap (or a head-tilt) keeps the Glanceboard on screen. Off: a single tap does not show the Glanceboard.",
 });
 
 /** Whether a single tap while asleep shows the board. */

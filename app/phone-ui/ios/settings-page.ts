@@ -2,7 +2,7 @@ import type { Page } from '@nativescript/core'
 import { groupedPage, section, navRow, buttonRow, tile, type TileColor } from './ui-kit'
 import { getRuntime } from './runtime'
 import type { SessionState } from '../../g2/ios-preview-controller'
-import { restore } from './update-page'
+import { UNINSTALL_FOOTER, restore } from './update-page'
 import { pushInTab } from './shell'
 import { firmwareSummary, reportedState } from './firmware-info'
 import { deviceCell, deviceKey, deviceLine } from './device-page'
@@ -10,7 +10,6 @@ import { SETTINGS_CATEGORIES, settingsCategory } from '../../ui/dashboard/settin
 import { brightnessSetting, onAnySettingChanged } from '../../ui/dashboard-settings'
 import { glanceboardEnabledSetting } from '../../apps/glanceboard/glanceboard-settings'
 import { readNotificationSources } from '../../native/notification-sources'
-import { BASE_STOCK_VERSION_TEXT } from '../../g2/firmware-compat'
 
 const TILES: Record<string, [string, TileColor]> = {
   display: ['sun.max.fill', 'blue'], notifications: ['bell.badge.fill', 'red'], glanceboard: ['rectangle.grid.2x2.fill', 'purple'],
@@ -61,8 +60,8 @@ export function createPage(): Page {
         onTap: () => pushInTab('settings', 'ocusmart/update') }),
     ] }))
     if (runsFaceclawFirmware(state)) container.addChild(section({
-      footer: `Puts Even's stock firmware ${BASE_STOCK_VERSION_TEXT} back on the glasses.`,
-      rows: [buttonRow({ title: 'Uninstall Custom Firmware', role: 'destructive', onTap: () => { void restore('Uninstall Custom Firmware?', 'Continue') } })] }))
+      footer: UNINSTALL_FOOTER,
+      rows: [buttonRow({ title: 'Uninstall Custom Firmware', role: 'destructive', onTap: () => { void restore() } })] }))
   } })
   let offs: (() => void)[] = []
   const refreshIfChanged = () => { if (rootKey(controller.connectionState) !== shown) refresh() }

@@ -522,18 +522,18 @@ export const brightnessSetting = new ConfigSettingEnum<BrightnessSetting>({
   values: BRIGHTNESS_VALUES,
   normalize: (value) => value === "0" ? "2" : BRIGHTNESS_VALUES.includes(value as BrightnessSetting) ? value as BrightnessSetting : "auto",
   formatValue: brightnessLabel,
-  description: `Auto uses ${APP_NAME}'s ambient-light curve; numbers set a fixed level. 2 is the dimmest level.`,
+  description: `Auto uses ${APP_NAME}'s ambient-light curve; percentages set a fixed level. 2% is the dimmest level.`,
 });
 
 const AUTO_BRIGHTNESS_LEVELS = ["2", "5", "10", "20", "25", "30", "40", "50", "60", "70", "80", "90", "100"] as const;
 export const autoBrightnessMinSetting = new ConfigSettingEnum({
   id: "autoBrightnessMin", label: "Auto minimum", storageKey: "display.autoBrightnessMin",
-  defaultValue: "20", values: AUTO_BRIGHTNESS_LEVELS,
+  defaultValue: "20", values: AUTO_BRIGHTNESS_LEVELS, formatValue: (value) => `${value}%`,
   description: "Lowest brightness Auto will select. Screen fades can still reach 2.",
 });
 export const autoBrightnessMaxSetting = new ConfigSettingEnum({
   id: "autoBrightnessMax", label: "Auto maximum", storageKey: "display.autoBrightnessMax",
-  defaultValue: "100", values: AUTO_BRIGHTNESS_LEVELS,
+  defaultValue: "100", values: AUTO_BRIGHTNESS_LEVELS, formatValue: (value) => `${value}%`,
   description: "Highest brightness Auto will select. A value below the minimum uses the minimum.",
 });
 export const autoBrightnessCurveSetting = new ConfigSettingString({
@@ -551,7 +551,7 @@ export const menuAnimationSetting = new ConfigSettingEnum<AnimationSpeed>({
   defaultValue: "normal",
   values: ANIMATION_SPEEDS,
   formatValue: animationSpeedLabel,
-  description: "How fast the highlight slides, lists scroll, and the ends bounce in menus, lists, and the launcher and Files icon grids. Disabled moves them instantly.",
+  description: "How fast the highlight slides, lists scroll, and the ends bounce in menus, lists, and the launcher and Files icon grids. Off moves them instantly.",
 });
 
 export const screenFadeSetting = new ConfigSettingEnum<AnimationSpeed>({
@@ -561,7 +561,7 @@ export const screenFadeSetting = new ConfigSettingEnum<AnimationSpeed>({
   defaultValue: "normal",
   values: ANIMATION_SPEEDS,
   formatValue: animationSpeedLabel,
-  description: "How fast the display fades in and out when the screen turns on or off. Disabled switches it instantly.",
+  description: "How fast the display fades in and out when the screen turns on or off. Off switches it instantly.",
 });
 
 export function getBrightnessPreferences() {
@@ -759,7 +759,7 @@ export const voiceControlEnabledSetting = new ConfigSettingBoolean({
   label: "Enable",
   storageKey: "voice.enabled",
   defaultValue: true,
-  description: "Master switch for voice features, including wakeword detection and voice input.",
+  description: "Master switch for voice features, including wake word detection and voice input.",
 });
 
 export const firmwareDebugFlagsSetting = new ConfigSettingBoolean({
@@ -829,7 +829,7 @@ const voiceProviderLabels: Record<VoiceProvider, string> = {
 
 export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
   id: "voice-provider",
-  label: "Transcription Provider",
+  label: "Transcription provider",
   storageKey: "voice.provider",
   defaultValue: "onboard",
   values: global.isIOS ? ["onboard", "elevenlabs", "whisper", "soniox"] : ["onboard", "onboard-whisper", "elevenlabs", "whisper", "soniox"],
@@ -847,13 +847,13 @@ export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
 
 const wakeWordActionLabels: Record<WakeWordAction, string> = {
   "voice-input": "Voice Input",
-  off: "Ignore",
+  off: "Off",
   "turn-screen-on": "Turn Screen On",
 };
 
 export const wakeWordActionSetting = new ConfigSettingEnum<WakeWordAction>({
   id: "wake-word-action",
-  label: "Wakeword Action (\"Hey Even\")",
+  label: "Wake word action",
   storageKey: "voice.wakeWordAction",
   defaultValue: "voice-input",
   values: ["voice-input", "off", "turn-screen-on"],
@@ -874,7 +874,7 @@ export const assistantSkipConfirmationSetting = new ConfigSettingBoolean({
   label: "Send to assistant without confirming",
   storageKey: "assistant.skipConfirmationAfterWakeword",
   defaultValue: false,
-  description: "After a wakeword utterance, send the transcript straight to the assistant instead of stopping at the Send/Type confirmation menu.",
+  description: "After a wake word utterance, send the transcript straight to the assistant instead of stopping at the Send/Type confirmation menu.",
 });
 
 export type AssistantBackendKind = "direct" | "external";
@@ -955,7 +955,7 @@ export const openAiApiKeySetting = new ConfigSettingString({
   editorTitle: "OpenAI API key",
   glassesEditTitle: "Edit OpenAI key",
   formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
-  description: "OpenAI API key, used when Whisper is the transcription provider or an OpenAI model is selected for the voice assistant.",
+  description: "OpenAI API key, used when OpenAI is the transcription provider or an OpenAI model is selected for the voice assistant.",
 });
 
 export const sonioxApiKeySetting = new ConfigSettingString({
@@ -1294,7 +1294,7 @@ export function screenTimeoutSettingToMs(value: ScreenTimeoutSetting): number | 
 }
 
 export function brightnessLabel(value: BrightnessSetting): string {
-  return value === "auto" ? "Auto" : value;
+  return value === "auto" ? "Auto" : `${value}%`;
 }
 
 /** The exact level for the wire, or null when the ambient sensor drives it. */

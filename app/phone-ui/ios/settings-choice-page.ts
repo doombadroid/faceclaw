@@ -1,6 +1,6 @@
 import type { NavigatedData, Page } from '@nativescript/core'
 import { groupedPage, section, checkRow, type Row } from './ui-kit'
-import type { CatalogItem } from '../../ui/dashboard/settings-catalog'
+import { itemTitle, type CatalogItem } from '../../ui/dashboard/settings-catalog'
 import { onAnySettingChanged, type ConfigSettingEnum } from '../../ui/dashboard-settings'
 
 type EnumItem = Extract<CatalogItem, { kind: 'setting' }> & { setting: ConfigSettingEnum<string> }
@@ -35,7 +35,7 @@ export function createPage(): Page {
   page.on('navigatingTo', (args: NavigatedData) => {
     if (item) return
     item = (args.context as { item?: EnumItem } | undefined)?.item ?? null
-    page.actionBar.title = item?.setting.label ?? 'Settings'
+    page.actionBar.title = item ? itemTitle(item) : 'Settings'
     refresh()
   })
   let off: (() => void) | null = null

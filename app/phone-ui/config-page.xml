@@ -31,7 +31,7 @@
 
         <GridLayout row="5" columns="*,*" class="m-t-16">
             <Button col="0" text="Load paired devices" visibility="{{ pairedDevicesVisibility }}" tap="{{ onLoadPairedTap }}" class="-primary" isEnabled="{{ canDiscover }}" />
-            <Button col="1" text="Scan for glasses" tap="{{ onScanTap }}" class="-primary" isEnabled="{{ canDiscover }}" />
+            <Button col="{{ scanColumn }}" colSpan="{{ scanColumnSpan }}" text="{{ scanLabel }}" tap="{{ onScanTap }}" class="-primary" isEnabled="{{ canDiscover }}" />
         </GridLayout>
 
         <Label row="6" text="{{ status }}" class="body-text m-t-16" textWrap="true" />

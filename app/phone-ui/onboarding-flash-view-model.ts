@@ -37,7 +37,7 @@ export class OnboardingFlashViewModel extends Observable {
   private readonly fromOnboarding: boolean;
 
   private _phase: FlashPhase = "intro";
-  private _headline = "Flash Custom Firmware";
+  private _headline = "Install Custom Firmware";
   private _status = "";
   private _log = "";
   private _busy = false;
@@ -65,7 +65,7 @@ export class OnboardingFlashViewModel extends Observable {
     suppressAutoReconnect();
     this.mode = options?.mode ?? "install";
     this.fromOnboarding = options?.fromOnboarding ?? true;
-    this._headline = this.mode === "uninstall" ? "Uninstall Custom Firmware" : "Flash Custom Firmware";
+    this._headline = this.mode === "uninstall" ? "Uninstall Custom Firmware" : "Install Custom Firmware";
     this._status =
       this.mode === "uninstall"
         ? "This connects to your glasses, asks for confirmation on the lens, checks the battery, then downloads " +
@@ -174,7 +174,7 @@ export class OnboardingFlashViewModel extends Observable {
       case "flashed":
         return "Finish";
       case "error":
-        return "Retry";
+        return "Try Again";
       default:
         return "";
     }
@@ -371,7 +371,7 @@ export class OnboardingFlashViewModel extends Observable {
     const levels = readings.map((r) => `${r.arm} ${r.percent}%`).join(", ");
     return (
       `The glasses' battery is too low to flash safely (${levels}). ` +
-      `Charge both lenses to at least ${MIN_FLASH_BATTERY_PERCENT}%, then tap Retry to check again. ` +
+      `Charge both lenses to at least ${MIN_FLASH_BATTERY_PERCENT}%, then tap Try Again to check again. ` +
       "You won't need to confirm on the lens a second time."
     );
   }

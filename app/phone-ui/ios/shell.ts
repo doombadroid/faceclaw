@@ -3,7 +3,7 @@ import { getRuntime } from './runtime'
 
 export type TabName = 'glasses' | 'apps' | 'hub' | 'settings'
 const TABS: { name: TabName; title: string; icon: string; moduleName: string }[] = [
-  { name: 'glasses', title: 'Glasses', icon: 'sys://eyeglasses', moduleName: 'ocusmart/glasses' },
+  { name: 'glasses', title: 'My Glasses', icon: 'sys://eyeglasses', moduleName: 'ocusmart/glasses' },
   { name: 'apps', title: 'Apps', icon: 'sys://square.grid.2x2', moduleName: 'ocusmart/apps' },
   { name: 'hub', title: 'Hub', icon: 'sys://bag', moduleName: 'ocusmart/hub' },
   { name: 'settings', title: 'Settings', icon: 'sys://gearshape', moduleName: 'ocusmart/settings' },

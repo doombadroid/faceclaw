@@ -10,6 +10,7 @@ import { pushInTab, selectTab } from './shell'
 import { launchableAppCount } from './app-catalog'
 import { PHASE_LABELS } from './device-page'
 import { categoryValue } from './settings-page'
+import { phoneTitle } from '../../ui/dashboard/settings-catalog'
 import { resumeAutoReconnect, suppressAutoReconnect } from '../../g2/reconnect-policy'
 import { loadDeviceAddresses, loadPairedGlassesIdentityForAddresses } from '../../g2/device-addresses'
 import { deviceAddressError } from '../../g2/ios-peripheral-identity'
@@ -131,7 +132,7 @@ export function createPage(): Page {
     lens.className = 'os-lens'; lens.addChild(slot)
     container.addChild(section({ header: 'Lens', rows: [
       customRow(lens),
-      switchRow({ title: mirrorTouchSetting.label, value: mirrorTouchSetting.get(), onChange: value => {
+      switchRow({ title: phoneTitle(mirrorTouchSetting), value: mirrorTouchSetting.get(), onChange: value => {
         // The switch already shows it; a rebuild would cut its animation.
         mirrorTouchSetting.set(value); shown = shownKey(controller.connectionState, runtime.evenHubButton)
       } }),
@@ -157,10 +158,10 @@ export function createPage(): Page {
       else { resumeAutoReconnect(); void controller.connect() }
     } }))
     rows.push(
-      navRow({ title: 'Connection Details', onTap: () => { void showConnectionDetails() } }),
-      navRow({ title: 'Pair Glasses', onTap: () => { void presentDetour('ocusmart/setup') } }),
+      buttonRow({ title: 'Connection Details', onTap: () => { void showConnectionDetails() } }),
+      buttonRow({ title: 'Pair Glasses', onTap: () => { void presentDetour('ocusmart/setup') } }),
       // Configure, firmware check/install/uninstall and Permissions live there.
-      navRow({ title: 'Device Settings', onTap: () => pushInTab('glasses', 'ocusmart/device') }),
+      navRow({ title: 'Even G2', onTap: () => pushInTab('glasses', 'ocusmart/device') }),
     )
     container.addChild(section({ header: 'Connection', footer: state?.status, rows }))
   } })

@@ -10,6 +10,10 @@ import { APP_NAME } from '../../branding'
 export const flash = (mode: 'install' | 'uninstall') => presentDetour('phone-ui/onboarding-flash-page', { mode, fromOnboarding: false })
 export const CHANNEL_NAMES = { faceclaw: 'Faceclaw', even: 'Even Realities' }
 
+/** The install button's title, from what the glasses run. */
+export const installLabel = (status: ReturnType<typeof updateStatus>) => status === 'current' ? 'Reinstall'
+  : status === 'newer' ? `Downgrade to r${REQUIRED_FACECLAW_FIRMWARE_VERSION}` : 'Download and Install'
+
 // The flash page's own guidance (onboarding-flash-view-model.ts, MIN_FLASH_BATTERY_PERCENT).
 const FLASH_GUIDANCE = 'Keep both lenses powered on and nearby — each lens takes a few minutes, and the glasses ' +
   'will reboot when each lens finishes. Both lenses need at least 30% battery. Do not close the app during flashing.'
@@ -59,25 +63,24 @@ export function createPage(): Page {
     if (state && classifyOnboardingFirmware({ leftVersion: state.leftVersion, rightVersion: state.rightVersion, extension: state.capabilities }).kind === 'newer-stock-unvalidated')
       footer = `Your glasses run stock firmware ${summary.version}, newer than the ${BASE_STOCK_VERSION_TEXT} release ` +
         `Faceclaw's image is built from. Flashing may not work correctly and carries extra risk. ${footer}`
-    container.addChild(section({ footer, rows: [buttonRow({ title: status === 'current' ? 'Reinstall'
-      : status === 'newer' ? `Downgrade to r${REQUIRED_FACECLAW_FIRMWARE_VERSION}` : 'Download and Install', onTap: () => { void flash('install') } })] }))
+    container.addChild(section({ footer, rows: [buttonRow({ title: installLabel(status), onTap: () => { void flash('install') } })] }))
 
     const channel = firmwareChannel(summary.extension)
     container.addChild(section({ rows: [navRow({ title: 'Firmware Channel', value: channel ? CHANNEL_NAMES[channel] : undefined,
       onTap: () => page.frame?.navigate({ moduleName: 'ocusmart/firmware-channel' }) })] }))
 
-    const installed: Row[] = summary.extension ? [
+    const installed: Row[] = [
       valueRow({ title: 'Left', value: state?.leftVersion || 'Not reported' }),
       valueRow({ title: 'Right', value: state?.rightVersion || 'Not reported' }),
-      valueRow({ title: 'Firmware', value: firmwareKindLabel(summary.extension) }),
-    ] : []
+      valueRow({ title: 'Firmware', value: summary.extension ? firmwareKindLabel(summary.extension) : 'Not reported' }),
+    ]
     // Restoring stock onto stock would be a no-op reflash.
     const restorable = summary.extension?.kind !== 'none'
-    if (restorable) installed.push(buttonRow({ title: 'Restore Even Firmware', role: 'destructive', onTap: () => { void restore() } }))
+    if (restorable) installed.push(buttonRow({ title: 'Uninstall Custom Firmware', role: 'destructive', onTap: () => { void restore() } }))
     container.addChild(section({ header: 'Installed', rows: installed,
-      footer: [summary.extension ? '' : 'Connect your glasses to see the installed versions.',
+      footer: [summary.extension ? '' : 'The glasses report their versions after they connect.',
         summary.extension && 'text' in summary.extension ? `The glasses report "${summary.extension.text}".` : '',
-        restorable ? `Restoring flashes Even's stock firmware ${BASE_STOCK_VERSION_TEXT}.` : ''].filter(Boolean).join(' ') || undefined }))
+        restorable ? UNINSTALL_FOOTER : ''].filter(Boolean).join(' ') || undefined }))
   } })
 
   let offs: (() => void)[] = []
@@ -95,6 +98,8 @@ export function createPage(): Page {
 export const RESTORE_MESSAGE = `This flashes Even's stock firmware ${BASE_STOCK_VERSION_TEXT} to both lenses and removes Faceclaw's custom features. ` +
   `${APP_NAME} needs Faceclaw firmware to work with your glasses.`
 
-export async function restore(title = 'Restore Even Firmware?', okButtonText = 'Restore'): Promise<void> {
-  if (await Dialogs.confirm({ title, message: RESTORE_MESSAGE, okButtonText, cancelButtonText: 'Cancel' })) await flash('uninstall')
+export const UNINSTALL_FOOTER = `Uninstalling flashes Even's stock firmware ${BASE_STOCK_VERSION_TEXT}.`
+
+export async function restore(): Promise<void> {
+  if (await Dialogs.confirm({ title: 'Uninstall Custom Firmware?', message: RESTORE_MESSAGE, okButtonText: 'Uninstall', cancelButtonText: 'Cancel' })) await flash('uninstall')
 }

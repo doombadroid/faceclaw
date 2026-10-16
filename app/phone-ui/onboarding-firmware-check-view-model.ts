@@ -89,7 +89,7 @@ export class OnboardingFirmwareCheckViewModel extends Observable {
       case "newer":
         return "Proceed Anyway";
       case "error":
-        return "Retry";
+        return "Try Again";
       default:
         return "";
     }

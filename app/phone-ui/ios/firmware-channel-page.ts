@@ -7,8 +7,8 @@ import { BASE_STOCK_VERSION_TEXT, REQUIRED_FACECLAW_FIRMWARE_VERSION } from '../
 
 // Subtitles say what switching installs; the checked row shows what the glasses report instead.
 const CHANNELS = [
-  { id: 'faceclaw', mode: 'install', subtitle: `Installs custom firmware revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}`,
-    message: `This flashes Faceclaw's custom firmware (revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}) to both lenses.` },
+  { id: 'faceclaw', mode: 'install', subtitle: `Installs Faceclaw r${REQUIRED_FACECLAW_FIRMWARE_VERSION}`,
+    message: `This flashes Faceclaw r${REQUIRED_FACECLAW_FIRMWARE_VERSION} to both lenses.` },
   { id: 'even', mode: 'uninstall', subtitle: `Installs stock firmware ${BASE_STOCK_VERSION_TEXT}`, message: RESTORE_MESSAGE },
 ] as const
 
@@ -22,8 +22,6 @@ export function createPage(): Page {
     const rows = CHANNELS.map(channel => checkRow({ title: CHANNEL_NAMES[channel.id], checked: current === channel.id,
       subtitle: current === channel.id ? summary.line : channel.subtitle,
       onTap: () => { if (current !== channel.id) void switchTo(CHANNEL_NAMES[channel.id], channel.message, channel.mode) } }))
-    // The design's order: Faceclaw, xeyes, Even Realities.
-    rows.splice(1, 0, checkRow({ title: 'xeyes', subtitle: 'Not built yet', checked: false, enabled: false, onTap: () => {} }))
     const where = !extension ? 'Connect your glasses to see which channel they are on. '
       : current ? '' : 'Your glasses report custom firmware from a different source. '
     container.addChild(section({ header: 'Channel', rows,

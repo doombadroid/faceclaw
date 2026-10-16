@@ -89,7 +89,7 @@ test('Software Update shows the truthful status and routes to the flash detour',
   assert.equal(titled(h.rows(), 'Firmware Channel').value, 'Even Realities');
   assert.equal(titled(h.rows(), 'Left').value, '2.3.0.24');
   assert.equal(titled(h.rows(), 'Firmware').value, 'Stock firmware');
-  assert.equal(titled(h.rows(), 'Restore Even Firmware'), undefined, 'stock has nothing to restore');
+  assert.equal(titled(h.rows(), 'Uninstall Custom Firmware'), undefined, 'stock has nothing to restore');
   assert.match(h.last()[1].footer, /Keep both lenses powered on and nearby/);
   titled(h.rows(), 'Download and Install').onTap(); await settle();
   assert.deepEqual(h.calls.at(-1), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'install', fromOnboarding: false }]);
@@ -103,10 +103,10 @@ test('Software Update shows the truthful status and routes to the flash detour',
   assert.equal(h.built.length, builds + 1);
   assert.ok(titled(h.rows(), 'Reinstall'));
   assert.equal(titled(h.rows(), 'Firmware Channel').value, 'Faceclaw');
-  h.answer(false); titled(h.rows(), 'Restore Even Firmware').onTap(); await settle();
+  h.answer(false); titled(h.rows(), 'Uninstall Custom Firmware').onTap(); await settle();
   assert.match(h.confirms.at(-1).message, /Even's stock firmware 2\.3\.0\.24/);
   assert.equal(h.calls.at(-1)[0], 'navigate', 'cancelled restore flashes nothing');
-  h.answer(true); titled(h.rows(), 'Restore Even Firmware').onTap(); await settle();
+  h.answer(true); titled(h.rows(), 'Uninstall Custom Firmware').onTap(); await settle();
   assert.deepEqual(h.calls.at(-1), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'uninstall', fromOnboarding: false }]);
 
   // A flash runs under the detour, which pauses the controller: closing it is the only news.
@@ -121,9 +121,9 @@ test('Software Update shows the truthful status and routes to the flash detour',
   h.runtime.controller.connectionState = CURRENT; h.listeners.get('connection')(CURRENT);
   h.runtime.controller.connectionState = STALE; h.listeners.get('connection')(STALE);
   assert.equal(titled(h.rows(), 'Reinstall'), undefined);
-  assert.equal(titled(h.rows(), 'Left'), undefined);
+  assert.equal(titled(h.rows(), 'Left').value, 'Not reported');
   assert.equal(titled(h.rows(), 'Firmware Channel').value, undefined);
-  assert.ok(titled(h.rows(), 'Restore Even Firmware'));
+  assert.ok(titled(h.rows(), 'Uninstall Custom Firmware'));
   page.events.get('unloaded')(); assert.equal(h.listeners.size, 0);
 });
 
@@ -152,13 +152,13 @@ test('Software Update is honest about newer, third-party and unvalidated stock f
   assert.doesNotMatch(JSON.stringify(halted.last()), /Connect your glasses/);
 });
 
-test('Software Update without a firmware report asks to connect and keeps Restore reachable', () => {
+test('Software Update without a firmware report says so and keeps Uninstall reachable', () => {
   const h = uiHarness(UNREPORTED);
   h.load('app/phone-ui/ios/update-page.ts').createPage();
-  assert.equal(titled(h.rows(), 'Left'), undefined);
+  assert.deepEqual(['Left', 'Right', 'Firmware'].map(title => titled(h.rows(), title).value), ['Not reported', 'Not reported', 'Not reported'], "General's empty state");
   assert.equal(titled(h.rows(), 'Firmware Channel').value, undefined);
-  assert.ok(titled(h.rows(), 'Download and Install') && titled(h.rows(), 'Restore Even Firmware'));
-  assert.match(h.last().at(-1).footer, /Connect your glasses/);
+  assert.ok(titled(h.rows(), 'Download and Install') && titled(h.rows(), 'Uninstall Custom Firmware'));
+  assert.match(h.last().at(-1).footer, /report their versions after they connect/);
 });
 
 test('Firmware Channel checks the reported channel and confirms before switching', async () => {
@@ -166,8 +166,7 @@ test('Firmware Channel checks the reported channel and confirms before switching
   h.load('app/phone-ui/ios/firmware-channel-page.ts').createPage();
   const rows = h.rows();
   assert.deepEqual(rows.map(r => [r.title, r.checked, r.enabled !== false]),
-    [['Faceclaw', true, true], ['xeyes', false, false], ['Even Realities', false, true]]);
-  assert.equal(titled(rows, 'xeyes').subtitle, 'Not built yet');
+    [['Faceclaw', true, true], ['Even Realities', false, true]]);
   assert.equal(titled(rows, 'Even Realities').subtitle, 'Installs stock firmware 2.3.0.24');
   titled(rows, 'Faceclaw').onTap(); await settle();
   assert.equal(h.confirms.length, 0, 'the current channel is not re-flashed');

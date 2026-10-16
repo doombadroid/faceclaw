@@ -15,11 +15,12 @@ Page.os-page { background-color: #F2F2F7; color: #000000; font-size: 17; }
  * label in every tab came out Title Cased. iOS text is never transformed. */
 TabView.os-shell { tab-text-font-size: 10; text-transform: none; }
 
+.os-section { margin-top: 24; }
 .os-section-header {
   font-size: 13; color: #6E6E73; text-transform: uppercase;
   /* letter-spacing is in em: 0.015em is ~0.2pt at 13pt. */
   letter-spacing: 0.015;
-  margin: 24 32 6 32;
+  margin: 0 32 6 32;
 }
 .os-section-footer { font-size: 13; color: #6E6E73; margin: 6 32 0 32; }
 .os-card { background-color: #FFFFFF; border-radius: 10; margin: 0 16; }
@@ -31,7 +32,7 @@ TabView.os-shell { tab-text-font-size: 10; text-transform: none; }
 .os-row-subtitle { font-size: 13; color: #6E6E73; }
 .os-row-value { font-size: 17; color: #6E6E73; margin-left: 8; }
 .os-tint { color: #0A62D0; }
-.os-destructive { color: #B3261E; }
+.os-destructive { color: #C7372C; }
 .os-disabled { opacity: 0.4; }
 .os-chevron { height: 13; width: 8; margin-left: 8; tint-color: #C4C4C6; }
 .os-check { height: 16; width: 16; margin-left: 8; tint-color: #0A62D0; }

@@ -14,6 +14,7 @@ function settingsFixture(store = new Map()) {
     };
     if (id.includes('brightness-curve')) return require('../.test-build/app/g2/brightness-curve.js');
     if (id.includes('animation-speed')) return require('../.test-build/app/ui/animation-speed.js');
+    if (id.includes('branding')) return { APP_NAME: 'OcuSmart' };
     return { Layer: class {}, ASSISTANT_MODEL_CHOICES: [] };
   }};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync('app/ui/dashboard-settings.ts', 'utf8'), {
@@ -141,12 +142,24 @@ test('Glanceboard slots keep one widget per board and dim widgets iOS cannot run
   const catalog = load('app/ui/dashboard/settings-catalog.ts');
   const slots = catalog.settingsCategory('glanceboard').sections().find(section => section.header === 'Slots').items;
   assert.equal(slots.length, 4);
+  assert.equal(catalog.itemTitle(slots[0]), 'Top Left');
   assert.match(slots[0].unavailable('music'), /not available on iOS/);
   assert.equal(slots[0].unavailable('calendar'), null);
   // Defaults: system-card, calendar, music, calendar. Calendar into slot 0 clears the others.
   slots[0].setting.set('calendar');
   slots[0].onChange('calendar');
   assert.deepEqual([...slots].map(slot => slot.setting.get()), ['calendar', 'none', 'music', 'none']);
+});
+
+test('every catalog row title is Title Case on the phone', () => {
+  const { load, mocks } = harness();
+  Object.assign(mocks, rootMocks(null));
+  const catalog = load('app/ui/dashboard/settings-catalog.ts');
+  for (const category of catalog.SETTINGS_CATEGORIES) for (const section of category.sections()) for (const item of section.items) {
+    if (item.kind !== 'setting') continue;
+    const title = catalog.itemTitle(item);
+    assert.ok(title.split(' ').every(word => !/^[a-z]/.test(word) || ['on', 'to', 'of', 'and'].includes(word)), `${category.id}: ${title}`);
+  }
 });
 
 function uiKit() {
@@ -180,16 +193,20 @@ test('category rows: bool → switch, enum → choice page, string → the contr
   page.emit('navigatingTo', { context: { category: 'display' } });
   assert.equal(page.actionBar.title, 'Display & Brightness');
   const byTitle = Object.fromEntries(rows(page).map(row => [row.title, row]));
-  const lock = byTitle[settings.lockScreenEnabledSetting.label];
+  const { phoneTitle } = load('app/ui/dashboard/settings-catalog.ts');
+  // Title Case on the phone; the glasses keep the shared sentence-case labels.
+  assert.equal(phoneTitle(settings.lockScreenEnabledSetting), 'Lock Screen');
+  assert.equal(phoneTitle(settings.mirrorTouchSetting), 'Touch Mirror', 'the title My Glasses shows');
+  const lock = byTitle[phoneTitle(settings.lockScreenEnabledSetting)];
   assert.equal(lock.type, 'switch');
   lock.onChange(!lock.value);
   assert.equal(settings.lockScreenEnabledSetting.get(), !lock.value);
-  const brightness = byTitle[settings.brightnessSetting.label];
+  const brightness = byTitle[phoneTitle(settings.brightnessSetting)];
   assert.equal(brightness.type, 'nav'); assert.equal(brightness.value, settings.brightnessSetting.displayValue());
   brightness.onTap();
   assert.equal(page.navigations[0].moduleName, 'ocusmart/settings-choice');
   assert.equal(page.navigations[0].context.item.setting, settings.brightnessSetting);
-  byTitle[settings.autoBrightnessCurveSetting.label].onTap();
+  byTitle[phoneTitle(settings.autoBrightnessCurveSetting)].onTap();
   assert.deepEqual(edits, [settings.autoBrightnessCurveSetting]);
   // Rebuild only when something shown changed, and stop listening once unloaded.
   page.emit('loaded');

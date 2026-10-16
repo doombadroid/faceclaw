@@ -188,6 +188,10 @@ export class ConfigViewModel extends Observable {
   }
 
   get pairedDevicesVisibility(): "visible" | "collapse" { return global.isIOS ? "collapse" : "visible"; }
+  // Scan spans the row where Load is collapsed; iOS buttons are Title Case.
+  get scanColumn(): number { return global.isIOS ? 0 : 1; }
+  get scanColumnSpan(): number { return global.isIOS ? 2 : 1; }
+  get scanLabel(): string { return global.isIOS ? "Scan for Glasses" : "Scan for glasses"; }
 
   async onLoadPairedTap(): Promise<void> {
     await this.populateFromDiscovery(async () => this.discovery.getBondedCandidates(), "Loaded paired devices.");

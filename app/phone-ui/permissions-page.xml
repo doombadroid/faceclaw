@@ -31,7 +31,7 @@
 
         <GridLayout row="2" columns="*,*" class="m-t-12">
             <Button col="0" text="Back" tap="{{ onSecondaryTap }}" visibility="{{ secondaryVisibility }}" />
-            <Button col="1" text="{{ primaryLabel }}" tap="{{ onPrimaryTap }}" class="{{ primaryClass }}" />
+            <Button col="{{ primaryColumn }}" colSpan="{{ primaryColumnSpan }}" text="{{ primaryLabel }}" tap="{{ onPrimaryTap }}" class="{{ primaryClass }}" />
         </GridLayout>
     </GridLayout>
 </Page>

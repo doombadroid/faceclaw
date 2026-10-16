@@ -1,7 +1,7 @@
 import { Dialogs, Label, knownFolders, type NavigatedData, type NavigationEntry, type Page } from '@nativescript/core'
 import { groupedPage, section, navRow, switchRow, buttonRow, type Row } from './ui-kit'
 import { getRuntime } from './runtime'
-import { settingsCategory, type CatalogItem, type CatalogSection, type SettingsCategory } from '../../ui/dashboard/settings-catalog'
+import { itemTitle, settingsCategory, type CatalogItem, type CatalogSection, type SettingsCategory } from '../../ui/dashboard/settings-catalog'
 import { ConfigSettingBoolean, ConfigSettingEnum, onAnySettingChanged, type ConfigSettingString } from '../../ui/dashboard-settings'
 import { readNotificationSources, setNotificationSourceEnabled } from '../../native/notification-sources'
 import { isNotificationListenerEnabled, notificationEmptyMessage } from '../../native/notification-access'
@@ -43,11 +43,13 @@ const permissionSummary = (permissions: Permission[]) => permissions.map(p => PE
 export function settingRows(item: CatalogItem, open: (entry: NavigationEntry) => void, written: () => void = () => {}): Row[] {
   switch (item.kind) {
     case 'setting': {
-      const setting = item.setting
-      if (setting instanceof ConfigSettingBoolean) return [switchRow({ title: setting.label, value: setting.get(), onChange: value => { setting.set(value); written() } })]
-      if (setting instanceof ConfigSettingEnum) return [navRow({ title: setting.label, value: setting.displayValue(),
+      const setting = item.setting, title = itemTitle(item)
+      if (setting instanceof ConfigSettingBoolean) return [switchRow({ title, value: setting.get(), onChange: value => { setting.set(value); written() } })]
+      if (setting instanceof ConfigSettingEnum) return [navRow({ title, value: setting.displayValue(),
         onTap: () => open({ moduleName: 'ocusmart/settings-choice', context: { item } }) })]
-      return [navRow({ title: setting.label, value: shortValue(setting.displayValue()), onTap: () => { void editTextSetting(setting) } })]
+      // The shared key formatters write '(not set)' and '...' for the glasses' font.
+      return [navRow({ title, value: setting.get() ? shortValue(setting.displayValue().replace(/\.\.\.$/, '…')) : 'Not set',
+        onTap: () => { void editTextSetting(setting) } })]
     }
     case 'notification-sources':
       return readNotificationSources().map(source => switchRow({ title: source.appName, value: source.showOnGlasses,
@@ -59,11 +61,11 @@ export function settingRows(item: CatalogItem, open: (entry: NavigationEntry) =>
         buttonRow({ title: 'Create Token…', onTap: () => { void createToken() } }),
         navRow({ title: 'Listening Interfaces', value: interfaceChoices().find(choice => choice.value === remoteInterfaceSelection())?.label ?? '',
           onTap: () => { void chooseInterface() } }),
-        navRow({ title: 'Connection Information', onTap: () => { void Dialogs.alert({ title: 'Input API', message: connectionInformation(), okButtonText: 'OK' }) } }),
+        buttonRow({ title: 'Connection Information', onTap: () => { void Dialogs.alert({ title: 'Connection Information', message: connectionInformation(), okButtonText: 'OK' }) } }),
       ]
     case 'ios-privacy-notice':
-      return [navRow({ title: 'iOS / TestFlight Privacy', onTap: () => {
-        void Dialogs.alert({ title: 'iOS / TestFlight Privacy', message: IOS_PRIVACY_NOTICE, okButtonText: 'OK' })
+      return [buttonRow({ title: 'iOS / TestFlight Privacy', onTap: () => {
+        void Dialogs.alert({ title: 'iOS / TestFlight Privacy', message: IOS_PRIVACY_NOTICE.replace('Privacy policy', 'Privacy Policy'), okButtonText: 'OK' })
       } })]
     case 'document':
       return [navRow({ title: item.title, onTap: () => open({ create: () => documentPage(item.fileName, item.title) }) })]
@@ -171,12 +173,12 @@ async function createToken(): Promise<void> {
   const named = await Dialogs.prompt({ title: 'Create Input Token', message: 'Token name', defaultText: 'My app', okButtonText: 'Next', cancelButtonText: 'Cancel' })
   if (!named.result) return
   let permissions: Permission[] = ['input']
-  if (!await pickPermissions('Token permissions', () => permissions, values => { permissions = values }, 'Generate Token')) return
+  if (!await pickPermissions('Token Permissions', () => permissions, values => { permissions = values }, 'Generate Token')) return
   try {
     const { token } = remoteTokens.create((named.text.trim() || 'My app').slice(0, 80), permissions)
     // The secret exists only here; it cannot be shown again once this sheet closes.
     while (true) {
-      const picked = await Dialogs.action({ title: 'Save your token now', message: 'Save it in the calling app or FACECLAW_TOKEN. The secret cannot be shown again after you close this.',
+      const picked = await Dialogs.action({ title: 'Save Your Token Now', message: 'Save it in the calling app or FACECLAW_TOKEN. The secret cannot be shown again after you close this.',
         cancelButtonText: 'Done', actions: ['Copy Token', 'Show Token'] })
       if (picked === 'Copy Token') { copyRemoteToken(token); await Dialogs.alert({ title: 'Copied', message: 'Token copied to the clipboard.', okButtonText: 'OK' }) }
       else if (picked === 'Show Token') await Dialogs.alert({ title: 'Input Token', message: token, okButtonText: 'OK' })
