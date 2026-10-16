@@ -18,6 +18,7 @@ declare const FaceclawKitIosAudioPacketListener: any;
 declare const FaceclawKitFaceclawCompassListener: any;
 declare const FaceclawKitFaceclawImuListener: any;
 declare const FaceclawKitFaceclawMicStatusListener: any;
+declare const FaceclawKitIosGifRecorder: any;
 
 
 export type CommunicatorPhase =
@@ -81,6 +82,20 @@ function timestamp(): string {
   const now = new Date();
   const pad = (value: number, width = 2) => String(value).padStart(width, "0");
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${pad(now.getMilliseconds(), 3)}`;
+}
+
+/** Start an animated-GIF screen recording (FaceclawKitIosGifRecorder; add frames with addGrayWidthHeightTimestampMs). */
+export function newGifRecorder(): any {
+  return FaceclawKitIosGifRecorder.new();
+}
+
+/** Encode `recorder` and save it under Documents; returns the path, or "" when it holds no frames. */
+export function saveGifRecording(recorder: any): string {
+  const gif = recorder?.encode();
+  if (!gif) return "";
+  const target = path.join(knownFolders.documents().path, `recording-${timestamp()}.gif`);
+  File.fromPath(target).writeSync(gif);
+  return target;
 }
 
 export type PeripheralIdentifiers = { right: string; left: string; ring: string };
@@ -203,6 +218,7 @@ export class FaceclawCommunicatorBridge {
   private readonly ancsAuthorizationListeners = new Set<(authorized: boolean) => void>();
   private readonly ancsRelayListeners = new Set<(frame: Uint8Array) => void>();
   private audioListener: AudioPacketListener | null = null;
+  private recorder: any = null;
   private microphoneWork: Promise<void> = Promise.resolve();
   private microphoneToken = 0;
 
@@ -516,12 +532,23 @@ export class FaceclawCommunicatorBridge {
     return target;
   }
 
-  /** Screen recording is not available on iOS yet. */
-  startScreenRecording(): void {}
+  /** Begin collecting composite frames for an animated-GIF screen recording. */
+  startScreenRecording(): void {
+    this.recorder = newGifRecorder();
+  }
 
-  recordScreenFrame(): void {}
+  /** Capture the current composite into the active recording; no-op when idle. */
+  recordScreenFrame(): void {
+    const frame = this.recorder && this.communicator.previewComposite();
+    if (frame) this.recorder.addGrayWidthHeightTimestampMs(frame.pixels, frame.width, frame.height, Date.now());
+  }
 
-  stopScreenRecording(): string { return ""; }
+  /** Finish the recording and save the GIF under Documents; returns the path (empty if no frames). */
+  stopScreenRecording(): string {
+    const recorder = this.recorder;
+    this.recorder = null;
+    return saveGifRecording(recorder);
+  }
 
   async configureSurface(id: string, options: SurfaceOptions): Promise<void> {
     const transparency = options.transparency === "color-key" ? 1 : 0;

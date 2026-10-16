@@ -183,3 +183,31 @@ test('iOS audio monitor follows the active bridge and maps arms', () => {
   off();
   assert.deepEqual(calls.at(-1), ['offPacket'], 'a torn-down session does not throw out of unsubscribe');
 });
+
+test('iOS screen recording feeds composites to the Kotlin GIF recorder and saves under Documents', () => {
+  const { calls, native } = nativeSession({ previewComposite: { pixels: 'gray', width: 640, height: 480 } });
+  const added = [], written = [];
+  let gif = 'gif-bytes';
+  const recorder = { addGrayWidthHeightTimestampMs: (...args) => added.push(args), encode: () => gif };
+  const core = { knownFolders: { documents: () => ({ path: '/docs' }) }, path: { join: (...parts) => parts.join('/') },
+    File: { fromPath: p => ({ writeSync: data => written.push([p, data]) }) } };
+  const { FaceclawCommunicatorBridge: Bridge } = loader({
+    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } },
+    FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
+    FaceclawKitFaceclawCompassListener: {}, FaceclawKitFaceclawImuListener: 'imu', FaceclawKitIosGifRecorder: { new: () => recorder },
+    FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
+  }, { '@nativescript/core': core, './ios-graphics': {}, './ios-bluetooth': {}, './kotlin-listener.ios': { kotlinListener } })(
+    'app/native/faceclaw-communicator.ios.ts');
+  const bridge = new Bridge({ right: 'r', left: 'l' });
+  bridge.recordScreenFrame();
+  assert.equal(calls.filter(c => c[0] === 'previewComposite').length, 0, 'idle: nothing composites');
+  assert.equal(bridge.stopScreenRecording(), '');
+  bridge.startScreenRecording(); bridge.recordScreenFrame();
+  assert.deepEqual(added.map(a => a.slice(0, 3)), [['gray', 640, 480]]);
+  const saved = bridge.stopScreenRecording();
+  assert.match(saved, /^\/docs\/recording-\d{8}-\d{6}-\d{3}\.gif$/);
+  assert.deepEqual(written, [[saved, 'gif-bytes']]);
+  bridge.startScreenRecording(); gif = null;
+  assert.equal(bridge.stopScreenRecording(), '', 'no frames: no file');
+  assert.equal(written.length, 1);
+});

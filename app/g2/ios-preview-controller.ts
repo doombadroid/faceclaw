@@ -63,6 +63,8 @@ const SHELL_SURFACE_Z_ORDER = 1
 const LOCK_SURFACE_Z_ORDER = 1000
 /** The shell render loop waits this long for the glasses to take a frame before moving on. */
 const FRAME_TRANSMIT_BACKPRESSURE_TIMEOUT_MS = 2000
+/** Screen recording capture cadence (Android's RECORDING_MIN_CAPTURE_MS); the encoder drops repeated frames. */
+const RECORDING_CAPTURE_MS = 1000
 
 export type SessionPhase = 'disconnected' | 'connecting' | 'connected' | 'retrying' | 'disconnecting' | 'error'
 export type SessionState = { phase: SessionPhase; status: string; battery: number | null; charging: boolean | null;
@@ -125,6 +127,7 @@ export class IosPreviewController {
     appendLog: message => this.logBluetooth(message),
   })
   private previewTimer: ReturnType<typeof setTimeout> | null = null
+  private recordTimer: ReturnType<typeof setInterval> | null = null
   /** The screen area the mirror's image shows (Preview scaling), or null for the whole panel. */
   private previewCrop: ScreenRect | null = null
   private clockTimer: ReturnType<typeof setInterval> | null = null
@@ -255,6 +258,31 @@ export class IosPreviewController {
     for (const app of ALL_APPS) if (app.appId !== 'launcher' && !iosAppUnavailableReason(app.appId)) app.boot?.(this.buildAppContext(app))
   }
 
+  get screenRecording(): boolean { return this.recordTimer !== null }
+
+  /**
+   * Record the glasses screen as an animated GIF, as Android does. The recording
+   * belongs to the current display target and is saved when that target goes away.
+   * ponytail: a JS timer, so nothing is captured while the app is suspended.
+   */
+  startScreenRecording(): void {
+    const display = this.display
+    if (!display || this.recordTimer !== null) return
+    display.startScreenRecording()
+    display.recordScreenFrame()
+    this.recordTimer = setInterval(() => this.display?.recordScreenFrame(), RECORDING_CAPTURE_MS)
+  }
+
+  /** Save the recording under Documents; returns its path, or '' when idle or empty. */
+  stopScreenRecording(): string {
+    if (this.recordTimer === null) return ''
+    clearInterval(this.recordTimer)
+    this.recordTimer = null
+    const saved = this.display?.stopScreenRecording() ?? ''
+    if (saved) this.logBluetooth(`Screen recording saved: ${saved}`)
+    return saved
+  }
+
   /** The compositor frames go to: the live session, else the headless preview. */
   private get display(): DisplayTarget | null { return this.communicator ?? this.previewTarget }
 
@@ -269,6 +297,7 @@ export class IosPreviewController {
   private teardownPreviewDisplay(): void {
     const target = this.previewTarget
     if (!target) return
+    this.stopScreenRecording()
     this.previewTarget = null
     this.glance.reset()
     target.release()
@@ -976,6 +1005,7 @@ export class IosPreviewController {
   private async closeCommunicator(): Promise<void> {
     const communicator = this.communicator
     if (!communicator) return
+    this.stopScreenRecording()
     for (const off of this.sessionOffs.splice(0)) off()
     this.notifications = null
     this.communicator = null

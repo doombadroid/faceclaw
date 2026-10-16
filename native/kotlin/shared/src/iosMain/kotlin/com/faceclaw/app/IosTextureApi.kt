@@ -19,6 +19,8 @@ class IosTextureAtlas {
 /** A snapshot keeps pixels and their screen-space draw identities together while JS coalesces. */
 class IosTextureFrame internal constructor(internal val composite: SurfaceCompositor.Composite) {
     val pixels: NSData = composite.gray.data()
+    val width: Int = composite.width
+    val height: Int = composite.height
 }
 
 class IosTexturePlan internal constructor(result: ScenePlanner.Plan, val usedBytes: Int) {

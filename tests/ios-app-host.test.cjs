@@ -153,11 +153,12 @@ test('settings-driven repaint runs after font cache invalidation, regardless of 
 });
 
 function remotePageHarness({ enabled = () => false, totals = () => ({ messages: 0, bytes: 0, frames: 0 }), now = () => 0, intervals = new Map() } = {}) {
-  const views = [], appEvents = new Map(), settingListeners = new Set(), runtimeListeners = new Map(), keyboardObservers = new Map();
+  const presented = [], views = [], appEvents = new Map(), settingListeners = new Set(), runtimeListeners = new Map(), keyboardObservers = new Map();
   let nextId = 0;
   class View {
     events = new Map(); children = []; ios = {};
-    actionBar = { actionItems: { addItem() {} }, set() {}, setColor(navBar, color) { navBar.title = color; navBar.tintColor = color; } };
+    barItems = [];
+    actionBar = { actionItems: { addItem: item => this.barItems.push(item) }, set() {}, setColor(navBar, color) { navBar.title = color; navBar.tintColor = color; } };
     constructor() { views.push(this); }
     on(event, fn) { this.events.set(event, fn); }
     addChild(view) { this.children.push(view); }
@@ -188,6 +189,7 @@ function remotePageHarness({ enabled = () => false, totals = () => ({ messages: 
     '../phone-gestures': { PhoneGestureRecognizer: class { cancel() {} } },
     '../ble-bandwidth-meter': require('../.test-build/app/phone-ui/ble-bandwidth-meter.js'),
     '../../native/ble-traffic': { sampleBleTraffic: () => totals() },
+    './present': { presentOnTop: sheet => presented.push(sheet) },
     '../../ui/dashboard-settings': { showBleBandwidthSetting: { get: () => enabled() }, mirrorTouchSetting: { get: () => true },
       onAnySettingChanged: fn => { settingListeners.add(fn); return () => settingListeners.delete(fn); } },
   };
@@ -198,6 +200,8 @@ function remotePageHarness({ enabled = () => false, totals = () => ({ messages: 
   modules['../remote-controls-view-model'] = load('app/phone-ui/remote-controls-view-model.ts', { require: id => shared[id] ?? {} });
   const { createRemotePage } = load('app/phone-ui/ios/remote-page.ts', {
     require: id => modules[id] ?? {}, Date: { now },
+    NSURL: { fileURLWithPath: p => `file://${p}` },
+    UIActivityViewController: { alloc: () => ({ initWithActivityItemsApplicationActivities: items => ({ items, popoverPresentationController: null }) }) },
     NSNotificationCenter: { defaultCenter: {
       addObserverForNameObjectQueueUsingBlock: (name, _object, _queue, fn) => { keyboardObservers.set(name, fn); return name; },
       removeObserver: name => keyboardObservers.delete(name) } },
@@ -213,7 +217,7 @@ function remotePageHarness({ enabled = () => false, totals = () => ({ messages: 
     setInterval: fn => { const id = ++nextId; intervals.set(id, fn); return id; }, clearInterval: id => intervals.delete(id),
     setTimeout: () => 1, clearTimeout() {},
   });
-  return { page: createRemotePage(), views, appEvents, settingListeners, runtimeListeners, controller, intervals, runtime, keyboardObservers };
+  return { page: createRemotePage(), views, appEvents, settingListeners, runtimeListeners, controller, intervals, runtime, keyboardObservers, presented };
 }
 
 test('iOS grouped lists centre a 672pt column in wide windows, whatever column the page swaps in', () => {
@@ -326,7 +330,7 @@ test('iOS Remote bandwidth footer toggles live, polls only in foreground and res
 test('iOS Remote subscribes to the runtime while loaded and never pauses the shared controller', () => {
   const { page, views, runtimeListeners, controller } = remotePageHarness();
   page.events.get('loaded')();
-  assert.deepEqual([...runtimeListeners.keys()].sort(), ['frame', 'keyboardSession']);
+  assert.deepEqual([...runtimeListeners.keys()].sort(), ['connection', 'frame', 'keyboardSession']);
   const mirror = views.find(v => v.accessibilityIdentifier === 'glasses-preview');
   const frame = { image: { ios: 'png' }, focus: 'Clock' };
   runtimeListeners.get('frame')(frame); assert.equal(mirror.imageSource.ios, 'png');
@@ -629,4 +633,55 @@ test('selectTab also selects the UITab, which iOS 27 tabs-only controllers need'
   assert.deepEqual([tabs.selectedIndex, tabs.ios.selectedTab], [3, uiTabs[3]], 'UITab named by the index is selected');
   shell.selectTab('apps');
   assert.deepEqual([tabs.selectedIndex, tabs.ios.selectedTab], [1, uiTabs[3]], 'no UITab for the index: selection left alone');
+});
+
+test('iOS screen recording captures once a second and is saved before its display target goes away', async () => {
+  const intervals = new Map(), logs = [];
+  let nextId = 0;
+  const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', { require: () => ({}),
+    setInterval: (fn, ms) => { assert.equal(ms, 1000); intervals.set(++nextId, fn); return nextId; }, clearInterval: id => intervals.delete(id) });
+  const target = name => ({ calls: [], startScreenRecording() { this.calls.push('start'); }, recordScreenFrame() { this.calls.push('frame'); },
+    stopScreenRecording() { this.calls.push('stop'); return `/docs/${name}.gif`; }, release() {}, close: async () => {} });
+  const preview = target('preview'), session = target('session');
+  const host = Object.assign(Object.create(IosPreviewController.prototype), {
+    previewTarget: preview, communicator: null, recordTimer: null, sessionOffs: [], glance: { reset() {} },
+    logBluetooth: message => logs.push(message) });
+  assert.equal(host.stopScreenRecording(), '', 'idle');
+  host.startScreenRecording(); host.startScreenRecording();
+  assert.equal(host.screenRecording, true);
+  assert.equal(intervals.size, 1);
+  [...intervals.values()][0]();
+  assert.deepEqual(preview.calls, ['start', 'frame', 'frame'], 'a frame at once, then on the timer');
+  host.teardownPreviewDisplay();
+  assert.deepEqual([preview.calls.at(-1), intervals.size, host.screenRecording], ['stop', 0, false]);
+  host.communicator = session;
+  host.startScreenRecording();
+  assert.equal(host.stopScreenRecording(), '/docs/session.gif');
+  host.startScreenRecording();
+  await host.closeCommunicator();
+  assert.deepEqual(session.calls, ['start', 'frame', 'stop', 'start', 'frame', 'stop']);
+  assert.deepEqual(logs, ['Screen recording saved: /docs/preview.gif', 'Screen recording saved: /docs/session.gif',
+    'Screen recording saved: /docs/session.gif']);
+});
+
+test('iOS Remote records the glasses screen from the bar and shares the saved GIF', () => {
+  const { page, controller, runtimeListeners, presented } = remotePageHarness();
+  const record = page.barItems.find(item => item.text === 'Record screen');
+  assert.ok(record, 'a record button beside Share');
+  assert.equal(page.barItems.at(-1).text, 'Share screenshot', 'Share stays the rightmost item');
+  page.ios = { navigationItem: { rightBarButtonItems: null }, view: {} };
+  let saved = '/docs/recording-1.gif';
+  Object.assign(controller, { screenRecording: false, startScreenRecording() { this.screenRecording = true; },
+    stopScreenRecording() { this.screenRecording = false; return saved; } });
+  record.events.get('tap')();
+  assert.deepEqual([record.text, record.icon], ['Stop recording', 'sys://stop.circle']);
+  record.events.get('tap')();
+  assert.equal(record.text, 'Record screen');
+  assert.deepEqual(presented.map(sheet => [...sheet.items]), [['file:///docs/recording-1.gif']]);
+  page.events.get('loaded')();
+  controller.screenRecording = true; runtimeListeners.get('connection')({});
+  assert.equal(record.text, 'Stop recording', 'connection changes refresh the button');
+  saved = ''; record.events.get('tap')();
+  assert.equal(presented.length, 1, 'nothing recorded: nothing to share');
+  page.events.get('unloaded')();
 });

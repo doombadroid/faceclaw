@@ -43,4 +43,20 @@ class IosNativeApiTest {
         compositor.blank(false)
         assertEquals(99, compositor.composite().byteArray().last().toInt())
     }
+
+    @Test
+    fun gifRecorderEncodesCompositeFramesWithTheirSize() {
+        val recorder = IosGifRecorder()
+        assertNull(recorder.encode(), "no frames, no file")
+        val compositor = IosSurfaceCompositor(4, 2)
+        compositor.configure("app", 0, 0, 4, 2, 0, false)
+        compositor.submit("app", ByteArray(8) { -1 }.data(), 0, 0, 4, 2)
+        val frame = compositor.compositeFrame()
+        assertEquals(4 to 2, frame.width to frame.height)
+        recorder.add(frame.pixels, frame.width, frame.height, 0)
+        recorder.add(ByteArray(8).data(), 4, 2, 1_000)
+        val gif = assertNotNull(recorder.encode()).byteArray()
+        assertEquals("GIF89a", gif.copyOf(6).decodeToString())
+        assertEquals(0x3b, gif.last().toInt())
+    }
 }

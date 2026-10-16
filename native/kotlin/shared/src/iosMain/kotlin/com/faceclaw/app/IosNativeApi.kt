@@ -197,6 +197,16 @@ class IosProtocol {
         SharedScreenshots.encode4BitGrayPng(data.byteArray(), width, height).data()
 }
 
+/** Animated-GIF screen recording over the shared encoder (Android's GifScreenRecorder, minus storage). */
+class IosGifRecorder {
+    private val recorder = SharedGifScreenRecorder()
+
+    fun add(gray: NSData, width: Int, height: Int, timestampMs: Long) = recorder.addFrame(gray.byteArray(), width, height, timestampMs)
+
+    /** The GIF, or null when no frame was recorded. */
+    fun encode(): NSData? = recorder.encode().takeIf { it.isNotEmpty() }?.data()
+}
+
 /** iOS retains/coalesces surface updates in the same compositor Android uses. */
 class IosSurfaceCompositor(width: Int, height: Int) {
     private val compositor = SurfaceCompositor().also { it.configureScreen(width, height) }

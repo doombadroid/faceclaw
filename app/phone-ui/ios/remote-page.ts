@@ -42,18 +42,35 @@ export function createRemotePage(): Page {
   // sys:// symbols must render as templates to take the bar's tint.
   page.actionBar.iosIconRenderingMode = 'alwaysTemplate'
   inheritBarTint(page)
+  /** Share `items`; as a popover (regular width) it points at bar item `index`, 0 being the rightmost. sourceItem is iOS 16+. */
+  const share = (items: unknown[], index: number) => {
+    const sheet = UIActivityViewController.alloc().initWithActivityItemsApplicationActivities(items, null)
+    const popover = sheet.popoverPresentationController, buttons = page.ios.navigationItem.rightBarButtonItems
+    const anchor = buttons && buttons.count > index ? buttons.objectAtIndex(index) : null
+    if (popover && anchor && popover.respondsToSelector('setSourceItem:')) popover.sourceItem = anchor
+    else if (popover) popover.sourceView = page.ios.view
+    presentOnTop(sheet)
+  }
+  // Added first, so it sits left of Share (NativeScript inserts each right item at index 0).
+  const recordItem = new ActionItem()
+  recordItem.ios.position = 'right'
+  const syncRecordItem = () => {
+    const recording = controller.screenRecording
+    recordItem.icon = recording ? 'sys://stop.circle' : 'sys://record.circle'
+    recordItem.text = recording ? 'Stop recording' : 'Record screen'
+  }
+  syncRecordItem()
+  recordItem.on('tap', () => {
+    if (!controller.screenRecording) { controller.startScreenRecording(); syncRecordItem(); return }
+    const saved = controller.stopScreenRecording()
+    syncRecordItem()
+    if (saved) share([NSURL.fileURLWithPath(saved)], 1)
+  })
+  page.actionBar.actionItems.addItem(recordItem)
   const shareItem = new ActionItem()
   shareItem.icon = 'sys://square.and.arrow.up'; shareItem.text = 'Share screenshot'
   shareItem.ios.position = 'right'
-  shareItem.on('tap', () => {
-    if (!mirror.imageSource) return
-    const share = UIActivityViewController.alloc().initWithActivityItemsApplicationActivities([mirror.imageSource.ios], null)
-    // As a popover (regular width) it points at the share button, its only bar item; sourceItem is iOS 16+.
-    const popover = share.popoverPresentationController, anchor = page.ios.navigationItem.rightBarButtonItem
-    if (popover && anchor && popover.respondsToSelector('setSourceItem:')) popover.sourceItem = anchor
-    else if (popover) popover.sourceView = page.ios.view
-    presentOnTop(share)
-  })
+  shareItem.on('tap', () => { if (mirror.imageSource) share([mirror.imageSource.ios], 0) })
   page.actionBar.actionItems.addItem(shareItem)
   const root = new GridLayout()
   page.content = root
@@ -212,7 +229,8 @@ export function createRemotePage(): Page {
     Application.on(Application.suspendEvent, pause); Application.on(Application.resumeEvent, resume)
     offSettings?.(); offSettings = onAnySettingChanged(() => { model.refreshDisplayControls(); syncBandwidth() })
     for (const off of offRuntime) off()
-    offRuntime = [runtime.on('frame', showFrame), runtime.on('keyboardSession', showKeyboard)]
+    offRuntime = [runtime.on('frame', showFrame), runtime.on('keyboardSession', showKeyboard), runtime.on('connection', syncRecordItem)]
+    syncRecordItem()
     if (runtime.frame) showFrame(runtime.frame)
     showKeyboard(runtime.keyboardSession)
     model.refreshDisplayControls(); resume()
