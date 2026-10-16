@@ -614,3 +614,19 @@ test('a glasses keyboard session under a detour opens Remote only once the detou
   runtime.keyboardSession = null; listeners.get('detour')(false);
   assert.equal(navs.length, 1, 'a detour closing with no session opens nothing');
 });
+
+test('selectTab also selects the UITab, which iOS 27 tabs-only controllers need', () => {
+  class TabView { on() {} }
+  const shell = load('app/phone-ui/ios/shell.ts', { require: id => id === './runtime'
+    ? { getRuntime: () => ({ start() {}, on: () => () => {} }) }
+    : { Color: class {}, Frame: class { navigate() {} }, TabView, TabViewItem: class {} } });
+  const tabs = shell.createShell();
+  shell.selectTab('hub');
+  assert.equal(tabs.selectedIndex, 2, 'no native controller yet (or iOS < 18): selectedIndex alone');
+  const uiTabs = { 0: { id: '0' }, 2: { id: '2' }, 3: { id: '3' } };
+  tabs.ios = { selectedTab: uiTabs[0], tabForIdentifier: id => uiTabs[id] ?? null };
+  shell.selectTab('settings');
+  assert.deepEqual([tabs.selectedIndex, tabs.ios.selectedTab], [3, uiTabs[3]], 'UITab named by the index is selected');
+  shell.selectTab('apps');
+  assert.deepEqual([tabs.selectedIndex, tabs.ios.selectedTab], [1, uiTabs[3]], 'no UITab for the index: selection left alone');
+});

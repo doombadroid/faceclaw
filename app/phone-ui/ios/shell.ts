@@ -50,7 +50,16 @@ export function createShell(): TabView {
 }
 
 export function selectTab(name: TabName): void {
-  if (shell) shell.tabs.selectedIndex = TABS.findIndex(tab => tab.name === name)
+  if (!shell) return
+  const index = TABS.findIndex(tab => tab.name === name)
+  shell.tabs.selectedIndex = index
+  // On iOS 27 core configures the tab bar through UITabs only (it no longer assigns
+  // viewControllers), but its selectedIndex setter still writes UITabBarController.selectedIndex,
+  // an index into viewControllers. Select the UITab too (core names them by index) so the
+  // visible tab follows; a no-op wherever selectedIndex already did. iOS < 18 has no UITabs.
+  const controller = shell.tabs.ios as UITabBarController | undefined
+  const tab = controller?.tabForIdentifier?.(String(index))
+  if (controller && tab) controller.selectedTab = tab
 }
 
 export function pushInTab(name: TabName, moduleName: string, context?: object): void {
