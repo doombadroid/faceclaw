@@ -6,6 +6,7 @@ FaceclawConfigPort.processPendingRequest()
 require('./phone-ui/onboarding-register.ios')
 require('./phone-ui/ios/register')
 // Opt-in analytics (app/analytics/), started once the app is up.
+// oxlint-disable-next-line typescript/no-deprecated -- still fires once, with the first window's content
 Application.on(Application.launchEvent, () => {
   setTimeout(() => require('./analytics/analytics-sources').startAppAnalytics(), 0)
 })

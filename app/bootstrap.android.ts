@@ -8,6 +8,7 @@ registerShareIntentHandler()
 registerPhoneRotation()
 // Opt-in analytics (app/analytics/), started once the app is up rather than
 // loading its imports on the boot path.
+// oxlint-disable-next-line typescript/no-deprecated -- still fires once, with the first window's content
 Application.on(Application.launchEvent, () => {
   setTimeout(() => require('./analytics/analytics-sources').startAppAnalytics(), 0)
 })

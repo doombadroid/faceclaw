@@ -1302,6 +1302,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
 
   private readLayoutOrientation(): LayoutOrientation {
+    // oxlint-disable-next-line typescript/no-deprecated -- primaryWindow?.orientation() without the no-window fallback
     const applicationOrientation = Application.orientation();
     if (applicationOrientation === "landscape" || applicationOrientation === "portrait") {
       return applicationOrientation;

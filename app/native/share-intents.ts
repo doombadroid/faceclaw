@@ -7,6 +7,7 @@ export function registerShareIntentHandler(): void {
     return;
   }
 
+  // oxlint-disable-next-line typescript/no-deprecated -- launch carries the launch intent; ready does not
   Application.on(Application.launchEvent, (args) => {
     const intent = (args as { android?: android.content.Intent }).android;
     if (intent) {
@@ -47,6 +48,7 @@ function readPlainTextShare(intent: android.content.Intent): string | null {
     return limitSharedText(String(directText));
   }
 
+  // oxlint-disable-next-line typescript/no-deprecated -- the typed overload needs API 33 (minSdk 24)
   const stream = intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM) as android.net.Uri | null;
   if (stream === null) {
     return null;

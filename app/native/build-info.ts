@@ -34,6 +34,7 @@ function detectBuildKind(): BuildKind {
         ? packageManager
             .getPackageInfo(context.getPackageName(), PackageManager.GET_SIGNING_CERTIFICATES)
             .signingInfo.getApkContentsSigners()
+        // oxlint-disable-next-line typescript/no-deprecated -- the pre-28 path (minSdk 24)
         : packageManager.getPackageInfo(context.getPackageName(), PackageManager.GET_SIGNATURES).signatures;
     for (let index = 0; index < signatures.length; index++) {
       const digest = java.security.MessageDigest.getInstance("SHA-256").digest(signatures[index].toByteArray());

@@ -26,7 +26,13 @@ async function cssEngine() {
   if (engine) return engine;
   const stub = source => ({ url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true });
   registerHooks({ resolve(specifier, context, next) {
-    if (specifier === '../core/properties') return stub('export const isCssVariable = n => n.startsWith("--")');
+    // ponytail: shorthands stay unexpanded (core 9.1 expands them to longhands, but its
+    // converters only register through the platform style-properties graph); the tests
+    // read the shorthand they assert on. Expand margin/padding here if a test needs a
+    // shorthand against a longhand.
+    if (specifier === '../core/properties') return stub('export const isCssVariable = n => n.startsWith("--"); export const _expandCssShorthand = () => undefined; export const _pendingCssShorthandSubstitution = () => undefined');
+    // Core's cleanupImportantFlags; the real css-utils pulls in layout and platform code.
+    if (specifier === './css-utils') return stub('export const cleanupImportantFlags = v => { if (typeof v !== "string") return "" + v; const i = v.indexOf("!important"); return i >= 0 ? v.substring(0, i).trim() : v }');
     if (specifier === '../../media-query-list') return stub('export const checkIfMediaQueryMatches = () => true');
     if (specifier === '../../globals') return stub('');
     // Core's ESM build uses extensionless relative imports (resolved by the bundler).
