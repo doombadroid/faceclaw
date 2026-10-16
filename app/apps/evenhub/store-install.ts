@@ -11,7 +11,7 @@ import {
   installEvenHubPackageBytes,
   installedEvenHubPackagePath,
   readEvenHubPackageManifest,
-  readEvenHubPackageManifestBytes,
+  inspectEvenHubPackageManifestBytes,
   type InstalledEvenHubApp,
 } from "./installed-apps";
 import { closeRunningPackage } from "./manager";
@@ -55,8 +55,16 @@ export async function installStoreApp(
         })
       : Promise.resolve(undefined),
   ]);
-  const manifest = readEvenHubPackageManifestBytes(download.bytes);
-  if (!manifest) throw new Error("The downloaded EHPK manifest could not be read.");
+  let manifest: EvenHubManifest;
+  try {
+    manifest = inspectEvenHubPackageManifestBytes(download.bytes);
+  } catch (error) {
+    // The reason decides the fix (a damaged download, a decompression failure,
+    // no app.json, a manifest shape the parser rejects), so it is never dropped.
+    const head = Array.from(download.bytes.subarray(0, 16), (b) => b.toString(16).padStart(2, "0")).join(" ");
+    options.appendLog(`evenhub store: manifest of ${app.packageId} unreadable (${download.bytes.length} bytes, starts ${head}): ${cleanError(error)}`);
+    throw new Error(`The downloaded EHPK manifest could not be read: ${cleanError(error)}`, { cause: error });
+  }
   const privacyPolicyUrl = download.privacyPolicyUrl || manifest.privacyPolicyUrl;
   const needsPrompt = (manifest.permissions.length > 0 || privacyPolicyUrl)
     && !alreadyGranted(app.packageId, manifest);

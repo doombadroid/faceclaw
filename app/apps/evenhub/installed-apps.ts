@@ -176,6 +176,11 @@ export function readEvenHubPackageManifestBytes(bytes: Uint8Array): EvenHubManif
   }
 }
 
+/** The manifest of an EHPK in memory, or the reason it cannot be read. */
+export function inspectEvenHubPackageManifestBytes(bytes: Uint8Array): EvenHubManifest {
+  return inspectEhpk(bytes).manifest;
+}
+
 /** Remove the stored EHPK, unpacked runtime files, and registry entry. */
 export function uninstallEvenHubPackage(packageId: string): boolean {
   const apps = getInstalledEvenHubApps();

@@ -46,7 +46,7 @@ test('store install releases serialized input before download and permission app
   const load = loader({}, {
     '../../graphics/ui-fonts': {}, '../../graphics/image': {}, '../../graphics/textwrap': {}, '../../ui/menu-core': require('../.test-build/app/ui/menu-core.js'), '../files/text-viewer': {}, '../../ui/metrics': {},
     './even-api': { evenHubApi: { getStoreAppDetail: async () => null, downloadApp: () => download } },
-    './installed-apps': { getInstalledEvenHubApp: () => null, readEvenHubPackageManifestBytes: () => manifest,
+    './installed-apps': { getInstalledEvenHubApp: () => null, readEvenHubPackageManifestBytes: () => manifest, inspectEvenHubPackageManifestBytes: () => manifest,
       readEvenHubPackageManifest: () => null, installedEvenHubPackagePath: () => '', installedEvenHubAppId: id => id,
       installEvenHubPackageBytes: () => { installed = true; return { packageId: 'test', version: '1' }; } },
     './manager': { closeRunningPackage() {} }, './updates': {},

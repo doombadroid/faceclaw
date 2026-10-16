@@ -23,6 +23,7 @@ const loadStoreInstall = ({ permissions = [{ name: 'network' }], installedManife
     } },
     './installed-apps': {
       readEvenHubPackageManifestBytes: () => ({ name: 'Demo', permissions, privacyPolicyUrl: '' }),
+      inspectEvenHubPackageManifestBytes: () => ({ name: 'Demo', permissions, privacyPolicyUrl: '' }),
       readEvenHubPackageManifest: () => installedManifest,
       installedEvenHubPackagePath: (id) => `/pkg/${id}`,
       installEvenHubPackageBytes: (_bytes, options) => { calls.push(['install', options.expectedPackageId]); events.push(['install']); return { packageId: options.expectedPackageId, version: '2.0.0' }; },
@@ -98,6 +99,24 @@ test('an update that declares no permissions skips the prompt', async () => {
   assert.equal(asked, 0);
   assert.equal(result.packageId, 'demo');
   assert.deepEqual(calls.map(([kind]) => kind), ['download', 'close', 'install']);
+});
+
+test('an unreadable package reports why, and installs nothing', async () => {
+  const unreadable = {
+    readEvenHubPackageManifestBytes: () => null,
+    inspectEvenHubPackageManifestBytes: () => { throw new Error('ehpk: bad record magic at 20'); },
+    installEvenHubPackageBytes: () => { throw new Error('must not install'); },
+    getInstalledEvenHubApp: () => null,
+  };
+  const { installStoreApp, calls } = loadStoreInstall({ extra: { './installed-apps': unreadable } });
+  const logs = [];
+  await assert.rejects(
+    installStoreApp(storeApp('demo'), { appendLog: (line) => logs.push(line), onStatus() {}, confirmPermissions: async () => true }),
+    /could not be read: ehpk: bad record magic at 20/,
+  );
+  assert.deepEqual(calls.map(([kind]) => kind), ['download']);
+  // The size and first bytes tell a damaged download from a bad manifest.
+  assert.match(logs.join('\n'), /manifest of demo unreadable \(1 bytes, starts 01\): ehpk: bad record magic at 20/);
 });
 
 // ---- hub-page: phone logic ----------------------------------------------
