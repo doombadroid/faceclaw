@@ -183,6 +183,8 @@ function fixture() {
     NSOperationQueue: { mainQueue: {} },
   });
   controller = new IosPreviewController((pixels, title) => previews.push({ pixels, title }), message => errors.push(message));
+  // A page shows the mirror (My Glasses or Remote); without one, nothing composites.
+  controller.acquireMirror();
   window.requestRender();
   controller.resume();
   async function drain() { await controller.inputQueue; await controller.glance.queue; }

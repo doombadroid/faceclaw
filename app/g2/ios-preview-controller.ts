@@ -127,6 +127,8 @@ export class IosPreviewController {
   private offSettings: (() => void) | null = null
   private lastBrightness: string | null = null
   private active = false
+  /** Mirrors on screen (acquireMirror). 'active' is app foreground; it does not mean a mirror shows. */
+  private mirrorDemand = 0
   private runtimeRunning = false
   private clockMinute = -1
   private shellRenderInProgress = false
@@ -513,12 +515,22 @@ export class IosPreviewController {
     this.nextFrameId = this.nextFrameId >= 0x7fffffff ? 1 : this.nextFrameId + 1
     return id
   }
-  /** Refresh the phone mirror from the composited screen, coalesced at 30 fps. */
+  /**
+   * Count a mirror the page shows; frames composite only while one is counted.
+   * Returns its release, safe to call more than once.
+   */
+  acquireMirror(): () => void {
+    // The page shows the runtime's cached, possibly stale, frame: refresh it now.
+    if (++this.mirrorDemand === 1) this.schedulePreviewUpdate()
+    let held = true
+    return () => { if (held) { held = false; this.mirrorDemand-- } }
+  }
+  /** Refresh the phone mirror from the composited screen, coalesced at 30 fps, while one is shown. */
   private schedulePreviewUpdate(): void {
-    if (!this.active || this.previewTimer !== null) return
+    if (!this.active || !this.mirrorDemand || this.previewTimer !== null) return
     this.previewTimer = setTimeout(() => {
       this.previewTimer = null
-      if (!this.active) return
+      if (!this.active || !this.mirrorDemand) return
       try {
         const crop = phonePreviewCrop(this.glassesLocked, this.glance.screenRect())
         const image = this.display?.getCompositePreview(previewColorSetting.get() === 'green', crop)

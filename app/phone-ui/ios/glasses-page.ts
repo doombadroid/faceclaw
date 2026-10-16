@@ -146,7 +146,10 @@ export function createPage(): Page {
   } })
   const refreshIfChanged = () => { if (shownKey(controller.connectionState, runtime.evenHubButton) !== shown) refresh() }
   let offs: (() => void)[] = []
+  // The lens shows while the page is loaded: tab switches, a pushed page and app suspend unload or pause it.
+  let releaseMirror: (() => void) | null = null
   page.on('loaded', () => {
+    releaseMirror ??= runtime.acquireMirror()
     for (const off of offs) off()
     offs = [
       runtime.on('connection', refreshIfChanged), runtime.on('evenHubButton', refreshIfChanged), onAnySettingChanged(refreshIfChanged),
@@ -157,6 +160,6 @@ export function createPage(): Page {
     // The paired identity is not evented.
     refresh()
   })
-  page.on('unloaded', () => { for (const off of offs) off(); offs = [] })
+  page.on('unloaded', () => { for (const off of offs) off(); offs = []; releaseMirror?.(); releaseMirror = null })
   return page
 }

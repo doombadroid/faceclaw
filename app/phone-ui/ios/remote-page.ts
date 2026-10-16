@@ -159,7 +159,9 @@ export function createRemotePage(): Page {
   let keyboardObserver: any = null
   let offSettings: (() => void) | null = null
   let offRuntime: (() => void)[] = []
+  let releaseMirror: (() => void) | null = null
   page.on('loaded', () => {
+    releaseMirror ??= runtime.acquireMirror()
     if (!keyboardObserver) keyboardObserver = NSNotificationCenter.defaultCenter.addObserverForNameObjectQueueUsingBlock(
       UIKeyboardWillChangeFrameNotification, null, NSOperationQueue.mainQueue, notification => {
         const frame = notification.userInfo.objectForKey(UIKeyboardFrameEndUserInfoKey).CGRectValue
@@ -182,6 +184,7 @@ export function createRemotePage(): Page {
     pause(); offSettings?.(); offSettings = null
     for (const off of offRuntime) off()
     offRuntime = []
+    releaseMirror?.(); releaseMirror = null
     Application.off(Application.suspendEvent, pause); Application.off(Application.resumeEvent, resume)
   })
   return page

@@ -177,7 +177,9 @@ function remotePageHarness({ enabled = () => false, totals = () => ({ messages: 
     on: (key, fn) => appEvents.set(key, fn), off: key => appEvents.delete(key) },
     ActionItem: View, Builder: { load: () => new View() }, Observable: View, Color: class {}, GridLayout: View, Image, Label: View, Page: View };
   const controller = { pauses: 0, resumes: 0, pause() { this.pauses++; }, resume() { this.resumes++; } };
-  const runtime = { controller, frame: null, keyboardSession: null, on(event, fn) {
+  // A plain counter: a release the page runs twice shows as a negative count.
+  const runtime = { controller, frame: null, keyboardSession: null, mirrors: 0,
+    acquireMirror() { this.mirrors++; return () => { this.mirrors--; }; }, on(event, fn) {
     runtimeListeners.set(event, fn); return () => runtimeListeners.delete(event);
   } };
   const modules = {
@@ -201,8 +203,19 @@ function remotePageHarness({ enabled = () => false, totals = () => ({ messages: 
     setInterval: fn => { const id = ++nextId; intervals.set(id, fn); return id; }, clearInterval: id => intervals.delete(id),
     setTimeout: () => 1, clearTimeout() {},
   });
-  return { page: createRemotePage(), views, appEvents, settingListeners, runtimeListeners, controller, intervals };
+  return { page: createRemotePage(), views, appEvents, settingListeners, runtimeListeners, controller, intervals, runtime };
 }
+
+test('iOS Remote counts its mirror as shown exactly while loaded', () => {
+  const { page, runtime, appEvents } = remotePageHarness();
+  assert.equal(runtime.mirrors, 0, 'a created page shows nothing yet');
+  page.events.get('loaded')(); assert.equal(runtime.mirrors, 1, 'pushed or its tab selected: the mirror shows');
+  page.events.get('loaded')(); assert.equal(runtime.mirrors, 1, 'a repeated loaded holds one count');
+  appEvents.get('suspend')(); assert.equal(runtime.mirrors, 1, 'suspend pauses the controller; the count stays for resume');
+  page.events.get('unloaded')(); assert.equal(runtime.mirrors, 0, 'popped or its tab hidden: the mirror is gone');
+  page.events.get('unloaded')(); assert.equal(runtime.mirrors, 0, 'a repeated unloaded releases nothing more');
+  page.events.get('loaded')(); assert.equal(runtime.mirrors, 1, 'shown again after a pop back or tab return');
+});
 
 test('iOS Remote bandwidth footer toggles live, polls only in foreground and resets its rate window on resume', () => {
   let enabled = false, atMs = 0, totals = { messages: 0, bytes: 0, frames: 0 };
@@ -247,6 +260,7 @@ test('iOS runtime fans controller callbacks out to subscribers and caches the la
     '../../g2/ios-preview-controller': { IosPreviewController: class {
       constructor(...args) { callbacks = args; }
       connect() { connects++; } pause() { pauses++; this.active = false; } resume() { resumes++; this.active = true; }
+      acquireMirror() { return 'release'; }
       disconnect() { order.push('disconnect'); return Promise.resolve(); }
       // As the controller does: emitState reports only while active.
       forgetSessionReport() { order.push('forget'); if (this.active) callbacks[2]({ phase: 'disconnected' }); }
@@ -260,6 +274,7 @@ test('iOS runtime fans controller callbacks out to subscribers and caches the la
   })[id] });
   const runtime = getRuntime();
   assert.equal(getRuntime(), runtime, 'one controller per process');
+  assert.equal(runtime.acquireMirror(), 'release', "mirror demand is the controller's");
   const [onFrame, onError, onConnection, onKeyboard, onButton] = callbacks;
   const a = [], b = [];
   const offA = runtime.on('connection', s => a.push(s.phase));
@@ -297,6 +312,47 @@ test('iOS runtime fans controller callbacks out to subscribers and caches the la
   assert.equal(runtime.connection.phase, 'disconnected', 'the reset reaches the cached connection');
   assert.equal(await detour(() => { suppressed = false; }), true, 'a config save or firmware check lifted the suppression');
   runtime.setDetour(true); runtime.setDetour(false); assert.equal(order.filter(o => o === 'forget').length, 1, 'Permissions keeps it');
+});
+
+test('iOS mirror composites only while a page shows one, though the app is in the foreground', () => {
+  const timers = [], frames = [];
+  let composites = 0;
+  const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', {
+    require: id => ({
+      './phone-preview-crop': { phonePreviewCrop: () => null },
+      '../ui/dashboard-settings': { previewColorSetting: { get: () => 'white' } },
+      '../ui/shell/shell': { shell: { foregroundWindow: () => null, getFocus: () => 'app' } },
+    })[id] ?? {},
+    setTimeout: fn => { timers.push(fn); return timers.length; }, console,
+  });
+  // Foreground ('active'), as on the Apps, Hub and Settings tabs, where no mirror shows.
+  const host = Object.assign(Object.create(IosPreviewController.prototype), {
+    active: true, mirrorDemand: 0, previewTimer: null, glassesLocked: false,
+    glance: { screenRect: () => null, isVisible: () => false },
+    // display is communicator ?? previewTarget.
+    communicator: { getCompositePreview: () => { composites++; return { ios: `frame-${composites}` }; } },
+    onFrame: image => frames.push(image.ios),
+  });
+  const run = () => { while (timers.length) timers.shift()(); };
+  // Every surface change routes through schedulePreviewUpdate.
+  const surfaceChanges = n => { for (let i = 0; i < n; i++) { host.schedulePreviewUpdate(); run(); } };
+  surfaceChanges(5);
+  assert.deepEqual([composites, timers.length], [0, 0], 'no mirror shown: nothing composites, nothing is scheduled');
+  const release = host.acquireMirror();
+  assert.equal(timers.length, 1, 'acquiring schedules a frame at once'); run();
+  assert.deepEqual(frames, ['frame-1'], 'exactly one prompt frame replaces the cached one');
+  const second = host.acquireMirror(); run();
+  assert.equal(composites, 1, 'a second mirror on screen needs no extra frame');
+  surfaceChanges(2); assert.equal(composites, 3);
+  release(); surfaceChanges(1); assert.equal(composites, 4, 'one mirror still shown');
+  host.schedulePreviewUpdate(); second(); run();
+  assert.equal(composites, 4, 'a frame pending when the last mirror leaves is dropped');
+  surfaceChanges(3); assert.equal(composites, 4, 'released: compositing stops');
+  release(); second(); surfaceChanges(1); assert.equal(composites, 4, 'double release is harmless');
+  const third = host.acquireMirror(); run();
+  assert.equal(composites, 5, 'the count never went negative: the next mirror gets its prompt frame');
+  host.active = false; surfaceChanges(2); assert.equal(composites, 5, 'paused (suspended, detour): nothing composites');
+  third();
 });
 
 test('forgetSessionReport clears what a halted session reported, and never touches a live one', () => {

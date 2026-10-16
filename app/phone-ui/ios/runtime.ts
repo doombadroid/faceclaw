@@ -110,6 +110,11 @@ export class IosRuntime {
     return `${flashesStarted()}\n${JSON.stringify(loadDeviceAddresses())}\n${loadPairedGlassesIdentity()?.pairedAtMs ?? 0}`
   }
 
+  /** Call while a mirror is on screen; the returned release (idempotent) when it leaves. */
+  acquireMirror(): () => void {
+    return this.controller.acquireMirror()
+  }
+
   get connected(): boolean {
     return ['connected', 'connecting', 'retrying'].includes(this.controller.connectionState?.phase ?? '')
   }

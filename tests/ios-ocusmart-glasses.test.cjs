@@ -34,7 +34,8 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
   const page = { handlers: {}, on(event, fn) { this.handlers[event] = fn; } };
   const row = kind => options => ({ kind, ...options });
   const runtime = {
-    connected: false, evenHubButton: null, frame: null,
+    connected: false, evenHubButton: null, frame: null, mirrors: 0,
+    acquireMirror() { this.mirrors++; return () => { this.mirrors--; }; },
     controller: { connectionState: state, connectionDetails: 'details', showEvenHubPhoneUi: id => calls.push(['phoneUi', id]),
       connect: () => calls.push(['connect']), disconnect: () => calls.push(['disconnect']) },
     on(event, fn) { listeners.set(event, fn); return () => listeners.delete(event); },
@@ -249,4 +250,16 @@ test('My Glasses offers Connect as soon as a detour that saved devices closes', 
   assert.deepEqual(page.calls.at(-1), ['connect']);
   page.page.handlers.unloaded();
   assert.equal(page.listeners.size, 0); assert.equal(page.settingListeners.size, 0);
+});
+
+test('My Glasses counts its lens mirror as shown exactly while loaded', () => {
+  // TabView unloads a hidden tab and pushing Remote unloads this page; both bring it back with loaded.
+  const page = setup();
+  assert.equal(page.runtime.mirrors, 1, 'loaded: the lens shows');
+  page.listeners.get('detour')(false); page.setState(connected);
+  assert.equal(page.runtime.mirrors, 1, 'rebuilding the lens keeps one count');
+  page.page.handlers.loaded(); assert.equal(page.runtime.mirrors, 1, 'a repeated loaded holds one count');
+  page.page.handlers.unloaded(); assert.equal(page.runtime.mirrors, 0, 'another tab, or Remote pushed over it');
+  page.page.handlers.unloaded(); assert.equal(page.runtime.mirrors, 0, 'a repeated unloaded releases nothing more');
+  page.page.handlers.loaded(); assert.equal(page.runtime.mirrors, 1, 'back on the tab, or Remote popped');
 });
