@@ -214,16 +214,18 @@ test('firmware alert is a native three-action alert titled by firmware kind', as
     ({ title, message, style, actions: [], preferredAction: null, addAction(a) { this.actions.push(a); } }) };
   const UIAlertAction = { actionWithTitleStyleHandler: (title, style, handler) => ({ title, style, handler }) };
   let state = OLDER;
-  const load = loader({ UIAlertController, UIAlertAction, UIAlertActionStyle, UIAlertControllerStyle: { Alert: 1 }, Promise }, {
-    // A detour is up over the root, and an alert over it is mid-dismissal: only the detour can present.
-    '@nativescript/core': { Utils: (() => {
-      const refuse = why => () => { throw new Error(why); };
-      const dismissing = { beingDismissed: true, presentedViewController: null, presentViewControllerAnimatedCompletion: refuse('being dismissed') };
-      const detour = { beingDismissed: false, presentedViewController: dismissing, presentViewControllerAnimatedCompletion: alert => presented.push(alert) };
-      const root = { presentedViewController: detour, presentViewControllerAnimatedCompletion: refuse('the root is already presenting') };
-      // As core does: getRootViewController() walks to the leaf, dismissing or not.
-      return { getWindow: () => ({ rootViewController: root }), ios: { getRootViewController: () => dismissing } };
-    })() },
+  // A detour is up over the root, and an alert over it is mid-dismissal. As UIKit does, a
+  // controller still holding a presented one (dismissing or not) refuses to present.
+  const timers = [];
+  const host = (props, onPresent) => ({ beingDismissed: false, presentedViewController: null, ...props,
+    presentViewControllerAnimatedCompletion(c) { if (this.presentedViewController) throw new Error('already presenting'); onPresent(c); } });
+  const dismissing = host({ beingDismissed: true }, () => { throw new Error('being dismissed'); });
+  const detour = host({ presentedViewController: dismissing }, alert => presented.push(alert));
+  const root = host({ presentedViewController: detour }, () => { throw new Error('the root is already presenting'); });
+  const load = loader({ UIAlertController, UIAlertAction, UIAlertActionStyle, UIAlertControllerStyle: { Alert: 1 }, Promise,
+    setTimeout: fn => timers.push(fn) }, {
+    // As core does: getRootViewController() walks to the leaf, dismissing or not.
+    '@nativescript/core': { Utils: { getWindow: () => ({ rootViewController: root }), ios: { getRootViewController: () => dismissing } } },
     './detour': { presentDetour: async (name, context) => calls.push(['detour', name, JSON.parse(JSON.stringify(context))]) },
     './shell': { pushInTab: (tab, name) => calls.push(['push', tab, name]) },
     './runtime': { getRuntime: () => ({ controller: { get connectionState() { return state; } } }) },
@@ -237,6 +239,12 @@ test('firmware alert is a native three-action alert titled by firmware kind', as
     await done;
     return alert;
   };
+  // Shown once the dismissal ends, not dropped on a presenter still holding the dismissing alert.
+  const pending = showFirmwareAlert('first');
+  timers.shift()(); assert.equal(presented.length, 0, 'waits out the dismissal');
+  detour.presentedViewController = null; timers.shift()();
+  assert.deepEqual([presented.length, timers.length], [1, 0]);
+  presented[0].actions.find(a => a.title === 'Not Now').handler(); await pending;
   const alert = await shown(OLDER, 'Install');
   assert.equal(alert.title, 'Firmware Update Needed'); assert.equal(alert.message, 'warning text');
   assert.deepEqual(alert.actions.map(a => [a.title, a.style]), [['Install', 0], ['What Changes?', 0], ['Not Now', 1]]);

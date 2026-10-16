@@ -239,19 +239,21 @@ test('iOS Remote subscribes to the runtime while loaded and never pauses the sha
 });
 
 test('iOS runtime fans controller callbacks out to subscribers and caches the latest values', async () => {
-  let callbacks, connects = 0, pauses = 0, resumes = 0, suppressed = false, flashes = 0, addresses = { right: 'AA', left: 'BB' };
+  let callbacks, connects = 0, pauses = 0, resumes = 0, suppressed = false, flashes = 0, addresses = { right: 'AA', left: 'BB' }, pairedAtMs = 1;
   const appEvents = new Map(), alerts = [], order = [];
   const { getRuntime } = load('app/phone-ui/ios/runtime.ts', { require: id => ({
     '@nativescript/core': { Application: { suspendEvent: 'suspend', resumeEvent: 'resume', on: (key, fn) => appEvents.set(key, fn) },
       Dialogs: { alert: options => { alerts.push(options); return Promise.resolve(); } } },
     '../../g2/ios-preview-controller': { IosPreviewController: class {
       constructor(...args) { callbacks = args; }
-      connect() { connects++; } pause() { pauses++; } resume() { resumes++; }
-      disconnect() { order.push('disconnect'); return Promise.resolve(); } forgetSessionReport() { order.push('forget'); }
+      connect() { connects++; } pause() { pauses++; this.active = false; } resume() { resumes++; this.active = true; }
+      disconnect() { order.push('disconnect'); return Promise.resolve(); }
+      // As the controller does: emitState reports only while active.
+      forgetSessionReport() { order.push('forget'); if (this.active) callbacks[2]({ phase: 'disconnected' }); }
     } },
     '../onboarding-state': { isPreviewOnlyMode: () => false },
     '../../g2/reconnect-policy': { isAutoReconnectSuppressed: () => suppressed, suppressAutoReconnect() { suppressed = true; } },
-    '../../g2/device-addresses': { loadDeviceAddresses: () => addresses },
+    '../../g2/device-addresses': { loadDeviceAddresses: () => addresses, loadPairedGlassesIdentity: () => ({ pairedAtMs }) },
     '../../g2/ios-peripheral-identity': { deviceAddressError: () => null },
     '../../branding': { APP_NAME: 'OcuSmart' },
     '../../native/firmware-flasher.ios': { flashesStarted: () => flashes },
@@ -289,6 +291,10 @@ test('iOS runtime fans controller callbacks out to subscribers and caches the la
   assert.deepEqual(order, ['disconnect', 'present']);
   assert.equal(await detour(() => flashes++), true, 'any flash, even a failed one');
   assert.equal(await detour(() => { addresses = { right: 'CC', left: 'DD' }; }), true, 'other glasses paired');
+  assert.equal(await detour(() => { pairedAtMs++; }), true, "the same glasses re-paired (the 'unpaired' halt's remedy)");
+  runtime.connection = { phase: 'error' };
+  assert.equal(await detour(() => flashes++), true);
+  assert.equal(runtime.connection.phase, 'disconnected', 'the reset reaches the cached connection');
   assert.equal(await detour(() => { suppressed = false; }), true, 'a config save or firmware check lifted the suppression');
   runtime.setDetour(true); runtime.setDetour(false); assert.equal(order.filter(o => o === 'forget').length, 1, 'Permissions keeps it');
 });

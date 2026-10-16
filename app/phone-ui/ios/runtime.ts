@@ -4,7 +4,7 @@ import type { KeyboardInputSession } from '../../ui/shell/keyboard-input'
 import type { PhoneUiButton } from '../../apps/evenhub/manager'
 import { isPreviewOnlyMode } from '../onboarding-state'
 import { isAutoReconnectSuppressed, suppressAutoReconnect } from '../../g2/reconnect-policy'
-import { loadDeviceAddresses } from '../../g2/device-addresses'
+import { loadDeviceAddresses, loadPairedGlassesIdentity } from '../../g2/device-addresses'
 import { deviceAddressError } from '../../g2/ios-peripheral-identity'
 import { APP_NAME } from '../../branding'
 import { flashesStarted } from '../../native/firmware-flasher.ios'
@@ -92,19 +92,22 @@ export class IosRuntime {
     this.inDetour = open
     if (open) this.controller.pause()
     else {
+      // Resume first: a paused controller does not report state, and the reset must reach pages.
+      this.controller.resume()
       // A halted session's report says why it halted; keep it unless the detour could have
-      // changed the glasses: a flash ran or the saved devices changed (glassesMark), or a
+      // changed the glasses: a flash ran or a pairing completed (glassesMark), or a
       // config save or passed firmware check lifted the reconnect suppression.
       if (this.beforeDetour != null && (this.glassesMark() !== this.beforeDetour || !isAutoReconnectSuppressed()))
         this.controller.forgetSessionReport()
       this.beforeDetour = null
-      this.controller.resume(); this.autoConnect()
+      this.autoConnect()
     }
     this.emit('detour', open)
   }
 
   private glassesMark(): string {
-    return `${flashesStarted()}\n${JSON.stringify(loadDeviceAddresses())}`
+    // pairedAtMs: re-pairing the same glasses (the 'unpaired' halt's remedy) keeps their addresses.
+    return `${flashesStarted()}\n${JSON.stringify(loadDeviceAddresses())}\n${loadPairedGlassesIdentity()?.pairedAtMs ?? 0}`
   }
 
   get connected(): boolean {
