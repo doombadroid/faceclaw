@@ -65,7 +65,7 @@ import { updateGlassesPresence } from "./glasses-presence";
 import { timerEngine } from "../apps/timer/timer-engine";
 import { registerNavigateTools } from "../assistant/navigate-tools";
 import { registerRoamTools } from "../assistant/roam-tools";
-import { assistantBridge } from "../assistant/bridge-client";
+import { syncAssistantBridgeFromSettings } from "../assistant/bridge-client";
 import { registerWindowTools } from "../assistant/window-tools";
 import { WorkerAppHost } from "../ui/shell/worker-window";
 import { ALL_APPS } from "../apps/all-apps";
@@ -75,7 +75,7 @@ import { loadPersistedOpenApps, savePersistedOpenApps } from "../ui/shell/open-a
 import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type ScreenRect, type WindowHeightMode } from "../ui/shell/geometry";
 import { type LayerActions, type TextSettingsEditToggle } from "../ui/layers";
 import { type KeyboardInputSession } from "../ui/shell/keyboard-input";
-import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayLayoutSetting, navigateDisplayLayoutSetting, terminalDisplayLayoutSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
+import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, getBrightnessPreferences, displayLayoutSetting, navigateDisplayLayoutSetting, terminalDisplayLayoutSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import {
   getInstalledEvenHubAppById,
@@ -464,7 +464,7 @@ class DashboardController {
       this.applyDisplayModeIfChanged();
       this.applyVerticalPositionIfChanged();
       this.applyAppLayoutsIfChanged();
-      this.syncAssistantBridgeIfChanged();
+      syncAssistantBridgeFromSettings();
       this.syncLockScreenSettingIfChanged();
       // A Preview color or scaling change should show on the mirror at once,
       // not at the next composited frame (cheap: floor-limited, dedup'd on
@@ -474,7 +474,7 @@ class DashboardController {
     // Connect to the external agent bridge at boot if configured; the
     // connection stays up (with re-dial) so proactive tool calls work
     // outside voice turns.
-    this.syncAssistantBridge();
+    syncAssistantBridgeFromSettings();
     // The watch drives the same synthetic-input path as the phone UI's test
     // buttons, plus app/window/lock commands; it mirrors the state below.
     startRemoteInput({
@@ -503,41 +503,6 @@ class DashboardController {
         lastHeadsetBattery: this.lastHeadsetBattery,
       }),
       appendLog: (line) => this.appendLog(line),
-    });
-  }
-
-  // Bridge settings changes re-dial the connection; unrelated setting changes
-  // must not, so the config it was last started with is tracked.
-  private lastBridgeConfigKey = "";
-
-  private bridgeConfigKey(): string {
-    return JSON.stringify([
-      assistantBackendSetting.get(),
-      assistantBridgeHostSetting.get().trim(),
-      assistantBridgePortSetting.get().trim(),
-      assistantBridgeTokenSetting.get(),
-    ]);
-  }
-
-  private syncAssistantBridgeIfChanged(): void {
-    if (this.bridgeConfigKey() === this.lastBridgeConfigKey) return;
-    this.syncAssistantBridge();
-  }
-
-  private syncAssistantBridge(): void {
-    this.lastBridgeConfigKey = this.bridgeConfigKey();
-    const host = assistantBridgeHostSetting.get().trim();
-    const token = assistantBridgeTokenSetting.get();
-    if (assistantBackendSetting.get() !== "external" || !host || !token) {
-      assistantBridge.stop();
-      return;
-    }
-    assistantBridge.configure({
-      host,
-      port: parseInt(assistantBridgePortSetting.get(), 10) || 8790,
-      token,
-      deviceName: "faceclaw",
-      allowProactive: () => assistantAllowProactiveSetting.get(),
     });
   }
 

@@ -1,7 +1,11 @@
 import {
   anthropicApiKeySetting,
   appSwitcherPositionSetting,
+  assistantAllowProactiveSetting,
   assistantBackendSetting,
+  assistantBridgeHostSetting,
+  assistantBridgePortSetting,
+  assistantBridgeTokenSetting,
   assistantModelSetting,
   assistantSkipConfirmationSetting,
   autoBrightnessCurveSetting,
@@ -123,6 +127,10 @@ const PHONE_TITLES: Record<string, string> = {
   "assistant-backend": "Assistant Backend",
   "assistant-model": "Assistant Model",
   "assistant-skip-confirmation": "Send Without Confirming",
+  "assistant-bridge-host": "Host",
+  "assistant-bridge-port": "Port",
+  "assistant-bridge-token": "Token",
+  "assistant-allow-proactive": "Proactive Actions",
   "elevenlabs-api-key": "ElevenLabs API Key",
   "openai-api-key": "OpenAI API Key",
   "soniox-api-key": "Soniox API Key",
@@ -233,6 +241,11 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     sections: () => [
       { header: "Voice", items: [item(wakeWordActionSetting), item(voiceProviderSetting)] },
       { header: "Assistant", items: [item(assistantBackendSetting), item(assistantModelSetting), item(assistantSkipConfirmationSetting)] },
+      {
+        header: "Agent Bridge",
+        footer: assistantBridgeHostSetting.description,
+        items: [item(assistantBridgeHostSetting), item(assistantBridgePortSetting), item(assistantBridgeTokenSetting), item(assistantAllowProactiveSetting)],
+      },
     ],
   },
   {

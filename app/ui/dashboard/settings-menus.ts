@@ -132,18 +132,15 @@ function settingsSections(): SettingsSection[] {
     {
       label: "Assistant",
       items: [
-        // iOS offers cloud APIs; Android also supports local models and the bridge.
+        // iOS offers cloud APIs and the bridge; Android also supports local models.
         enumSettingMenuItem(assistantBackendSetting),
         enumSettingMenuItem(assistantModelSetting),
         ...(!global.isIOS ? [localModelMenuItem()] : []),
         toggleSettingMenuItem(assistantSkipConfirmationSetting),
-        // iOS has no local LLM or agent bridge yet.
-        ...(!global.isIOS ? [
-          textSettingMenuItem(assistantBridgeHostSetting),
-          textSettingMenuItem(assistantBridgePortSetting),
-          textSettingMenuItem(assistantBridgeTokenSetting),
-          toggleSettingMenuItem(assistantAllowProactiveSetting),
-        ] : []),
+        textSettingMenuItem(assistantBridgeHostSetting),
+        textSettingMenuItem(assistantBridgePortSetting),
+        textSettingMenuItem(assistantBridgeTokenSetting),
+        toggleSettingMenuItem(assistantAllowProactiveSetting),
       ],
     },
     {

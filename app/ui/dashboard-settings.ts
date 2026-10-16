@@ -889,10 +889,10 @@ export const assistantBackendSetting = new ConfigSettingEnum<AssistantBackendKin
   label: "Assistant backend",
   storageKey: "assistant.backend",
   defaultValue: "direct",
-  values: global.isIOS ? ["direct"] : ["direct", "external"],
+  values: ["direct", "external"],
   formatValue: (value) => assistantBackendLabels[value] ?? value,
   description:
-    global.isIOS ? "Cloud models called with your OpenAI or Anthropic API key. Add your key in Settings > API Keys." : "Who answers assistant queries: an LLM called from the phone (a cloud API with your key, or the downloaded on-phone model), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin.",
+    global.isIOS ? "Who answers assistant queries: cloud models called with your OpenAI or Anthropic API key (add it in Settings > API Keys), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin." : "Who answers assistant queries: an LLM called from the phone (a cloud API with your key, or the downloaded on-phone model), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin.",
 });
 
 export const assistantBridgeHostSetting = new ConfigSettingString({
@@ -903,7 +903,8 @@ export const assistantBridgeHostSetting = new ConfigSettingString({
   editorTitle: "Agent bridge host (tailscale IP)",
   glassesEditTitle: "Edit bridge host",
   description:
-    "Hostname or IP address (e.g. a Tailscale address) of the machine running the agent bridge.",
+    "Hostname or IP address (e.g. a Tailscale address) of the machine running the agent bridge. Prefix wss:// to reach it through a TLS front end such as tailscale serve." +
+    (global.isIOS ? " On iPhone, plain addresses work only on your local network; use wss:// elsewhere." : ""),
 });
 
 export const assistantBridgePortSetting = new ConfigSettingString({

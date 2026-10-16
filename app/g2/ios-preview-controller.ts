@@ -9,6 +9,7 @@ import { isInstalledPackagePresent } from '../apps/evenhub/updates'
 import { openEvenHubStoreForPackage } from '../apps/evenhub'
 import { launchInstalledPackage, closeRunningPackage, onPhoneShownChanged, phoneUiButton, showOnPhone, type PhoneUiButton } from '../apps/evenhub/manager'
 import { registerSystemTools } from '../assistant/system-tools'
+import { syncAssistantBridgeFromSettings } from '../assistant/bridge-client'
 import { registerWindowTools } from '../assistant/window-tools'
 import { registerNavigateTools } from '../assistant/navigate-tools'
 import { registerRoamTools } from '../assistant/roam-tools'
@@ -365,6 +366,7 @@ export class IosPreviewController {
     this.syncLockSetting()
     void nightscoutBridge.start().catch(error => this.fail(error))
     weatherBridge.setSessionActive(true)
+    syncAssistantBridgeFromSettings()
     for (const name of [UIDeviceBatteryLevelDidChangeNotification, UIDeviceBatteryStateDidChangeNotification]) {
       this.batteryObservers.push(NSNotificationCenter.defaultCenter.addObserverForNameObjectQueueUsingBlock(name, null, NSOperationQueue.mainQueue, () => this.requestShellRender()))
     }
@@ -373,6 +375,7 @@ export class IosPreviewController {
     this.offSettings = onAnySettingChanged(() => {
       this.syncLockSetting()
       this.pushBrightness()
+      syncAssistantBridgeFromSettings()
       this.relayout()
       shell.foregroundWindow()?.requestRender()
       this.requestShellRender()
