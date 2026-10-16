@@ -1,1 +1,3 @@
 /* OcuSmart apps screens. Tokens and shared row styles live in ocusmart.css. */
+/* Fallback when an app's glyph will not render: its initial, white on the tile. */
+.os-app-initial { color: #FFFFFF; font-size: 14; font-weight: 600; horizontal-align: center; vertical-align: center; }
