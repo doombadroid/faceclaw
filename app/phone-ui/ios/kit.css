@@ -10,8 +10,10 @@ Page.os-page { background-color: #F2F2F7; color: #000000; font-size: 17; }
 .os-grouped { padding-bottom: 32; }
 /* The theme's core.css gives .ns-ios Switch an 8/15pt margin; a switch row is 44pt with the 16pt trailing inset. */
 .os-page Switch { margin: 0; }
-/* The theme's core.css sets 14pt tab titles; iOS tab bars use 10pt. */
-TabView.os-shell { tab-text-font-size: 10; }
+/* The theme's core.css sets 14pt tab titles; iOS tab bars use 10pt. It also
+ * gives TabView text-transform: capitalize, an inherited property, so every
+ * label in every tab came out Title Cased. iOS text is never transformed. */
+TabView.os-shell { tab-text-font-size: 10; text-transform: none; }
 
 .os-section-header {
   font-size: 13; color: #6E6E73; text-transform: uppercase;
