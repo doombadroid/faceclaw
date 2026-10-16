@@ -1,3 +1,8 @@
+@import './glasses.css';
+@import './apps.css';
+@import './hub.css';
+@import './settings.css';
+@import './update.css';
 /* OcuSmart iOS shell (phone-ui/ios). NativeScript colours are static, so
  * dark mode is the .ns-dark overrides at the end. Class selectors outrank
  * app.ios.css's light-only Page and green Button type rules. */

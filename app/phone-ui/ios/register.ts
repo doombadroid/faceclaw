@@ -1,21 +1,17 @@
-import { groupedPage, section } from './ui-kit'
-
 // The OcuSmart shell's pages. iOS bundles only registered modules (webpack.config.js).
-const stub = (title: string) => () => ({
-  createPage: () => groupedPage({ title, build: container => container.addChild(section({ footer: 'Not built yet.', rows: [] })) }).page,
-})
+// One file per page, so each can be built and changed on its own.
 global.registerModule('ocusmart/glasses', () => require('./glasses-page'))
 global.registerModule('ocusmart/remote', () => require('./remote-page'))
-global.registerModule('ocusmart/apps', stub('Apps'))
-global.registerModule('ocusmart/hub', stub('Even Hub'))
-global.registerModule('ocusmart/hub-detail', stub('App'))
-global.registerModule('ocusmart/settings', stub('Settings'))
-global.registerModule('ocusmart/settings-category', stub('Settings'))
-global.registerModule('ocusmart/settings-choice', stub('Settings'))
-global.registerModule('ocusmart/device', stub('Glasses'))
-global.registerModule('ocusmart/about', stub('About'))
-global.registerModule('ocusmart/update', stub('Software Update'))
-global.registerModule('ocusmart/firmware-channel', stub('Firmware Channel'))
-global.registerModule('ocusmart/setup', stub('Set Up'))
+global.registerModule('ocusmart/apps', () => require('./apps-page'))
+global.registerModule('ocusmart/hub', () => require('./hub-page'))
+global.registerModule('ocusmart/hub-detail', () => require('./hub-detail-page'))
+global.registerModule('ocusmart/settings', () => require('./settings-page'))
+global.registerModule('ocusmart/settings-category', () => require('./settings-category-page'))
+global.registerModule('ocusmart/settings-choice', () => require('./settings-choice-page'))
+global.registerModule('ocusmart/device', () => require('./device-page'))
+global.registerModule('ocusmart/about', () => require('./about-page'))
+global.registerModule('ocusmart/update', () => require('./update-page'))
+global.registerModule('ocusmart/firmware-channel', () => require('./firmware-channel-page'))
+global.registerModule('ocusmart/setup', () => require('./setup-page'))
 // Legacy name the shared view models fall back to.
 global.registerModule('phone-ui/main-page', () => ({ createPage: (require('./detour') as typeof import('./detour')).createReturnPage }))

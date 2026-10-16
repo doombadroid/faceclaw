@@ -3,6 +3,7 @@ import { groupedPage, section, navRow, buttonRow, valueRow, type Row } from './u
 import { getRuntime } from './runtime'
 import type { SessionState } from '../../g2/ios-preview-controller'
 import { presentDetour } from './detour'
+import { showFirmwareAlert } from './firmware-alert'
 import { pushInTab } from './shell'
 import { isPreviewOnlyMode } from '../onboarding-state'
 import { resumeAutoReconnect, suppressAutoReconnect } from '../../g2/reconnect-policy'
@@ -16,11 +17,6 @@ const PHASE_LABELS = { connected: 'Connected', disconnected: 'Preview', connecti
 
 const flash = (mode: 'install' | 'uninstall') => presentDetour('phone-ui/onboarding-flash-page', { mode, fromOnboarding: false })
 
-async function showFirmwareWarning(message: string): Promise<void> {
-  const install = await Dialogs.confirm({ title: 'Attention needed', message,
-    okButtonText: 'Install custom firmware', cancelButtonText: 'Close' })
-  if (install) await flash('install')
-}
 
 // ponytail: Phase 1 home for every old main-page action; the device card, lens and update rows come later.
 export function createPage(): Page {
@@ -30,7 +26,7 @@ export function createPage(): Page {
     const state = controller.connectionState, connected = runtime.connected
     shown = shownKey(state)
     const top: Row[] = []
-    if (state?.firmwareWarning) top.push(navRow({ title: 'Attention Needed', badge: '!', onTap: () => { void showFirmwareWarning(state.firmwareWarning) } }))
+    if (state?.firmwareWarning) top.push(navRow({ title: 'Attention Needed', badge: '!', onTap: () => { void showFirmwareAlert(state.firmwareWarning) } }))
     top.push(navRow({ title: 'Remote', onTap: () => pushInTab('glasses', 'ocusmart/remote') }))
     const phoneUi = runtime.evenHubButton
     if (phoneUi?.icon) top.push(navRow({ title: `Open ${phoneUi.title} on iPhone`, onTap: () => controller.showEvenHubPhoneUi(phoneUi.windowId) }))

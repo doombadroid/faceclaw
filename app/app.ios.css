@@ -2,6 +2,7 @@
 @import './phone-ui/remote-controls.css';
 @import './phone-ui/pairing.css';
 @import './phone-ui/ios/ocusmart.css';
+@import './phone-ui/ios/onboarding.ios.css';
 
 .body-text { font-size: 18; }
 .h1 { font-size: 28; font-weight: bold; }
