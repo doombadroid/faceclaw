@@ -198,6 +198,33 @@ class IosSessionFacadeTest {
     }
 
     @Test
+    fun audioMonitorAndForwardingDeliverNsDataOnMain() {
+        val link = FakeIosLink()
+        val session = IosGlassesSession(link, null, IosSessionHost(threadName = "test-session-audio"), RIGHT, LEFT, "", IosProtocolPlatform)
+        val core = session.coreForTests()
+        link.core = core
+        val seen = ArrayList<String>()
+        var offMain = 0
+        val listener = object : IosAudioPacketListener {
+            override fun onAudioPacket(data: platform.Foundation.NSData, arm: String, arrivalMs: Long) {
+                if (!NSThread.isMainThread) offMain++
+                seen.add(arm + data.byteArray().toList())
+            }
+        }
+        assertFalse(session.startG2AudioForwardingNsData(listener), "no session yet")
+        session.addAudioMonitorListenerNsData(listener)
+        session.addAudioMonitorListenerNsData(listener) // a second add must not double-deliver
+        core.handleRenderNotification(LEFT, byteArrayOf(1, 2))
+        assertTrue(pumpMainUntil(2_000) { seen.isNotEmpty() })
+        assertFalse(pumpMainUntil(200) { seen.size > 1 }, "seen=$seen")
+        assertEquals(listOf("L[1, 2]"), seen)
+        session.removeAudioMonitorListenerNsData(listener)
+        core.handleRenderNotification(RIGHT, byteArrayOf(3))
+        assertFalse(pumpMainUntil(200) { seen.size > 1 })
+        assertEquals(0, offMain)
+    }
+
+    @Test
     fun hostDispatchesToTheCallingQueueAndRunsTheWorker() {
         val host = IosSessionHost(threadName = "test-host")
         var onMain = false

@@ -4,7 +4,7 @@ import { REQUIRED_FACECLAW_FIRMWARE_VERSION, type FirmwareInfo } from "../g2/fir
 import { type CompassEvent } from "./compass-types";
 import { type ImuReading } from "./imu-types";
 import { kotlinListener } from "./kotlin-listener.ios";
-import { fromData, toData } from "./kotlin-data";
+import { fromData, fromKotlinBytes, toData } from "./kotlin-data";
 import { previewPixels } from "./ios-graphics";
 import { iosBluetooth } from "./ios-bluetooth";
 
@@ -17,6 +17,7 @@ declare const FaceclawKitIosAncsListener: any;
 declare const FaceclawKitIosAudioPacketListener: any;
 declare const FaceclawKitFaceclawCompassListener: any;
 declare const FaceclawKitFaceclawImuListener: any;
+declare const FaceclawKitFaceclawMicStatusListener: any;
 
 
 export type CommunicatorPhase =
@@ -687,6 +688,41 @@ export class FaceclawCommunicatorBridge {
     });
     this.microphoneWork = work;
     return work;
+  }
+
+  /**
+   * CFW mic_control forwarding: every glasses audio packet to `listener` (main queue)
+   * until stopAudioForwarding. Shares the capture slot with setMicrophone; false before Connect.
+   */
+  startAudioForwarding(listener: (packet: Uint8Array, arm: string, arrivalMs: number) => void): boolean {
+    const proxy = AudioPacketListener.new() as AudioPacketListener;
+    proxy.handler = listener;
+    this.audioListener = proxy;
+    if (this.communicator.startG2AudioForwardingNsDataListener(proxy)) return true;
+    this.audioListener = null;
+    return false;
+  }
+
+  stopAudioForwarding(): void {
+    this.audioListener = null;
+    this.communicator.stopG2AudioForwarding();
+  }
+
+  /** Passive view of every audio-characteristic packet (diagnostics), on the main queue. */
+  addAudioMonitorListener(listener: (packet: Uint8Array, arm: string, arrivalMs: number) => void): () => void {
+    const proxy = AudioPacketListener.new() as AudioPacketListener;
+    proxy.handler = listener;
+    this.communicator.addAudioMonitorListenerNsDataListener(proxy);
+    return () => { this.communicator.removeAudioMonitorListenerNsDataListener(proxy); };
+  }
+
+  /** CFW mic_control field-104 status records (raw 21-byte bodies) per temple. */
+  addMicStatusListener(listener: (body: Uint8Array, arm: string) => void): () => void {
+    const proxy = kotlinListener(FaceclawKitFaceclawMicStatusListener, {
+      onMicStatusBodyArm: (body: any, arm: string) => listener(fromKotlinBytes(body), String(arm ?? "")),
+    });
+    this.communicator.addMicStatusListenerListener(proxy);
+    return () => { this.communicator.removeMicStatusListenerListener(proxy); };
   }
 
   /** Ask CoreBluetooth for ANCS on the right arm's next connection (call before start()). */

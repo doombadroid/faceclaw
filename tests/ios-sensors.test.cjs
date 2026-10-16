@@ -123,3 +123,39 @@ test('iOS Developer debug tests enable the buzzer, accelerometer and light senso
     assert.ok(!byLabel[label].disabled, label); assert.equal(byLabel[label].description, undefined, label);
   }
 });
+
+test('iOS bridge exposes NSData audio forwarding, the passive audio monitor and mic status records', () => {
+  const { calls, native } = nativeSession({ startG2AudioForwardingNsDataListener: true });
+  const { FaceclawCommunicatorBridge: Bridge } = loader({
+    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } },
+    interop: { bufferFromData: d => d.buffer },
+    FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
+    FaceclawKitFaceclawCompassListener: {}, FaceclawKitFaceclawImuListener: 'imu', FaceclawKitFaceclawMicStatusListener: 'mic',
+    FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
+  }, { '@nativescript/core': {}, './ios-graphics': {}, './ios-bluetooth': {}, './kotlin-listener.ios': { kotlinListener } })(
+    'app/native/faceclaw-communicator.ios.ts');
+  const bridge = new Bridge({ right: 'r', left: 'l' });
+  const packets = [];
+  const data = { buffer: new Uint8Array([1, 2]).buffer };
+  assert.equal(bridge.startAudioForwarding((p, arm, ms) => packets.push([...p, arm, ms])), true);
+  const [startName, forwarder] = calls.at(-1);
+  assert.equal(startName, 'startG2AudioForwardingNsDataListener');
+  forwarder.onAudioPacketDataArmArrivalMs(data, 'R', 7);
+  bridge.stopAudioForwarding();
+  assert.deepEqual(calls.at(-1), ['stopG2AudioForwarding']);
+  const off = bridge.addAudioMonitorListener((p, arm, ms) => packets.push([...p, arm, ms]));
+  const [addName, monitor] = calls.at(-1);
+  assert.equal(addName, 'addAudioMonitorListenerNsDataListener');
+  monitor.onAudioPacketDataArmArrivalMs(data, 'L', 9);
+  off();
+  assert.deepEqual(calls.at(-1), ['removeAudioMonitorListenerNsDataListener', monitor]);
+  assert.deepEqual(packets, [[1, 2, 'R', 7], [1, 2, 'L', 9]]);
+  const records = [];
+  const offStatus = bridge.addMicStatusListener((body, arm) => records.push([...body, arm]));
+  const [statusName, status] = calls.at(-1);
+  assert.equal(statusName, 'addMicStatusListenerListener'); assert.equal(status.protocol, 'mic');
+  status.onMicStatusBodyArm({ size: 2, getIndex: i => [77, 67][i] }, 'L');
+  offStatus();
+  assert.deepEqual(calls.at(-1), ['removeMicStatusListenerListener', status]);
+  assert.deepEqual(records, [[77, 67, 'L']]);
+});
