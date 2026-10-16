@@ -7,7 +7,10 @@ const REQUIRED = 37;
 const session = (capabilities, left = '2.3.0.24', right = '2.3.0.24') => ({ phase: 'connected', status: '', battery: null, charging: null,
   ring: false, frames: 0, capabilities, leftVersion: left, rightVersion: right, firmwareWarning: '' });
 const STOCK = session(''), CURRENT = session(`Faceclaw/${REQUIRED}`), OLDER = session('Faceclaw/30'),
-  LEGACY = session('EVENCFW/1 caps'), OTHER = session('Homebrew/2'), UNREPORTED = session('', '', '');
+  LEGACY = session('EVENCFW/1 caps'), OTHER = session('Homebrew/2'), UNREPORTED = session('', '', ''),
+  NEWER = session(`Faceclaw/${REQUIRED + 1}`), NEWER_STOCK = session('', '2.3.3.0', '2.3.3.0'),
+  // disconnect() keeps the last report; it is stale once the session drops.
+  STALE = { ...CURRENT, phase: 'disconnected' };
 
 test('firmware-info classifies reported firmware for the update, channel and alert screens', () => {
   const info = loader()('app/phone-ui/ios/firmware-info.ts');
@@ -16,7 +19,11 @@ test('firmware-info classifies reported firmware for the update, channel and ale
   const ext = state => info.firmwareSummary(state).extension;
   assert.deepEqual([UNREPORTED, null, STOCK, CURRENT, OLDER, LEGACY, OTHER].map(s => info.updateStatus(ext(s))),
     ['unknown', 'unknown', 'available', 'current', 'available', 'available', 'available']);
-  assert.equal(info.updateStatus({ kind: 'faceclaw', version: REQUIRED + 1 }), 'current', 'newer revisions only add to the contract');
+  assert.equal(info.updateStatus(ext(NEWER)), 'newer', 'reinstalling the bundled revision would downgrade');
+  assert.equal(info.reportedState(STALE), null);
+  assert.equal(info.reportedState(CURRENT), CURRENT);
+  assert.deepEqual([STOCK, CURRENT, NEWER, LEGACY, OTHER].map(s => info.firmwareKindLabel(ext(s))),
+    ['Stock firmware', `Faceclaw r${REQUIRED}`, `Faceclaw r${REQUIRED + 1}`, 'Older Faceclaw', 'Third-party']);
   assert.deepEqual([UNREPORTED, STOCK, CURRENT, OLDER, LEGACY, OTHER].map(s => info.firmwareChannel(ext(s))),
     [null, 'even', 'faceclaw', 'faceclaw', 'faceclaw', null]);
   assert.deepEqual([STOCK, OLDER, LEGACY, OTHER].map(s => info.firmwareAlertTitle(ext(s))),
@@ -60,7 +67,7 @@ function uiHarness(state) {
     section: s => s, navRow: rowKit('nav'), buttonRow: rowKit('button'), valueRow: rowKit('value'), checkRow: rowKit('check'),
     customRow: view => ({ kind: 'custom', view }), tile: () => Object.assign(new View(), { className: 'os-tile' }),
   };
-  const core = { Label: View, StackLayout: View, GridLayout: Object.assign(class extends View {}, { setColumn() {} }),
+  const core = { Label: View, StackLayout: View, GridLayout: Object.assign(class extends View {}, { setColumn() {}, setRow() {}, setColumnSpan() {} }),
     Dialogs: { confirm: async options => { confirms.push(options); return confirmAnswer; } } };
   const mocks = { '@nativescript/core': core, './ui-kit': kit, './runtime': { getRuntime: () => runtime },
     './detour': { presentDetour: async (name, context) => calls.push(['detour', name, JSON.parse(JSON.stringify(context))]) } };
@@ -96,7 +103,40 @@ test('Software Update shows the truthful status and routes to the flash detour',
   assert.equal(h.calls.at(-1)[0], 'navigate', 'cancelled restore flashes nothing');
   h.answer(true); titled(h.rows(), 'Restore Even Firmware').onTap(); await settle();
   assert.deepEqual(h.calls.at(-1), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'uninstall', fromOnboarding: false }]);
+
+  // A flash runs under the detour, which pauses the controller: closing it is the only news.
+  const before = h.built.length;
+  h.listeners.get('detour')(true); assert.equal(h.built.length, before);
+  h.runtime.controller.connectionState = STOCK; h.listeners.get('detour')(false);
+  assert.equal(h.built.length, before + 1);
+  assert.ok(titled(h.rows(), 'Download and Install'));
+  assert.equal(titled(h.rows(), 'Firmware Channel').value, 'Even Realities');
+
+  // Disconnecting after a restore must not keep showing the old Faceclaw report.
+  h.runtime.controller.connectionState = CURRENT; h.listeners.get('connection')(CURRENT);
+  h.runtime.controller.connectionState = STALE; h.listeners.get('connection')(STALE);
+  assert.equal(titled(h.rows(), 'Reinstall'), undefined);
+  assert.equal(titled(h.rows(), 'Left'), undefined);
+  assert.equal(titled(h.rows(), 'Firmware Channel').value, undefined);
+  assert.ok(titled(h.rows(), 'Restore Even Firmware'));
   page.events.get('unloaded')(); assert.equal(h.listeners.size, 0);
+});
+
+test('Software Update is honest about newer, third-party and unvalidated stock firmware', () => {
+  const newer = uiHarness(NEWER);
+  newer.load('app/phone-ui/ios/update-page.ts').createPage();
+  assert.equal(titled(newer.rows(), 'Reinstall'), undefined);
+  assert.ok(titled(newer.rows(), `Downgrade to r${REQUIRED}`));
+  assert.equal(titled(newer.rows(), 'Firmware').value, `Faceclaw r${REQUIRED + 1}`);
+
+  const other = uiHarness(OTHER);
+  other.load('app/phone-ui/ios/update-page.ts').createPage();
+  assert.equal(titled(other.rows(), 'Firmware').value, 'Third-party');
+  assert.match(other.last().at(-1).footer, /report "Homebrew\/2"/);
+
+  const stock = uiHarness(NEWER_STOCK);
+  stock.load('app/phone-ui/ios/update-page.ts').createPage();
+  assert.match(stock.last()[1].footer, /stock firmware 2\.3\.3\.0, newer than .* carries extra risk/);
 });
 
 test('Software Update without a firmware report asks to connect and keeps Restore reachable', () => {
@@ -113,14 +153,23 @@ test('Firmware Channel checks the reported channel and confirms before switching
   h.load('app/phone-ui/ios/firmware-channel-page.ts').createPage();
   const rows = h.rows();
   assert.deepEqual(rows.map(r => [r.title, r.checked, r.enabled !== false]),
-    [['Faceclaw', true, true], ['Even Realities', false, true], ['xeyes', false, false]]);
+    [['Faceclaw', true, true], ['xeyes', false, false], ['Even Realities', false, true]]);
   assert.equal(titled(rows, 'xeyes').subtitle, 'Not built yet');
+  assert.equal(titled(rows, 'Even Realities').subtitle, 'Installs stock firmware 2.3.0.24');
   titled(rows, 'Faceclaw').onTap(); await settle();
   assert.equal(h.confirms.length, 0, 'the current channel is not re-flashed');
   titled(rows, 'Even Realities').onTap(); await settle();
   assert.equal(h.confirms[0].title, 'Switch to Even Realities?');
   assert.deepEqual(h.calls.at(-1), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'uninstall', fromOnboarding: false }]);
   assert.match(h.last()[0].footer, /always verified against pinned hashes/);
+
+  const older = uiHarness(OLDER);
+  older.load('app/phone-ui/ios/firmware-channel-page.ts').createPage();
+  assert.equal(titled(older.rows(), 'Faceclaw').subtitle, 'Faceclaw firmware r30 · base 2.3.0.24', 'the checked row names what is installed');
+
+  const stale = uiHarness(STALE);
+  stale.load('app/phone-ui/ios/firmware-channel-page.ts').createPage();
+  assert.ok(stale.rows().every(r => !r.checked));
 
   const none = uiHarness(UNREPORTED);
   none.load('app/phone-ui/ios/firmware-channel-page.ts').createPage();

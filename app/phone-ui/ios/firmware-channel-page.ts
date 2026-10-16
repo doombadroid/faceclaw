@@ -1,14 +1,15 @@
 import { Dialogs, type Page } from '@nativescript/core'
 import { groupedPage, section, checkRow } from './ui-kit'
 import { getRuntime } from './runtime'
-import { firmwareSummary, firmwareChannel } from './firmware-info'
+import { firmwareSummary, firmwareChannel, reportedState } from './firmware-info'
 import { CHANNEL_NAMES, firmwareKey, flash } from './update-page'
 import { BASE_STOCK_VERSION_TEXT, REQUIRED_FACECLAW_FIRMWARE_VERSION } from '../../g2/firmware-compat'
 
+// Subtitles say what switching installs; the checked row shows what the glasses report instead.
 const CHANNELS = [
-  { id: 'faceclaw', mode: 'install', subtitle: `Custom firmware, revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}`,
+  { id: 'faceclaw', mode: 'install', subtitle: `Installs custom firmware revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}`,
     message: `This flashes Faceclaw's custom firmware (revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}) to both lenses.` },
-  { id: 'even', mode: 'uninstall', subtitle: `Stock firmware ${BASE_STOCK_VERSION_TEXT}`,
+  { id: 'even', mode: 'uninstall', subtitle: `Installs stock firmware ${BASE_STOCK_VERSION_TEXT}`,
     message: `This flashes Even's stock firmware ${BASE_STOCK_VERSION_TEXT} to both lenses and removes Faceclaw's custom features.` },
 ] as const
 
@@ -16,12 +17,14 @@ export function createPage(): Page {
   const runtime = getRuntime()
   let shown = ''
   const { page, refresh } = groupedPage({ title: 'Firmware Channel', largeTitle: false, build: container => {
-    const state = runtime.controller.connectionState
-    shown = firmwareKey(state)
-    const extension = firmwareSummary(state).extension, current = firmwareChannel(extension)
-    const rows = CHANNELS.map(channel => checkRow({ title: CHANNEL_NAMES[channel.id], subtitle: channel.subtitle, checked: current === channel.id,
+    shown = firmwareKey(runtime.controller.connectionState)
+    const summary = firmwareSummary(reportedState(runtime.controller.connectionState))
+    const extension = summary.extension, current = firmwareChannel(extension)
+    const rows = CHANNELS.map(channel => checkRow({ title: CHANNEL_NAMES[channel.id], checked: current === channel.id,
+      subtitle: current === channel.id ? summary.line : channel.subtitle,
       onTap: () => { if (current !== channel.id) void switchTo(CHANNEL_NAMES[channel.id], channel.message, channel.mode) } }))
-    rows.push(checkRow({ title: 'xeyes', subtitle: 'Not built yet', checked: false, enabled: false, onTap: () => {} }))
+    // The design's order: Faceclaw, xeyes, Even Realities.
+    rows.splice(1, 0, checkRow({ title: 'xeyes', subtitle: 'Not built yet', checked: false, enabled: false, onTap: () => {} }))
     const where = !extension ? 'Connect your glasses to see which channel they are on. '
       : current ? '' : 'Your glasses report custom firmware from a different source. '
     container.addChild(section({ header: 'Channel', rows,

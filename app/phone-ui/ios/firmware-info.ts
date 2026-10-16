@@ -28,10 +28,29 @@ export function firmwareSummary(state: SessionState | null): FirmwareSummary {
   }
 }
 
-/** 'unknown' until reported; any firmware but current Faceclaw can take the bundled revision. */
-export function updateStatus(extension: FirmwareExtension | null): 'unknown' | 'current' | 'available' {
+/**
+ * The session's report, only while it is live: disconnect() keeps the last
+ * versions, which go stale once a flash or another phone changes the firmware.
+ */
+export function reportedState(state: SessionState | null): SessionState | null {
+  return state?.phase === 'connected' ? state : null
+}
+
+/** 'unknown' until reported; 'newer' means installing the bundled revision would downgrade. */
+export function updateStatus(extension: FirmwareExtension | null): 'unknown' | 'current' | 'newer' | 'available' {
   if (!extension) return 'unknown'
-  return extension.kind === 'faceclaw' && extension.version >= REQUIRED_FACECLAW_FIRMWARE_VERSION ? 'current' : 'available'
+  if (extension.kind !== 'faceclaw' || extension.version < REQUIRED_FACECLAW_FIRMWARE_VERSION) return 'available'
+  return extension.version === REQUIRED_FACECLAW_FIRMWARE_VERSION ? 'current' : 'newer'
+}
+
+/** Short enough for a value cell, which is measured unwrapped. */
+export function firmwareKindLabel(extension: FirmwareExtension): string {
+  switch (extension.kind) {
+    case 'faceclaw': return `Faceclaw r${extension.version}`
+    case 'none': return 'Stock firmware'
+    case 'legacy-faceclaw': return 'Older Faceclaw'
+    case 'other': return 'Third-party'
+  }
 }
 
 /** Which firmware family the glasses run; null when unreported or from elsewhere. */
