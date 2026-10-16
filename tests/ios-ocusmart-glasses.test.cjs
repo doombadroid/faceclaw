@@ -13,6 +13,19 @@ class View {
   getActualSize() { return { width: this.width, height: 0 }; }
 }
 class GridLayout extends View { static setColumn() {} }
+// Models NativeScript's Image on iOS: src is applied last and wraps an ImageSource in a
+// copy; teardown nulls the native image of whatever imageSource the view holds.
+class Image extends View {
+  get src() { return this._src; }
+  set src(value) { this._src = value; this.imageSource = typeof value === 'string' ? { symbol: value } : { ios: value.ios }; }
+  dispose() { if (this.imageSource) this.imageSource.ios = null; }
+}
+// Sections and rows are plain options here; walk them to the views they hold.
+const teardown = node => {
+  if (!node) return;
+  node.dispose?.();
+  [...(node.children ?? []), ...(node.rows ?? []), node.view, node.tile].forEach(teardown);
+};
 
 function setup({ state = null, configured = true, serial = '', apps = [], installed = [] } = {}) {
   const calls = [], listeners = new Map(), settingListeners = new Set();
@@ -28,18 +41,18 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
   };
   const load = loader({ setTimeout: fn => fn() }, {
     '@nativescript/core': { Dialogs: { alert: options => calls.push(['alert', options.message]) },
-      GridLayout, StackLayout: View, Image: View, Label: View },
+      GridLayout, StackLayout: View, Image, Label: View },
     './ui-kit': {
       groupedPage: options => {
         build = options.build;
-        const refresh = () => { refreshes++; container = new View(); build(container); };
+        const refresh = () => { refreshes++; if (container) teardown(container); container = new View(); build(container); };
         refresh();
         return { page, refresh };
       },
       section: options => options,
       navRow: row('nav'), buttonRow: row('button'), switchRow: row('switch'),
       customRow: view => ({ kind: 'custom', view }),
-      tile: (symbol, color) => { const box = new View(); box.symbol = symbol; box.color = color; box.addChild(new View()); return box; },
+      tile: (symbol, color) => { const box = new View(); box.symbol = symbol; box.color = color; const icon = new Image(); icon.src = `sys://${symbol}`; box.addChild(icon); return box; },
     },
     './runtime': { getRuntime: () => runtime },
     './detour': { presentDetour: (...args) => calls.push(['detour', ...args]) },
@@ -99,19 +112,30 @@ test('My Glasses card shows the paired SKU art', () => {
   assert.match(page.card().children[0].src, /^~\/images\/glasses\/.+\.png$/);
 });
 
+test('My Glasses lens footer only claims the glasses when they are connected', () => {
+  const page = setup();
+  const footer = () => page.sections().find(section => section.header === 'Lens').footer;
+  assert.match(footer(), /preview while no glasses are connected/);
+  page.setState(connected);
+  assert.match(footer(), /A live copy of what the glasses show/);
+});
+
 test('My Glasses rebuilds only when shown values change, and swaps mirror frames in place', () => {
   const page = setup({ state: connected });
   const before = page.refreshes();
   page.setState({ ...connected, frames: 99 });
   assert.equal(page.refreshes(), before, 'frame acks do not rebuild');
   const mirror = page.mirror();
-  page.listeners.get('frame')({ image: 'frame-1', focus: '' });
-  assert.equal(mirror.imageSource, 'frame-1');
+  const frame1 = { image: { ios: 'frame-1' }, focus: '' };
+  page.runtime.frame = frame1; page.listeners.get('frame')(frame1);
+  assert.equal(mirror.imageSource.ios, 'frame-1');
   assert.equal(page.refreshes(), before, 'mirror frames never rebuild the page');
   page.setState({ ...connected, battery: 83 });
   assert.equal(page.refreshes(), before + 1);
-  page.listeners.get('frame')({ image: 'frame-2', focus: '' });
-  assert.equal(page.mirror().imageSource, 'frame-2', 'frames reach the rebuilt mirror');
+  assert.equal(frame1.image.ios, 'frame-1', 'tearing down the old mirror leaves the shared cached frame intact');
+  assert.equal(page.mirror().imageSource.ios, 'frame-1', 'the rebuilt mirror shows the cached frame');
+  page.listeners.get('frame')({ image: { ios: 'frame-2' }, focus: '' });
+  assert.equal(page.mirror().imageSource.ios, 'frame-2', 'frames reach the rebuilt mirror');
   mirror.width = 400; mirror.handlers.layoutChanged();
   assert.equal(mirror.height, 300, 'mirror keeps the panel 4:3');
   mirror.handlers.tap();
@@ -145,7 +169,9 @@ test('My Glasses firmware warning adds Attention Needed and the update badge', (
 });
 
 test('My Glasses counts launchable apps that run on iOS, plus installed EvenHub packages', () => {
-  const apps = [{ appId: 'launcher', showInLauncher: false }, { appId: 'timer' }, { appId: 'music' }, { appId: 'weather' }];
+  // Same as the Apps tab's BUILT IN: no launcher, onboarding or glasses Settings.
+  const apps = [{ appId: 'launcher', showInLauncher: false }, { appId: 'onboarding' }, { appId: 'settings' },
+    { appId: 'timer' }, { appId: 'music' }, { appId: 'weather' }];
   const page = setup({ apps, installed: [{ packageId: 'a' }, { packageId: 'b' }] });
   assert.equal(page.api.appsOnGlassesCount(), 4);
   assert.equal(page.find('Apps on Glasses').value, '4');
@@ -158,9 +184,9 @@ test('My Glasses routes rows to their pages', () => {
   // Calls carry objects from the vm realm; clone them into this one to compare.
   const tap = title => { page.find(title).onTap(); return structuredClone(page.calls.at(-1)); };
   assert.deepEqual(tap('Display & Brightness'), ['push', 'glasses', 'ocusmart/settings-category', { category: 'display' }]);
-  assert.deepEqual(tap('Notifications'), ['push', 'glasses', 'ocusmart/settings-category', { category: 'notifications' }]);
+  assert.equal(page.find('Notifications'), undefined, 'no row until a page backs notification sources');
   assert.deepEqual(tap('Remote & Touchpads'), ['push', 'glasses', 'ocusmart/remote']);
-  assert.deepEqual(tap('Pair Glasses'), ['detour', 'ocusmart/setup']);
+  assert.deepEqual(tap('Pair Glasses'), ['detour', 'phone-ui/onboarding-unpair-page']);
   assert.deepEqual(tap('Device Settings'), ['push', 'glasses', 'ocusmart/device']);
   assert.deepEqual(tap('Install Custom Firmware'), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'install', fromOnboarding: false }]);
   assert.deepEqual(tap('Uninstall Custom Firmware'), ['detour', 'phone-ui/onboarding-flash-page', { mode: 'uninstall', fromOnboarding: false }]);
@@ -173,10 +199,14 @@ test('My Glasses offers Open <App> on iPhone only for a button with an icon', ()
   page.runtime.evenHubButton = { windowId: 'w', title: 'Maps', icon: null };
   page.listeners.get('evenHubButton')(page.runtime.evenHubButton);
   assert.equal(page.find('Open Maps on iPhone'), undefined);
-  page.runtime.evenHubButton = { windowId: 'w', title: 'Maps', icon: 'icon' };
+  const icon = { ios: 'icon' };
+  page.runtime.evenHubButton = { windowId: 'w', title: 'Maps', icon };
   page.listeners.get('evenHubButton')(page.runtime.evenHubButton);
   const open = page.find('Open Maps on iPhone');
-  assert.equal(open.tile.children[0].imageSource, 'icon');
+  assert.equal(open.tile.children[0].imageSource.ios, 'icon', 'the app icon replaces the sys:// placeholder');
+  page.listeners.get('detour')(false);
+  assert.equal(icon.ios, 'icon', 'a rebuild leaves the cached app icon intact');
+  assert.equal(page.find('Open Maps on iPhone').tile.children[0].imageSource.ios, 'icon');
   open.onTap();
   assert.deepEqual(page.calls.at(-1), ['phoneUi', 'w']);
 });

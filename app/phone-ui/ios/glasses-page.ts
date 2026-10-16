@@ -14,6 +14,7 @@ import { GlassesHardwareIdentity } from '../../g2/glasses-hardware-identity'
 import { glassesImagePath } from '../../g2/glasses-artwork'
 import { brightnessLabel, brightnessSetting, mirrorTouchSetting, onAnySettingChanged } from '../../ui/dashboard-settings'
 import { ALL_APPS } from '../../apps/all-apps'
+import { ONBOARDING_APP_ID } from '../../apps/onboarding/onboarding-progress'
 import { iosAppUnavailableReason } from '../../apps/ios-availability'
 import { getInstalledEvenHubApps } from '../../apps/evenhub/installed-apps'
 import type { PhoneUiButton } from '../../apps/evenhub/manager'
@@ -21,9 +22,10 @@ import type { PhoneUiButton } from '../../apps/evenhub/manager'
 const PHASE_LABELS = { connected: 'Connected', disconnected: 'Not Connected', connecting: 'Connecting…',
   retrying: 'Reconnecting…', disconnecting: 'Disconnecting…', error: 'Connection Failed' }
 
-/** What the glasses launcher offers that runs on iOS: built-ins it lists, plus installed EvenHub packages. */
+/** What the Apps tab lists as launchable: its BUILT IN filter (same rule as apps-page listApps) plus installed EvenHub packages. */
 export function appsOnGlassesCount(): number {
-  return ALL_APPS.filter(app => app.showInLauncher !== false && !iosAppUnavailableReason(app.appId)).length + getInstalledEvenHubApps().length
+  return ALL_APPS.filter(app => app.showInLauncher !== false && app.appId !== ONBOARDING_APP_ID && app.appId !== 'settings'
+    && !iosAppUnavailableReason(app.appId)).length + getInstalledEvenHubApps().length
 }
 
 // Frame acks also emit 'connection' (state.frames); rebuild only when what the page shows changes.
@@ -96,7 +98,8 @@ export function createPage(): Page {
     const phoneUi = runtime.evenHubButton
     if (phoneUi?.icon) {
       const appTile = tile('app', 'teal')
-      ;(appTile.getChildAt(0) as Image).imageSource = phoneUi.icon
+      // Through src: it replaces the tile's sys:// placeholder, and NativeScript wraps it so teardown leaves the cached icon intact.
+      ;(appTile.getChildAt(0) as Image).src = phoneUi.icon
       top.push(navRow({ tile: appTile, title: `Open ${phoneUi.title} on iPhone`, onTap: () => controller.showEvenHubPhoneUi(phoneUi.windowId) }))
     }
     if (top.length) container.addChild(spaced(section({ rows: top })))
@@ -104,7 +107,8 @@ export function createPage(): Page {
     const view = mirror = new Image()
     view.className = 'os-lens-mirror'; view.stretch = 'fill'
     view.accessible = true; view.accessibilityRole = 'button'; view.accessibilityLabel = 'Glasses display. Opens Remote'
-    if (runtime.frame) view.imageSource = runtime.frame.image
+    // src, not imageSource: teardown nulls an imageSource's native image, and this one is the runtime's shared cached frame.
+    if (runtime.frame) view.src = runtime.frame.image
     // 4:3 like the 640×480 panel; set after layout, outside UIKit's layout pass.
     view.on('layoutChanged', () => setTimeout(() => {
       const width = view.getActualSize().width
@@ -119,13 +123,14 @@ export function createPage(): Page {
         // The switch already shows it; a rebuild would cut its animation.
         mirrorTouchSetting.set(value); shown = shownKey(controller.connectionState, runtime.evenHubButton)
       } }),
-    ], footer: 'A live copy of what the glasses show. Tap it to open Remote. With touch input on, touches on the Remote mirror act on the glasses: tap selects, double-tap goes back, hold opens the menu, swipes navigate.' }))
+    ], footer: state?.phase === 'connected'
+      ? 'A live copy of what the glasses show. Tap it to open Remote. With touch input on, touches on the Remote mirror act on the glasses: tap selects, double-tap goes back, hold opens the menu, swipes navigate.'
+      : 'What OcuSmart draws for the glasses, running as a preview while no glasses are connected. Tap it to open Remote.' }))
 
     container.addChild(spaced(section({ rows: [
       navRow({ tile: tile('sun.max.fill', 'blue'), title: 'Display & Brightness', value: brightnessLabel(brightnessSetting.get()),
         onTap: () => pushInTab('glasses', 'ocusmart/settings-category', { category: 'display' }) }),
-      navRow({ tile: tile('bell.badge.fill', 'red'), title: 'Notifications',
-        onTap: () => pushInTab('glasses', 'ocusmart/settings-category', { category: 'notifications' }) }),
+      // ponytail: no Notifications row until a phone page backs readNotificationSources; no settings category holds them.
       navRow({ tile: tile('square.grid.2x2.fill', 'purple'), title: 'Apps on Glasses', value: String(appsOnGlassesCount()),
         onTap: () => selectTab('apps') }),
       navRow({ tile: tile('hand.tap.fill', 'green'), title: 'Remote & Touchpads', onTap: () => pushInTab('glasses', 'ocusmart/remote') }),
@@ -140,7 +145,7 @@ export function createPage(): Page {
     } }))
     rows.push(
       navRow({ title: 'Connection Details', onTap: () => { void Dialogs.alert({ title: 'Connection details', message: controller.connectionDetails, okButtonText: 'OK' }) } }),
-      navRow({ title: 'Pair Glasses', onTap: () => { void presentDetour('ocusmart/setup') } }),
+      navRow({ title: 'Pair Glasses', onTap: () => { void presentDetour('phone-ui/onboarding-unpair-page') } }),
       navRow({ title: 'Device Settings', onTap: () => pushInTab('glasses', 'ocusmart/device') }),
     )
     container.addChild(section({ header: 'Connection', footer: state?.status, rows }))
@@ -161,7 +166,7 @@ export function createPage(): Page {
     for (const off of offs) off()
     offs = [
       runtime.on('connection', refreshIfChanged), runtime.on('evenHubButton', refreshIfChanged), onAnySettingChanged(refreshIfChanged),
-      runtime.on('frame', ({ image }) => { if (mirror) mirror.imageSource = image }),
+      runtime.on('frame', ({ image }) => { if (mirror) mirror.src = image }),
       // Saved devices, pairing or firmware can change inside a detour.
       runtime.on('detour', open => { if (!open) refresh() }),
     ]
