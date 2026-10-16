@@ -143,10 +143,20 @@ export class OnboardingViewModel extends Observable {
   /**
    * The logo scales with the screen (~40% of its height) so it reads as a
    * splash on tablets too, capped near the source PNG's height so it doesn't
-   * upscale into mush.
+   * upscale into mush. iOS measures the page instead (setPageHeight): its
+   * window can be smaller than the screen and resize (iPhone Duo folds, Split View).
    */
   get logoHeight(): number {
-    return Math.min(480, Math.round(Screen.mainScreen.heightDIPs * 0.4));
+    return Math.min(480, Math.round((global.isIOS ? this._pageHeight : Screen.mainScreen.heightDIPs) * 0.4));
+  }
+
+  private _pageHeight = 0;
+
+  /** iOS only: the page's laid-out height, from onboarding-page's layoutChanged. */
+  setPageHeight(height: number): void {
+    if (height === this._pageHeight) return;
+    this._pageHeight = height;
+    this.notifyPropertyChange("logoHeight", this.logoHeight);
   }
 
   get secondaryVisibility(): "visible" | "collapse" {

@@ -38,9 +38,11 @@ export class OnboardingUnpairViewModel extends Observable {
 
   /**
    * The settings button fills the page's width on phones but is capped so it
-   * doesn't stretch edge-to-edge on tablets.
+   * doesn't stretch edge-to-edge on tablets. iOS collapses the button
+   * (settingsButtonVisibility), so it never reads the screen, whose bounds are
+   * not its window's.
    */
   get settingsButtonWidth(): number {
-    return Math.min(320, Math.round(Screen.mainScreen.widthDIPs) - 40);
+    return global.isIOS ? 320 : Math.min(320, Math.round(Screen.mainScreen.widthDIPs) - 40);
   }
 }

@@ -100,14 +100,16 @@
     _back.accessibilityIdentifier = @"evenhub-back";
     [_back addTarget:self action:@selector(hideOnPhone) forControlEvents:UIControlEventTouchUpInside];
     [_host addSubview:_back]; _back.translatesAutoresizingMaskIntoConstraints = NO;
+    // Sides on the safe area too: landscape's sensor housing, and on iPhone Duo
+    // the inner display's side status bar, inset one side only.
     [NSLayoutConstraint activateConstraints:@[
         [_back.topAnchor constraintEqualToAnchor:_host.safeAreaLayoutGuide.topAnchor],
-        [_back.leadingAnchor constraintEqualToAnchor:_host.leadingAnchor],
-        [_back.trailingAnchor constraintEqualToAnchor:_host.trailingAnchor],
+        [_back.leadingAnchor constraintEqualToAnchor:_host.safeAreaLayoutGuide.leadingAnchor],
+        [_back.trailingAnchor constraintEqualToAnchor:_host.safeAreaLayoutGuide.trailingAnchor],
         [_back.heightAnchor constraintEqualToConstant:44],
         [_webView.topAnchor constraintEqualToAnchor:_back.bottomAnchor],
-        [_webView.leadingAnchor constraintEqualToAnchor:_host.leadingAnchor],
-        [_webView.trailingAnchor constraintEqualToAnchor:_host.trailingAnchor],
+        [_webView.leadingAnchor constraintEqualToAnchor:_host.safeAreaLayoutGuide.leadingAnchor],
+        [_webView.trailingAnchor constraintEqualToAnchor:_host.safeAreaLayoutGuide.trailingAnchor],
         [_webView.bottomAnchor constraintEqualToAnchor:_host.safeAreaLayoutGuide.bottomAnchor]
     ]];
     // Keep a nonzero attached view behind the dashboard; do not hide/detach it.
@@ -257,14 +259,14 @@ static NSString *fcsafe(NSURL *url) {
         [_popupHost.trailingAnchor constraintEqualToAnchor:_host.trailingAnchor],
         [_popupHost.bottomAnchor constraintEqualToAnchor:_host.bottomAnchor],
         [done.topAnchor constraintEqualToAnchor:_popupHost.safeAreaLayoutGuide.topAnchor],
-        [done.leadingAnchor constraintEqualToAnchor:_popupHost.leadingAnchor constant:12],
+        [done.leadingAnchor constraintEqualToAnchor:_popupHost.safeAreaLayoutGuide.leadingAnchor constant:12],
         [done.heightAnchor constraintEqualToConstant:44],
         [_popupOrigin.centerYAnchor constraintEqualToAnchor:done.centerYAnchor],
         [_popupOrigin.leadingAnchor constraintEqualToAnchor:done.trailingAnchor constant:12],
-        [_popupOrigin.trailingAnchor constraintEqualToAnchor:_popupHost.trailingAnchor constant:-12],
+        [_popupOrigin.trailingAnchor constraintEqualToAnchor:_popupHost.safeAreaLayoutGuide.trailingAnchor constant:-12],
         [_popup.topAnchor constraintEqualToAnchor:done.bottomAnchor],
-        [_popup.leadingAnchor constraintEqualToAnchor:_popupHost.leadingAnchor],
-        [_popup.trailingAnchor constraintEqualToAnchor:_popupHost.trailingAnchor],
+        [_popup.leadingAnchor constraintEqualToAnchor:_popupHost.safeAreaLayoutGuide.leadingAnchor],
+        [_popup.trailingAnchor constraintEqualToAnchor:_popupHost.safeAreaLayoutGuide.trailingAnchor],
         [_popup.bottomAnchor constraintEqualToAnchor:_popupHost.safeAreaLayoutGuide.bottomAnchor]
     ]];
     if (load && request) [_popup loadRequest:request];

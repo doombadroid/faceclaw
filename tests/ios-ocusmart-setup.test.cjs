@@ -179,11 +179,13 @@ function setupPage() {
     constructor() { views.push(this); }
     on(event, fn) { this.events.set(event, fn); }
     addChild(view) { this.children.push(view); }
+    getActualSize() { return { width: this.width ?? 0, height: 0 }; }
     static setRow(view, row) { view.row = row; } static setColumn(view, col) { view.col = col; }
   }
   const core = { Button: View, GridLayout: View, Image: View, Label: View, Page: View, ScrollView: View, StackLayout: View };
   const setup = load('app/phone-ui/ios/setup-page.ts', {
     '@nativescript/core': core,
+    './ui-kit': load('app/phone-ui/ios/ui-kit.ts', { '@nativescript/core': core }, { setTimeout: fn => { fn(); return null; } }),
     '../../g2/glasses-artwork': { GENERIC_G2_IMAGE_PATH: '~/images/glasses/even_realities_g2.png' },
     '../../branding': { APP_NAME: 'OcuSmart' },
   });
@@ -203,6 +205,18 @@ test('Set Up: Cancel leaves the detour, Continue opens the existing unpair page 
   assert.match(read('app/phone-ui/onboarding-register.ios.ts'), /registerModule\('phone-ui\/onboarding-unpair-page'/, 'iOS bundles the Continue target');
 });
 
+test('Set Up narrows its text and Continue to a centred 500pt column in wide windows only', () => {
+  const { page, views } = setupPage();
+  const root = page.content, body = views.find(v => v.className === 'os-setup-body'), bottom = views.find(v => v.className === 'os-setup-bottom');
+  const sides = () => [body, bottom].map(v => [v.marginLeft ?? 0, v.marginRight ?? 0]);
+  root.width = 393; root.events.get('layoutChanged')();
+  assert.deepEqual(sides(), [[0, 0], [0, 0]], 'a phone in portrait: unchanged');
+  root.width = 951; root.events.get('layoutChanged')();
+  assert.deepEqual(sides(), [[225.5, 225.5], [225.5, 225.5]], 'iPhone Duo inner display');
+  root.width = 475; root.events.get('layoutChanged')();
+  assert.deepEqual(sides(), [[0, 0], [0, 0]], 'narrowed again (a fold, a Split View pane)');
+});
+
 test('Set Up describes what the pairing flow actually asks for', () => {
   const { setup, views } = setupPage();
   const texts = views.map(v => v.text).filter(Boolean);
@@ -218,6 +232,34 @@ test('Set Up describes what the pairing flow actually asks for', () => {
   assert.match(read('app/g2/firmware-builder.ts'), /FIRMWARE_URL = "https:\/\/cdn\.evenreal\.co\//);
   assert.match(setup.SETUP_FOOTER, /downloads Even's official firmware from Even Realities/);
   assert.match(setup.SETUP_BODY, /^OcuSmart .*Faceclaw's custom firmware/, 'the app is OcuSmart; the firmware keeps its name');
+});
+
+test('onboarding sizes its logo from the page on iOS and from the screen, as before, on Android', () => {
+  const model = isIOS => {
+    class Observable { notifyPropertyChange(name, value) { this.notified = [name, value]; } }
+    const { OnboardingViewModel } = load('app/phone-ui/onboarding-view-model.ts', {
+      './onboarding-navigation': {}, '@nativescript/core': { Observable, Frame: {}, Screen: { mainScreen: { heightDIPs: 800 } } },
+      '../analytics/privacy-disclosure': { IOS_PRIVACY_NOTICE: '' }, './onboarding-state': {}, '../branding': { APP_NAME: 'X' },
+    }, { global: { isIOS } });
+    return new OnboardingViewModel(1);
+  };
+  const android = model(false);
+  assert.equal(android.logoHeight, 320, '40% of the screen');
+  const ios = model(true);
+  ios.setPageHeight(669);
+  assert.deepEqual(ios.notified, ['logoHeight', 268], 'the page, not the 800pt screen');
+  ios.setPageHeight(393);
+  assert.equal(ios.logoHeight, 157, 'follows a resize (rotation, a fold)');
+  const unpair = isIOS => {
+    const { OnboardingUnpairViewModel } = load('app/phone-ui/onboarding-unpair-view-model.ts', {
+      '@nativescript/core': { Observable: class {}, Frame: {}, Screen: { mainScreen: { get widthDIPs() { if (isIOS) throw new Error('screen read on iOS'); return 300; } } } },
+      '../native/even-app-conflict': {},
+    }, { global: { isIOS, isAndroid: !isIOS } });
+    return new OnboardingUnpairViewModel();
+  };
+  assert.equal(unpair(false).settingsButtonWidth, 260, 'Android: the screen width less 40, as before');
+  assert.equal(unpair(true).settingsButtonVisibility, 'collapse');
+  assert.equal(unpair(true).settingsButtonWidth, 320, 'iOS: no screen read for a button it never shows');
 });
 
 test('onboarding names the app OcuSmart on iOS and stays byte-identical on Android', () => {

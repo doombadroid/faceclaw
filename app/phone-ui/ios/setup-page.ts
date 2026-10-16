@@ -1,6 +1,7 @@
 import { Button, GridLayout, Image, Label, Page, ScrollView, StackLayout } from '@nativescript/core'
 import { GENERIC_G2_IMAGE_PATH } from '../../g2/glasses-artwork'
 import { APP_NAME } from '../../branding'
+import { readableColumn } from './ui-kit'
 
 export const UNPAIR_PAGE = 'phone-ui/onboarding-unpair-page'
 
@@ -73,5 +74,7 @@ export function createPage(): Page {
   bottom.addChild(next)
   bottom.addChild(label(SETUP_FOOTER, 'os-setup-footer'))
   GridLayout.setRow(bottom, 2); root.addChild(bottom)
+  // A welcome-screen width in wide windows; Cancel keeps its corner.
+  readableColumn(root, () => [body, bottom], 500)
   return page
 }

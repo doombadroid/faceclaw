@@ -10,6 +10,28 @@ import { inheritBarTint } from './ui-kit'
 import { presentOnTop } from './present'
 import type { KeyboardInputSession } from '../../ui/shell/keyboard-input'
 
+/** The controls column beside the mirror, and the most it needs: tab bar plus the 250pt ring pad. */
+const CONTROLS_WIDTH = 345, CONTROLS_HEIGHT = 320
+/** Side by side only leaves the mirror at least this wide; stacked, the controls keep about this much height. */
+const MIN_MIRROR_WIDTH = 280, STACKED_CONTROLS_HEIGHT = 300
+
+/**
+ * Remote's layout for a `width` x `height` area (the page inside its safe area),
+ * from its size alone: no orientation or idiom, so Split View panes and both
+ * displays behave the same. `bodyHeight` is what the keyboard leaves of it.
+ */
+export function remoteLayout(width: number, height: number, bodyHeight = height): {
+  sideBySide: boolean; mirrorWidth: number; controlsHeight: number | 'auto'
+} {
+  if (width > height && width >= CONTROLS_WIDTH + MIN_MIRROR_WIDTH) {
+    return { sideBySide: true, mirrorWidth: Math.max(0, Math.min(width - CONTROLS_WIDTH, bodyHeight * 4 / 3)),
+      controlsHeight: Math.max(0, Math.min(bodyHeight, CONTROLS_HEIGHT)) }
+  }
+  // The mirror never drops below half the height, even when that squeezes the controls.
+  const mirrorHeight = Math.max(height - STACKED_CONTROLS_HEIGHT, height / 2)
+  return { sideBySide: false, mirrorWidth: Math.max(0, Math.min(width, mirrorHeight * 4 / 3)), controlsHeight: 'auto' }
+}
+
 /** The old main page: mirror with touch input, shared remote controls, keyboard panel. */
 export function createRemotePage(): Page {
   const runtime = getRuntime(), controller = runtime.controller
@@ -26,7 +48,10 @@ export function createRemotePage(): Page {
   shareItem.on('tap', () => {
     if (!mirror.imageSource) return
     const share = UIActivityViewController.alloc().initWithActivityItemsApplicationActivities([mirror.imageSource.ios], null)
-    if (share.popoverPresentationController) share.popoverPresentationController.sourceView = page.ios.view
+    // As a popover (regular width) it points at the share button, its only bar item; sourceItem is iOS 16+.
+    const popover = share.popoverPresentationController, anchor = page.ios.navigationItem.rightBarButtonItem
+    if (popover && anchor && popover.respondsToSelector('setSourceItem:')) popover.sourceItem = anchor
+    else if (popover) popover.sourceView = page.ios.view
     presentOnTop(share)
   })
   page.actionBar.actionItems.addItem(shareItem)
@@ -38,7 +63,7 @@ export function createRemotePage(): Page {
   mirror.stretch = 'fill'; mirror.backgroundColor = new Color('black')
   mirror.accessibilityIdentifier = 'glasses-preview'
   mirror.accessibilityLabel = 'Interactive glasses screen preview'
-  mirror.horizontalAlignment = 'left'; mirror.verticalAlignment = 'middle'; body.addChild(mirror)
+  mirror.horizontalAlignment = 'center'; mirror.verticalAlignment = 'middle'; body.addChild(mirror)
   // Load exactly the same XML and binding model as Android. Only input dispatch
   // and the surrounding platform navigation/runtime remain iOS-specific.
   const model = new RemoteControlsViewModel()
@@ -122,19 +147,21 @@ export function createRemotePage(): Page {
   }
   let lastLayout = ''
   function layout(): void {
-    const size = body.getActualSize()
+    // root is the keyboard-free area; the keyboard pads its bottom, shrinking body.
+    const size = body.getActualSize(), area = root.getActualSize()
     if (size.width <= 0 || size.height <= 0) return
-    const landscape = root.getActualSize().width > root.getActualSize().height
-    const key = `${size.width}:${size.height}:${landscape}`
+    const key = `${area.width}:${area.height}:${size.height}`
     if (key === lastLayout) return
     lastLayout = key; cancelGestures()
-    body.className = landscape ? 'landscape-layout' : ''
-    root.className = landscape ? 'main-landscape' : ''
-    body.rows = landscape ? '*' : 'auto,*'; body.columns = landscape ? '*,345' : '*'
-    controls.padding = landscape ? 0 : 20
-    GridLayout.setRow(controls, landscape ? 0 : 1); GridLayout.setColumn(controls, landscape ? 1 : 0)
-    const width = landscape ? Math.max(0, Math.min(size.width - 345, size.height * 4 / 3)) : size.width
-    mirror.width = width; mirror.height = width * 3 / 4
+    const { sideBySide, mirrorWidth, controlsHeight } = remoteLayout(area.width, area.height, size.height)
+    body.className = sideBySide ? 'landscape-layout' : ''
+    root.className = sideBySide ? 'main-landscape' : ''
+    body.rows = sideBySide ? '*' : 'auto,*'; body.columns = sideBySide ? `*,${CONTROLS_WIDTH}` : '*'
+    controls.padding = sideBySide ? 0 : 20
+    // Side by side, the column centres vertically instead of hanging from the top.
+    controls.height = controlsHeight; controls.verticalAlignment = sideBySide ? 'middle' : 'stretch'
+    GridLayout.setRow(controls, sideBySide ? 0 : 1); GridLayout.setColumn(controls, sideBySide ? 1 : 0)
+    mirror.width = mirrorWidth; mirror.height = mirrorWidth * 3 / 4
   }
   // iOS emits layoutChanged inside its layout pass. Defer mutations so
   // NativeScript does not clear our new layout request at the end of that pass.
@@ -156,19 +183,32 @@ export function createRemotePage(): Page {
     cancelGestures()
   }
   const resume = () => { foreground = true; syncBandwidth() }
-  let keyboardObserver: any = null
+  let keyboardObservers: NSObjectProtocol[] = []
+  const observe = (name: string, fn: (notification: NSNotification) => void) =>
+    NSNotificationCenter.defaultCenter.addObserverForNameObjectQueueUsingBlock(name, null, NSOperationQueue.mainQueue, fn)
+  /**
+   * How far a keyboard ending at `frame` (screen coordinates) covers the page's
+   * bottom edge, above the safe area. A floating keyboard, or one that misses
+   * this window (a Split View pane), covers nothing.
+   */
+  const keyboardInset = (frame: CGRect): number => {
+    const view = page.ios.view, screen = view.window?.windowScene?.screen
+    if (!screen) return 0
+    const bounds = view.bounds, overlap = CGRectIntersection(view.convertRectFromCoordinateSpace(frame, screen.coordinateSpace), bounds)
+    if (CGRectIsNull(overlap) || CGRectGetMaxY(overlap) < CGRectGetMaxY(bounds) - 1) return 0
+    return Math.max(0, CGRectGetMaxY(bounds) - CGRectGetMinY(overlap) - view.safeAreaInsets.bottom)
+  }
   let offSettings: (() => void) | null = null
   let offRuntime: (() => void)[] = []
   let releaseMirror: (() => void) | null = null
   page.on('loaded', () => {
     releaseMirror ??= runtime.acquireMirror()
-    if (!keyboardObserver) keyboardObserver = NSNotificationCenter.defaultCenter.addObserverForNameObjectQueueUsingBlock(
-      UIKeyboardWillChangeFrameNotification, null, NSOperationQueue.mainQueue, notification => {
-        const frame = notification.userInfo.objectForKey(UIKeyboardFrameEndUserInfoKey).CGRectValue
-        const view = page.ios.view
-        const local = view.convertRectFromView(frame, null)
-        root.paddingBottom = Math.max(0, view.bounds.size.height - local.origin.y - view.safeAreaInsets.bottom)
-      })
+    if (!keyboardObservers.length) keyboardObservers = [
+      observe(UIKeyboardWillChangeFrameNotification, notification => {
+        root.paddingBottom = keyboardInset(notification.userInfo.objectForKey(UIKeyboardFrameEndUserInfoKey).CGRectValue)
+      }),
+      observe(UIKeyboardWillHideNotification, () => { root.paddingBottom = 0 }),
+    ]
     Application.on(Application.suspendEvent, pause); Application.on(Application.resumeEvent, resume)
     offSettings?.(); offSettings = onAnySettingChanged(() => { model.refreshDisplayControls(); syncBandwidth() })
     for (const off of offRuntime) off()
@@ -178,8 +218,8 @@ export function createRemotePage(): Page {
     model.refreshDisplayControls(); resume()
   })
   page.on('unloaded', () => {
-    if (keyboardObserver) NSNotificationCenter.defaultCenter.removeObserver(keyboardObserver)
-    keyboardObserver = null
+    for (const observer of keyboardObservers) NSNotificationCenter.defaultCenter.removeObserver(observer)
+    keyboardObservers = []
     root.paddingBottom = 0
     pause(); offSettings?.(); offSettings = null
     for (const off of offRuntime) off()

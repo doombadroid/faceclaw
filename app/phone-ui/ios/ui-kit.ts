@@ -21,9 +21,40 @@ export function groupedPage({ title, largeTitle = true, build }: {
   const scroll = new ScrollView()
   scroll.content = container
   page.content = scroll
+  // scroll.content, read when applied: Hub swaps in its own column holding the search bar and this container.
+  readableColumn(scroll, () => [scroll.content])
   const refresh = () => { container.removeChildren(); build(container) }
   refresh()
   return { page, refresh }
+}
+
+/** The widest a grouped list's column gets (UIKit's readable width); wider windows centre it. */
+export const READABLE_WIDTH = 672
+
+/** Side margin that centres a `max`-wide column in `width`. */
+export function readableMargin(width: number, max = READABLE_WIDTH): number {
+  return Math.max(0, (width - max) / 2)
+}
+
+/**
+ * Keeps `targets` in a centred column at most `max` wide, from `measured`'s
+ * width: no size class, so a Split View pane and a fold behave the same.
+ * Margins, not padding, so the targets' own CSS padding stays.
+ */
+export function readableColumn(measured: View, targets: () => View[], max = READABLE_WIDTH): void {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  measured.on('layoutChanged', () => {
+    if (timer !== null) return
+    // Deferred out of UIKit's layout pass, which would drop the new layout request.
+    timer = setTimeout(() => {
+      timer = null
+      const margin = readableMargin(measured.getActualSize().width, max)
+      for (const view of targets()) {
+        if (view.marginLeft === margin && view.marginRight === margin) continue
+        view.marginLeft = margin; view.marginRight = margin
+      }
+    }, 0)
+  })
 }
 
 /**

@@ -75,6 +75,15 @@ function spaced(box: StackLayout, top = 22): StackLayout {
   return box
 }
 
+/**
+ * The lens mirror's width: 4:3 like the 640×480 panel, as wide as the card, but
+ * short enough to leave about 160pt of the page for the bars and rows around it
+ * (landscape, the inner display) and no wider than 560pt.
+ */
+export function lensMirrorWidth(available: number, pageHeight: number): number {
+  return Math.max(0, Math.min(available, (pageHeight - 160) * 4 / 3, 560))
+}
+
 export function createPage(): Page {
   const runtime = getRuntime(), controller = runtime.controller
   let shown = ''
@@ -101,14 +110,20 @@ export function createPage(): Page {
     view.accessible = true; view.accessibilityRole = 'button'; view.accessibilityLabel = 'Glasses display. Opens Remote'
     // src, not imageSource: teardown nulls an imageSource's native image, and this one is the runtime's shared cached frame.
     if (runtime.frame) view.src = runtime.frame.image
-    // 4:3 like the 640×480 panel; set after layout, outside UIKit's layout pass.
-    view.on('layoutChanged', () => setTimeout(() => {
-      const width = view.getActualSize().width
-      if (width > 0 && view.height !== width * 3 / 4) view.height = width * 3 / 4
-    }, 0))
+    view.horizontalAlignment = 'center'
     view.on('tap', () => pushInTab('glasses', 'ocusmart/remote'))
+    // The slot stretches to the card, so its width is what the mirror may use.
+    const slot = new GridLayout()
+    slot.addChild(view)
+    // Set after layout, outside UIKit's layout pass.
+    slot.on('layoutChanged', () => setTimeout(() => {
+      const height = page.getActualSize().height
+      const width = lensMirrorWidth(slot.getActualSize().width, height)
+      if (height <= 0 || width <= 0 || (view.width === width && view.height === width * 3 / 4)) return
+      view.width = width; view.height = width * 3 / 4
+    }, 0))
     const lens = new StackLayout()
-    lens.className = 'os-lens'; lens.addChild(view)
+    lens.className = 'os-lens'; lens.addChild(slot)
     container.addChild(section({ header: 'Lens', rows: [
       customRow(lens),
       switchRow({ title: mirrorTouchSetting.label, value: mirrorTouchSetting.get(), onChange: value => {

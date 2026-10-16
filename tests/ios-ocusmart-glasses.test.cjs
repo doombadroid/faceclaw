@@ -31,7 +31,7 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
   const calls = [], listeners = new Map(), settingListeners = new Set();
   const settings = { brightness: 'auto', mirrorTouch: true, notifications }, env = { configured, installed };
   let build = null, container = null, refreshes = 0;
-  const page = { handlers: {}, on(event, fn) { this.handlers[event] = fn; } };
+  const page = { handlers: {}, height: 800, on(event, fn) { this.handlers[event] = fn; }, getActualSize() { return { width: 0, height: this.height }; } };
   const row = kind => options => ({ kind, ...options });
   const runtime = {
     connected: false, evenHubButton: null, frame: null, mirrors: 0,
@@ -82,9 +82,10 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
   const find = title => rows().find(r => r.title === title);
   const texts = view => [view.text, ...view.children.flatMap(texts)].filter(Boolean);
   const card = () => sections()[0].rows[0].view;
-  const mirror = () => sections().find(section => section.header === 'Lens').rows[0].view.children[0];
+  const slot = () => sections().find(section => section.header === 'Lens').rows[0].view.children[0];
+  const mirror = () => slot().children[0];
   const settingsChanged = () => { for (const fn of [...settingListeners]) fn(); };
-  return { api, page, runtime, calls, listeners, settings, env, mirror, settingListeners, sections, rows, find, texts, card,
+  return { api, page, runtime, calls, listeners, settings, env, mirror, slot, settingListeners, sections, rows, find, texts, card,
     settingsChanged, refreshes: () => refreshes,
     setState: next => { runtime.controller.connectionState = next; listeners.get('connection')(next); } };
 }
@@ -138,10 +139,23 @@ test('My Glasses rebuilds only when shown values change, and swaps mirror frames
   assert.equal(page.mirror().imageSource.ios, 'frame-1', 'the rebuilt mirror shows the cached frame');
   page.listeners.get('frame')({ image: { ios: 'frame-2' }, focus: '' });
   assert.equal(page.mirror().imageSource.ios, 'frame-2', 'frames reach the rebuilt mirror');
-  mirror.width = 400; mirror.handlers.layoutChanged();
-  assert.equal(mirror.height, 300, 'mirror keeps the panel 4:3');
-  mirror.handlers.tap();
+  const slot = page.slot(), lens = slot.children[0];
+  slot.width = 400; slot.handlers.layoutChanged();
+  assert.deepEqual([lens.width, lens.height, lens.horizontalAlignment], [400, 300, 'center'], 'card-wide, 4:3 like the panel, centred');
+  lens.handlers.tap();
   assert.deepEqual(page.calls.at(-1), ['push', 'glasses', 'ocusmart/remote']);
+});
+
+test('My Glasses caps the lens mirror to the visible height and 560pt, keeping 4:3', () => {
+  const page = setup({ state: connected }), slot = page.slot(), lens = page.mirror();
+  const size = (width, height) => { slot.width = width; page.page.height = height; slot.handlers.layoutChanged(); return [lens.width, lens.height]; };
+  assert.deepEqual(size(337, 852), [337, 252.75], 'iPhone portrait: card-wide, as before');
+  assert.deepEqual(size(694, 393), [310.6666666666667, 233], 'iPhone landscape: the page height minus 160pt, not 520pt tall');
+  assert.deepEqual(size(895, 669), [560, 420], 'iPhone Duo inner display: 560pt wide, not 671pt tall in a 669pt window');
+  assert.equal(page.api.lensMirrorWidth(300, 100), 0, 'never negative');
+  const before = [lens.width, lens.height];
+  page.page.height = 0; slot.width = 100; slot.handlers.layoutChanged();
+  assert.deepEqual([lens.width, lens.height], before, 'a page not laid out yet changes nothing');
 });
 
 test('My Glasses mirror-touch switch writes the setting without rebuilding; other setting changes rebuild', () => {

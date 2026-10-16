@@ -153,7 +153,7 @@ test('settings-driven repaint runs after font cache invalidation, regardless of 
 });
 
 function remotePageHarness({ enabled = () => false, totals = () => ({ messages: 0, bytes: 0, frames: 0 }), now = () => 0, intervals = new Map() } = {}) {
-  const views = [], appEvents = new Map(), settingListeners = new Set(), runtimeListeners = new Map();
+  const views = [], appEvents = new Map(), settingListeners = new Set(), runtimeListeners = new Map(), keyboardObservers = new Map();
   let nextId = 0;
   class View {
     events = new Map(); children = []; ios = {};
@@ -198,13 +198,95 @@ function remotePageHarness({ enabled = () => false, totals = () => ({ messages: 
   modules['../remote-controls-view-model'] = load('app/phone-ui/remote-controls-view-model.ts', { require: id => shared[id] ?? {} });
   const { createRemotePage } = load('app/phone-ui/ios/remote-page.ts', {
     require: id => modules[id] ?? {}, Date: { now },
-    NSNotificationCenter: { defaultCenter: { addObserverForNameObjectQueueUsingBlock: () => ({}), removeObserver() {} } },
-    UIKeyboardWillChangeFrameNotification: 'keyboard', NSOperationQueue: { mainQueue: {} },
+    NSNotificationCenter: { defaultCenter: {
+      addObserverForNameObjectQueueUsingBlock: (name, _object, _queue, fn) => { keyboardObservers.set(name, fn); return name; },
+      removeObserver: name => keyboardObservers.delete(name) } },
+    UIKeyboardWillChangeFrameNotification: 'keyboard', UIKeyboardWillHideNotification: 'keyboardHide', NSOperationQueue: { mainQueue: {} },
+    UIKeyboardFrameEndUserInfoKey: 'end',
+    // CoreGraphics on { x, y, width, height } rects.
+    CGRectIntersection: (a, b) => {
+      const x = Math.max(a.x, b.x), y = Math.max(a.y, b.y);
+      const right = Math.min(a.x + a.width, b.x + b.width), bottom = Math.min(a.y + a.height, b.y + b.height);
+      return right < x || bottom < y ? null : { x, y, width: right - x, height: bottom - y };
+    },
+    CGRectIsNull: rect => rect === null, CGRectGetMinY: rect => rect.y, CGRectGetMaxY: rect => rect.y + rect.height,
     setInterval: fn => { const id = ++nextId; intervals.set(id, fn); return id; }, clearInterval: id => intervals.delete(id),
     setTimeout: () => 1, clearTimeout() {},
   });
-  return { page: createRemotePage(), views, appEvents, settingListeners, runtimeListeners, controller, intervals, runtime };
+  return { page: createRemotePage(), views, appEvents, settingListeners, runtimeListeners, controller, intervals, runtime, keyboardObservers };
 }
+
+test('iOS grouped lists centre a 672pt column in wide windows, whatever column the page swaps in', () => {
+  class View {
+    events = new Map(); actionBar = { set() {}, setColor() {} };
+    on(event, fn) { this.events.set(event, fn); }
+    getActualSize() { return { width: this.width ?? 0, height: 0 }; }
+    removeChildren() {}
+  }
+  const timers = [];
+  const kit = load('app/phone-ui/ios/ui-kit.ts', { require: () => ({ Page: View, ScrollView: View, StackLayout: View }),
+    setTimeout: fn => { timers.push(fn); return timers.length; } });
+  const { page } = kit.groupedPage({ title: 'Hub', build() {} });
+  const scroll = page.content, list = scroll.content;
+  const resize = width => { scroll.width = width; scroll.events.get('layoutChanged')(); scroll.events.get('layoutChanged')(); while (timers.length) timers.shift()(); };
+  resize(393);
+  assert.deepEqual([list.marginLeft, list.marginRight], [0, 0], 'portrait iPhone: unchanged');
+  resize(951);
+  assert.deepEqual([list.marginLeft, list.marginRight], [139.5, 139.5], 'iPhone Duo inner display: centred');
+  assert.equal(timers.length, 0, 'one deferred update per layout burst');
+  // Hub puts its search bar and segments above the list in a column of its own.
+  const hubColumn = new View(); scroll.content = hubColumn;
+  resize(800);
+  assert.deepEqual([hubColumn.marginLeft, hubColumn.marginRight], [64, 64], "Hub's whole column, search bar included");
+  assert.equal(kit.readableMargin(600), 0);
+});
+
+test('iOS Remote pads for a keyboard only where it covers the window, in screen coordinates', () => {
+  const { page, views, keyboardObservers } = remotePageHarness();
+  // A window 100pt down the screen (a Split View pane, a sheet): 400 x 600, 34pt bottom safe area.
+  const view = { bounds: { x: 0, y: 0, width: 400, height: 600 }, safeAreaInsets: { bottom: 34 },
+    window: { windowScene: { screen: { coordinateSpace: 'screen' } } },
+    convertRectFromCoordinateSpace: (rect, space) => { assert.equal(space, 'screen'); return { ...rect, y: rect.y - 100 }; } };
+  page.ios = { view };
+  page.events.get('loaded')();
+  const root = views.find(v => v.children.some(child => child.accessibilityIdentifier === 'ble-bandwidth-indicator'));
+  const keyboard = frame => keyboardObservers.get('keyboard')({ userInfo: { objectForKey: key => key === 'end' ? { CGRectValue: frame } : null } });
+  keyboard({ x: 0, y: 400, width: 400, height: 300 });
+  assert.equal(root.paddingBottom, 266, 'docked: the covered 300pt (screen 400-700 is window 300-600) less the safe area');
+  keyboard({ x: 0, y: 250, width: 300, height: 200 });
+  assert.equal(root.paddingBottom, 0, 'floating mid-window: nothing to pad');
+  keyboard({ x: 0, y: 900, width: 400, height: 300 });
+  assert.equal(root.paddingBottom, 0, 'off this window');
+  keyboard({ x: 0, y: 400, width: 400, height: 300 }); keyboardObservers.get('keyboardHide')();
+  assert.equal(root.paddingBottom, 0, 'hidden');
+  page.events.get('unloaded')();
+  assert.equal(keyboardObservers.size, 0, 'both observers go with the page');
+});
+
+test('iOS Remote layout comes from its size: side by side only with room for both, mirror centred and capped', () => {
+  const { remoteLayout } = load('app/phone-ui/ios/remote-page.ts', { require: () => ({}) });
+  const plain = layout => JSON.parse(JSON.stringify(layout));
+  // iPhone Duo inner display, full window: a 606pt mirror beside the controls, centred in its 320pt column.
+  assert.deepEqual(plain(remoteLayout(951, 669)), { sideBySide: true, mirrorWidth: 606, controlsHeight: 320 });
+  // Inner display halves and thirds (Split View panes): stacked, full width.
+  assert.deepEqual(plain(remoteLayout(475, 669)), { sideBySide: false, mirrorWidth: 475, controlsHeight: 'auto' });
+  assert.deepEqual(plain(remoteLayout(317, 669)), { sideBySide: false, mirrorWidth: 317, controlsHeight: 'auto' });
+  // An iPhone (or the outer display) in portrait: unchanged, full width.
+  assert.deepEqual(plain(remoteLayout(393, 666)), { sideBySide: false, mirrorWidth: 393, controlsHeight: 'auto' });
+  // ... and in landscape: unchanged, height-limited beside the controls.
+  assert.deepEqual(plain(remoteLayout(734, 340)), { sideBySide: true, mirrorWidth: 389, controlsHeight: 320 });
+  // Barely wider than tall, with no room for a usable mirror beside 345pt of controls: stacked, and the
+  // mirror leaves the controls 300pt (the old rule gave it 155pt side by side).
+  const squat = remoteLayout(500, 420);
+  assert.equal(squat.sideBySide, false);
+  assert.equal(squat.mirrorWidth, 280, 'half the height, as the controls cannot have 300pt here');
+  assert.equal(remoteLayout(500, 900).mirrorWidth, 500, 'tall: width-limited');
+  assert.equal(remoteLayout(450, 600).mirrorWidth, 400, 'height-limited: the controls keep 300pt');
+  // The keyboard shrinks the body: side by side, the mirror fits what is left above it.
+  assert.equal(remoteLayout(951, 669, 300).mirrorWidth, 400);
+  assert.equal(remoteLayout(951, 669, 300).controlsHeight, 300);
+});
+
 
 test('iOS Remote counts its mirror as shown exactly while loaded', () => {
   const { page, runtime, appEvents } = remotePageHarness();

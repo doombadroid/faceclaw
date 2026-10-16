@@ -337,6 +337,7 @@ export function createPage(): Page {
   page.className = 'os-page os-hub-page'
   // A rebuild tears down every native view it removes, which would close the
   // keyboard mid-typing; the search field and segments sit above the rebuilt body.
+  // groupedPage centres whatever scroll.content is, so all three keep one readable column.
   const scroll = page.content as ScrollView, body = scroll.content
   const top = new StackLayout()
   scroll.content = top
