@@ -224,14 +224,69 @@ test('awaited calendar reads do not replace the display cache and reject failure
   assert.equal(f.reads.length, 4);
 });
 
-test('iOS assistant calendar tool awaits events, reports denied access and failures, and leaves unsupported tools hidden', async () => {
-  const f = provider(), registered = new Map();
+function iosSystemTools(f, media = {}, notifications = {}) {
+  const registered = new Map(), descriptions = new Map(), calls = [];
+  const bridge = { start: async () => calls.push('start'), snapshot: () => ({ accessEnabled: true, playbackState: 'idle', status: '', ...media }),
+    playPause: async () => calls.push('playPause'), skipNext: async () => calls.push('skipNext') };
+  const icons = { readActiveNotifications: () => [], dismissNotification: key => { calls.push(['hide', key]); return true; },
+    invokeNotificationAction: (key, index) => { calls.push(['action', key, index]); return true; }, ...notifications };
   const { registerSystemTools } = load('app/assistant/system-tools.ts', {
     '../native/calendar': f.api, '../native/calendar-permissions': f.permissions,
-    '../native/media-controller': {}, '../native/notification-icons': {}, '../ui/shell/shell': {}, './tool-registry': {},
+    '../native/media-controller': { mediaControllerBridge: bridge }, '../native/notification-icons': icons,
+    '../native/notification-access': { notificationEmptyMessage: () => 'Connect glasses to receive iPhone notifications.' },
+    '../ui/shell/shell': {}, './tool-registry': {},
   }, { global: { isIOS: true } });
-  registerSystemTools({ registerSystemTool: (definition, handler) => registered.set(definition.name, handler) });
-  assert.deepEqual([...registered.keys()], ['glasses.get_state', 'glasses.show_alert', 'calendar.list_events']);
+  registerSystemTools({ registerSystemTool: (definition, handler) => {
+    registered.set(definition.name, handler); descriptions.set(definition.name, definition.description);
+  } });
+  return { registered, descriptions, calls };
+}
+
+test('iOS assistant registers Apple Music media and ANCS notification tools and warms the media bridge', () => {
+  const { registered, descriptions, calls } = iosSystemTools(provider());
+  assert.deepEqual([...registered.keys()], ['glasses.get_state', 'glasses.show_alert', 'calendar.list_events',
+    'media.now_playing', 'media.play_pause', 'media.next', 'notifications.list', 'notifications.dismiss']);
+  for (const name of ['media.now_playing', 'media.play_pause', 'media.next']) assert.match(descriptions.get(name), /Apple Music only/);
+  assert.doesNotMatch(descriptions.get('notifications.list'), /Android/);
+  assert.deepEqual(calls, ['start']);
+});
+
+test('iOS media tools report the bridge status and control Apple Music', async () => {
+  const f = provider();
+  assert.equal(iosSystemTools(f, { accessEnabled: false, status: 'Allow Apple Music access on your iPhone.' })
+    .registered.get('media.now_playing')().content, 'Allow Apple Music access on your iPhone.');
+  assert.equal(iosSystemTools(f, { status: 'Audio is playing in another app; iPhone only shares Apple Music.' })
+    .registered.get('media.now_playing')().content, 'Audio is playing in another app; iPhone only shares Apple Music.');
+  assert.equal(iosSystemTools(f).registered.get('media.now_playing')().content, 'Nothing is currently playing.');
+  const playing = iosSystemTools(f, { playbackState: 'playing', title: 'Song', artist: 'Band', appName: 'Music', canPlayPause: true, canSkipNext: true });
+  assert.equal(playing.registered.get('media.now_playing')().content, 'Playing: Song by Band in Music.');
+  assert.equal((await playing.registered.get('media.play_pause')()).ok, true);
+  assert.equal((await playing.registered.get('media.next')()).ok, true);
+  assert.deepEqual(playing.calls, ['start', 'playPause', 'skipNext']);
+});
+
+test('iOS notifications list explains an empty relay, and dismiss clears through ANCS but never declines a call', () => {
+  const f = provider();
+  const empty = iosSystemTools(f).registered.get('notifications.list');
+  assert.equal(empty({}).content, 'Connect glasses to receive iPhone notifications.');
+  const negative = [{ index: 0, title: 'Accept', enabled: true }, { index: 1, title: 'Decline', enabled: true }];
+  const rows = [
+    { key: 'call', appName: 'Phone', title: 'Mum', text: '', category: '1', actions: negative },
+    { key: 'mail', appName: 'Mail', title: 'Hi', text: 'Lunch?', category: '6', actions: [{ index: 1, title: 'Clear', enabled: true }] },
+    { key: 'news', appName: 'News', title: 'Story', text: '', category: '7', actions: [] },
+  ];
+  const tools = iosSystemTools(f, {}, { readActiveNotifications: max => rows.slice(0, max) });
+  assert.match(tools.registered.get('notifications.list')({ max: 2 }).content, /\[Phone\] Mum \(key: call\)\n- \[Mail\] Hi: Lunch\? \(key: mail\)$/);
+  const dismiss = tools.registered.get('notifications.dismiss');
+  assert.equal(dismiss({ key: 'mail' }).content, 'Dismissed.');
+  assert.match(dismiss({ key: 'call' }).content, /stays on the iPhone/);
+  assert.match(dismiss({ key: 'news' }).content, /stays on the iPhone/);
+  assert.deepEqual(tools.calls.slice(1), [['action', 'mail', 1], ['hide', 'call'], ['hide', 'news']]);
+  assert.equal(dismiss({ key: 'gone' }).ok, false);
+});
+
+test('iOS assistant calendar tool awaits events and reports denied access and failures', async () => {
+  const f = provider(), { registered } = iosSystemTools(f);
   const list = registered.get('calendar.list_events');
   const result = list({ within_hours: 2, max_events: 3 });
   assert.equal(f.reads[0].max, 3); assert.equal(f.reads[0].window, 7200000);

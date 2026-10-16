@@ -57,8 +57,8 @@ export function musicSettingsMenuItems(): MenuItem[] {
 
 /**
  * Now playing: album art (unless turned off), title/artist/album and a
- * progress bar for the active Android media session, the Music app's header
- * at card size. The media bridge runs for the whole session; the widget
+ * progress bar for the active media session (Apple Music only on iOS), the
+ * Music app's header at card size. The media bridge runs for the whole session; the widget
  * subscribes and ticks once a second only while something is playing.
  */
 export class MusicWidget implements GlanceWidget {
@@ -102,10 +102,12 @@ export class MusicWidget implements GlanceWidget {
     const media = mediaControllerBridge.snapshot();
     this.media = media;
     if (!media.available || (!media.title && !media.artist)) {
-      if (!media.accessEnabled) {
+      // iOS explains missing Apple Music access and audio from apps it can't read.
+      const message = global.isIOS ? media.status : media.accessEnabled ? "" : "Notification access needed";
+      if (message) {
         // Actionable, so it stays as text.
         image.drawText(small, PAD, PAD, "Music", 150);
-        image.drawText(small, PAD, PAD + small.lineHeight + 6, "Notification access needed", 140);
+        image.drawText(small, PAD, PAD + small.lineHeight + 6, truncateText(small, message, image.width - 2 * PAD), 140);
         return;
       }
       // Nothing playing: a dim note, centred, and nothing else.

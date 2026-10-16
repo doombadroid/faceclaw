@@ -137,18 +137,24 @@ test('categories have stable unique ids, including the ones other tabs link to, 
   assert.deepEqual([...root.ROOT_GROUPS.flat()].sort(), ids.sort());
 });
 
-test('Glanceboard slots keep one widget per board and dim widgets iOS cannot run', () => {
-  const { load } = harness();
+test('Glanceboard slots keep one widget per board, offer Music on iOS and ask for Apple Music access when it is chosen', () => {
+  const { load, mocks } = harness();
+  let prompts = 0;
+  mocks['../../native/media-controller'] = { mediaControllerBridge: { openNotificationAccessSettings: () => prompts++ } };
   const catalog = load('app/ui/dashboard/settings-catalog.ts');
   const slots = catalog.settingsCategory('glanceboard').sections().find(section => section.header === 'Slots').items;
   assert.equal(slots.length, 4);
   assert.equal(catalog.itemTitle(slots[0]), 'Top Left');
-  assert.match(slots[0].unavailable('music'), /not available on iOS/);
-  assert.equal(slots[0].unavailable('calendar'), null);
+  assert.equal(slots[0].unavailable, undefined);
   // Defaults: system-card, calendar, music, calendar. Calendar into slot 0 clears the others.
   slots[0].setting.set('calendar');
   slots[0].onChange('calendar');
   assert.deepEqual([...slots].map(slot => slot.setting.get()), ['calendar', 'none', 'music', 'none']);
+  assert.equal(prompts, 0);
+  slots[1].setting.set('music');
+  slots[1].onChange('music');
+  assert.deepEqual([...slots].map(slot => slot.setting.get()), ['calendar', 'music', 'none', 'none']);
+  assert.equal(prompts, 1);
 });
 
 test('every catalog row title is Title Case on the phone', () => {
