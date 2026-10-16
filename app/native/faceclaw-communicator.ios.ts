@@ -173,6 +173,9 @@ class CompassListener extends NSObject {
  * Android so callers never re-enter the bridge from a Kotlin frame.
  */
 export class FaceclawCommunicatorBridge {
+  private static active: FaceclawCommunicatorBridge | null = null;
+  /** The live session, as Android's FaceclawBleCommunicator.getActive(). */
+  static getActive(): FaceclawCommunicatorBridge | null { return FaceclawCommunicatorBridge.active; }
   private readonly communicator: any;
   private readonly listenerProxy: SessionListener;
   private ancsProxy: AncsListener | null = null;
@@ -214,6 +217,7 @@ export class FaceclawCommunicatorBridge {
     this.communicator.setPreviewAnimationListenerListener(() => {
       for (const listener of Array.from(this.previewAnimationListeners)) listener();
     });
+    FaceclawCommunicatorBridge.active = this;
   }
 
   // ----- Kotlin listener entry points (main queue) -----------------------------------
@@ -616,6 +620,7 @@ export class FaceclawCommunicatorBridge {
   }
 
   async close(): Promise<void> {
+    if (FaceclawCommunicatorBridge.active === this) FaceclawCommunicatorBridge.active = null;
     this.setAncsListeners(false);
     this.previewAnimationListeners.clear();
     await this.enqueueNativeCall(() => {

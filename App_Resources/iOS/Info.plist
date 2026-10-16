@@ -31,6 +31,12 @@
   <string>OcuSmart reads your upcoming calendar events to display them in Calendar and Glanceboard on your glasses.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>
   <string>OcuSmart reads your upcoming calendar events to display them in Calendar and Glanceboard on your glasses.</string>
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>OcuSmart saves the glasses screenshots and recordings you choose to keep to your photo library.</string>
+  <key>NSAppleMusicUsageDescription</key>
+  <string>OcuSmart reads what is playing in Apple Music so you can see the track and control playback from your glasses.</string>
+  <key>NSAlarmKitUsageDescription</key>
+  <string>OcuSmart schedules the alarms and timers you set from your glasses so they ring even when the app is closed.</string>
   <key>NSLocationWhenInUseUsageDescription</key>
   <string>OcuSmart uses your location for local weather, turn-by-turn navigation, and true north on the glasses compass.</string>
   <key>NSLocationTemporaryUsageDescriptionDictionary</key>
