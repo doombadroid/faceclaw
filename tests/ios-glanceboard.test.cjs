@@ -128,7 +128,7 @@ function fixture() {
   const modules = {
     "../ui/input-monitor": inputMonitor,
     '../remote/service': { startRemoteInput(host) { remoteHost = host; } },
-    '../assistant/system-tools': { registerSystemTools() {} },
+    '../assistant/system-tools': { registerSystemTools() {} }, '../assistant/bridge-client': { syncAssistantBridgeFromSettings() {} },
     '../assistant/window-tools': { registerWindowTools() {} },
     '../assistant/navigate-tools': { registerNavigateTools() {} },
     '../assistant/roam-tools': { registerRoamTools() {} },

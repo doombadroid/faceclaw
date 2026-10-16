@@ -294,3 +294,14 @@ test('Settings root: Uninstall only on Faceclaw firmware (confirmed, then the fl
   general.rows.find(row => row.title === 'General').onTap();
   assert.deepEqual(general.calls, [['push', 'settings', 'ocusmart/about']]);
 });
+
+test('iOS offers the agent bridge backend and its connection rows on the glasses and the phone', () => {
+  const { settings, load } = harness();
+  assert.deepEqual([...settings.assistantBackendSetting.values], ['direct', 'external']);
+  assert.match(settings.assistantBackendSetting.description, /bridge/);
+  assert.match(settings.assistantBridgeHostSetting.description, /wss:\/\//);
+  const glasses = glassesSettings(load), phone = catalogSettings(load('app/ui/dashboard/settings-catalog.ts'));
+  for (const name of ['assistantBridgeHostSetting', 'assistantBridgePortSetting', 'assistantBridgeTokenSetting', 'assistantAllowProactiveSetting']) {
+    assert.ok(glasses.has(settings[name]) && phone.has(settings[name]), name);
+  }
+});

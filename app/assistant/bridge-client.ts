@@ -1,8 +1,9 @@
 import { AssistantMcpServer } from "./mcp-server";
 import { toolRegistry } from "./tool-registry";
 import type { AssistantContext, AssistantTurnCallbacks, AssistantTurnHandle } from "./types";
-
-declare const com: any;
+import { openSocket, type SocketConnection } from "../native/socket";
+import { APP_NAME } from "../branding";
+import { assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting } from "../ui/dashboard-settings";
 
 /**
  * Dial-out websocket client for the external assistant bridge (an OpenClaw
@@ -50,8 +51,7 @@ type ActiveTurn = {
 
 export class AssistantBridgeClient {
   private options: AssistantBridgeOptions | null = null;
-  private ws: any = null;
-  private listenerProxy: any = null;
+  private ws: SocketConnection | null = null;
   private phase: AssistantBridgePhase = "idle";
   private status = "Not configured.";
   private stopped = true;
@@ -113,7 +113,6 @@ export class AssistantBridgeClient {
       }
       this.ws = null;
     }
-    this.listenerProxy = null;
     this.setState("idle", "Not connected.");
   }
 
@@ -155,9 +154,14 @@ export class AssistantBridgeClient {
   private connect(): void {
     if (this.stopped || this.ws || !this.options) return;
     const { host, port } = this.options;
-    const url = `ws://${host}:${port}`;
+    if (!/^(wss?:\/\/)?[^\s/?#]+$/i.test(host)) {
+      this.setState("failed", `Invalid bridge host: ${host}`);
+      return;
+    }
+    // An explicit wss:// reaches a TLS front end (e.g. tailscale serve), which iOS ATS allows off the LAN.
+    const url = /^wss?:\/\//i.test(host) ? `${host}:${port}` : `ws://${host}:${port}`;
     this.setState("connecting", `Connecting to ${host}:${port}...`);
-    this.listenerProxy = new com.faceclaw.app.FaceclawWebSocketListener({
+    const listener = {
       onOpen: () => {
         if (this.stopped) return;
         this.setState("connecting", "Authenticating...");
@@ -184,9 +188,9 @@ export class AssistantBridgeClient {
         if (this.stopped) return;
         this.handleConnectionLost(`Connection failed: ${String(message)}`);
       },
-    });
+    };
     try {
-      this.ws = new com.faceclaw.app.FaceclawWebSocket(url, this.listenerProxy, null, null);
+      this.ws = openSocket(url, listener);
     } catch (error) {
       this.ws = null;
       this.handleConnectionLost(
@@ -268,7 +272,6 @@ export class AssistantBridgeClient {
 
   private handleConnectionLost(status: string): void {
     this.ws = null;
-    this.listenerProxy = null;
     // Keep a ctl-error status (e.g. "invalid token") in preference to the
     // generic close message that follows it.
     const detail = this.status.startsWith("Bridge error:") ? this.status : status;
@@ -330,5 +333,28 @@ export class AssistantBridgeClient {
   }
 }
 
-/** Process-wide bridge client (main isolate), configured by the dashboard controller. */
+/** Process-wide bridge client (main isolate), configured from settings by the dashboard controllers. */
 export const assistantBridge = new AssistantBridgeClient();
+
+// Bridge settings changes re-dial the connection; unrelated setting changes must not.
+let lastBridgeConfigKey = "";
+
+export function syncAssistantBridgeFromSettings(): void {
+  const host = assistantBridgeHostSetting.get().trim();
+  const port = assistantBridgePortSetting.get().trim();
+  const token = assistantBridgeTokenSetting.get();
+  const key = JSON.stringify([assistantBackendSetting.get(), host, port, token]);
+  if (key === lastBridgeConfigKey) return;
+  lastBridgeConfigKey = key;
+  if (assistantBackendSetting.get() !== "external" || !host || !token) {
+    assistantBridge.stop();
+    return;
+  }
+  assistantBridge.configure({
+    host,
+    port: parseInt(port, 10) || 8790,
+    token,
+    deviceName: APP_NAME.toLowerCase(),
+    allowProactive: () => assistantAllowProactiveSetting.get(),
+  });
+}
