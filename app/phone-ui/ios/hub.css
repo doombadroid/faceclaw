@@ -1,1 +1,20 @@
 /* OcuSmart hub screens. Tokens and shared row styles live in ocusmart.css. */
+
+.os-hub-search { margin: 4 8 0 8; }
+.os-hub-segments { margin: 8 16 0 16; }
+.os-hub-row { padding: 9 16; }
+.os-hub-name { font-size: 16; color: #000000; }
+.os-hub-title { font-size: 20; font-weight: 600; color: #000000; }
+.os-hub-header { padding: 14 16; }
+.os-hub-paragraph { padding: 11 16; }
+.os-hub-initial { color: #FFFFFF; font-weight: 700; horizontal-align: center; vertical-align: center; }
+/* Outranks .os-page Button's transparent reset. */
+.os-page Button.os-hub-pill {
+  background-color: #E9E9EB; color: #0A62D0; border-radius: 15;
+  font-size: 15; font-weight: 700; letter-spacing: 0.015;
+  padding: 5 18; min-width: 74; height: 30;
+}
+
+.ns-dark .os-hub-name,
+.ns-dark .os-hub-title { color: #FFFFFF; }
+.ns-dark .os-page Button.os-hub-pill { background-color: #2C2C2E; color: #4DA3FF; }

@@ -6,6 +6,7 @@
 import { type LayerContext } from "../../ui/layers";
 import { evenHubApi, type EvenHubStoreApp } from "./even-api";
 import { type EvenHubManifest } from "./ehpk";
+import { type EvenHubPermission } from "./permissions";
 import {
   installEvenHubPackageBytes,
   installedEvenHubPackagePath,
@@ -16,10 +17,18 @@ import {
 import { closeRunningPackage } from "./manager";
 import { EvenHubPermissionDialogLayer } from "./permission-dialog";
 
+export type PermissionRequest = {
+  appName: string;
+  permissions: EvenHubPermission[];
+  privacyPolicyUrl: string;
+};
+
 export type StoreInstallOptions = {
   appendLog: (message: string) => void;
   /** Progress text for the caller's status line ("Downloading X...", "Installing..."). */
   onStatus: (status: string) => void;
+  /** Ask the user to allow what the package declares; false cancels the install. */
+  confirmPermissions: (request: PermissionRequest) => Promise<boolean>;
 };
 
 /**
@@ -33,7 +42,6 @@ export type StoreInstallOptions = {
  * goes straight through.
  */
 export async function installStoreApp(
-  ctx: LayerContext,
   app: EvenHubStoreApp,
   options: StoreInstallOptions,
 ): Promise<InstalledEvenHubApp | null> {
@@ -53,32 +61,45 @@ export async function installStoreApp(
   const needsPrompt = (manifest.permissions.length > 0 || privacyPolicyUrl)
     && !alreadyGranted(app.packageId, manifest);
   if (needsPrompt) {
-    const accepted = await new Promise<boolean>((resolve) => {
-      ctx.stack.push(
-        new EvenHubPermissionDialogLayer(
-          manifest.name,
-          manifest.permissions,
-          privacyPolicyUrl,
-          () => resolve(true),
-          () => resolve(false),
-        ),
-      );
-      // Only once the dialog is stacked: an in-process window's requestRender
-      // paints synchronously, and nothing else repaints after a download.
-      options.onStatus("");
-      ctx.actions.requestRender();
+    const accepted = await options.confirmPermissions({
+      appName: manifest.name,
+      permissions: manifest.permissions,
+      privacyPolicyUrl,
     });
     if (!accepted) return null;
   }
 
+  // Both glasses callers' onStatus requests a render.
   options.onStatus("Installing...");
-  ctx.actions.requestRender();
   // A running instance would keep serving the old unpacked runtime; every
   // launch re-unpacks from the stored EHPK, so closing it is enough.
   closeRunningPackage(app.packageId);
   const result = installEvenHubPackageBytes(download.bytes, { expectedPackageId: app.packageId, icon });
   options.appendLog(`evenhub store: installed ${result.packageId} ${result.version} (${download.bytes.length} bytes)`);
   return result;
+}
+
+/** The glasses-drawn permission dialog, for installs started on the glasses. */
+export function confirmOnGlasses(
+  ctx: LayerContext,
+  onStatus: (status: string) => void,
+): (request: PermissionRequest) => Promise<boolean> {
+  return (request) =>
+    new Promise<boolean>((resolve) => {
+      ctx.stack.push(
+        new EvenHubPermissionDialogLayer(
+          request.appName,
+          request.permissions,
+          request.privacyPolicyUrl,
+          () => resolve(true),
+          () => resolve(false),
+        ),
+      );
+      // Only once the dialog is stacked: an in-process window's requestRender
+      // paints synchronously, and nothing else repaints after a download.
+      onStatus("");
+      ctx.actions.requestRender();
+    });
 }
 
 /**

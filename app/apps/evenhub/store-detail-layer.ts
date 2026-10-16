@@ -12,7 +12,7 @@ import {
   setInstalledEvenHubIcon,
   type InstalledEvenHubApp,
 } from "./installed-apps";
-import { cleanError, installStoreApp } from "./store-install";
+import { cleanError, confirmOnGlasses, installStoreApp } from "./store-install";
 import { describeUpdate } from "./updates";
 import { lineStep, listRowHeight } from "../../ui/metrics";
 
@@ -190,12 +190,14 @@ export class EvenHubStoreDetailLayer implements Layer {
     this.working = true;
     ctx.actions.requestRender();
     try {
-      const result = await installStoreApp(ctx, this.app, {
+      const onStatus = (status: string) => {
+        this.status = status;
+        ctx.actions.requestRender();
+      };
+      const result = await installStoreApp(this.app, {
         appendLog: this.options.appendLog,
-        onStatus: (status) => {
-          this.status = status;
-          ctx.actions.requestRender();
-        },
+        onStatus,
+        confirmPermissions: confirmOnGlasses(ctx, onStatus),
       });
       if (!result) {
         this.status = "Installation canceled.";

@@ -11,7 +11,7 @@ import { evenHubApi, EvenHubAuthenticationError, isEvenHubStoreConfigured, type 
 import { clearEvenHubLoginForm, clearEvenHubSession, clearTransientEvenHubSession, evenHubLoginEmailSetting, evenHubLoginPasswordSetting, evenHubRememberMeSetting, resetEvenHubLoginForm } from "./credentials";
 import { getInstalledEvenHubApps, uninstallEvenHubPackage, type InstalledEvenHubApp } from "./installed-apps";
 import { EvenHubStoreDetailLayer, type EvenHubStoreDetailOptions } from "./store-detail-layer";
-import { cleanError, installStoreApp } from "./store-install";
+import { cleanError, confirmOnGlasses, installStoreApp } from "./store-install";
 import { checkForEvenHubUpdates, describeUpdate, type EvenHubAppUpdate } from "./updates";
 import { lineStep } from "../../ui/metrics";
 
@@ -567,12 +567,14 @@ export class EvenHubStoreLayer implements Layer {
         if (this.closed) return;
         const prefix = `${index + 1}/${pending.length} ${row.app.name}: `;
         try {
-          const result = await installStoreApp(ctx, row.app, {
+          const onStatus = (status: string) => {
+            state.status = prefix + (status || "Confirm permissions on the glasses...");
+            ctx.actions.requestRender();
+          };
+          const result = await installStoreApp(row.app, {
             appendLog: this.options.appendLog,
-            onStatus: (status) => {
-              state.status = prefix + (status || "Confirm permissions on the glasses...");
-              ctx.actions.requestRender();
-            },
+            onStatus,
+            confirmPermissions: confirmOnGlasses(ctx, onStatus),
           });
           if (result) {
             installed++;
