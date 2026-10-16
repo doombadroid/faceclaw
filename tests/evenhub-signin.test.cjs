@@ -58,7 +58,7 @@ const loadStoreLayer = ({ configured = false, api = {} } = {}) => {
     },
     './installed-apps': { getInstalledEvenHubApps: () => [], uninstallEvenHubPackage: async () => {} },
     './store-detail-layer': { EvenHubStoreDetailLayer: class { constructor(_app, options) { detailOptions.push(options); } } },
-    './store-install': { cleanError: (error) => String(error?.message ?? error), installStoreApp: async () => {} },
+    './store-install': { cleanError: (error) => String(error?.message ?? error), confirmOnGlasses: () => async () => true, installStoreApp: async () => {} },
     './updates': { checkForEvenHubUpdates: async () => [], describeUpdate: () => '' },
   });
   const { EvenHubStoreLayer } = load('app/apps/evenhub/store-layer.ts');
