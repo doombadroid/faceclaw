@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- OcuSmart app icon, "Twin Lens", dark look. Full-bleed square: iOS applies
+       the icon mask itself, so no rounded corners here. Colours are the
+       placeholders BG_TOP / BG_BOTTOM / GLYPH / ACCENT, filled in by render.sh
+       for the default and tinted appearances. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="BG_TOP"/>
+      <stop offset="1" stop-color="BG_BOTTOM"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect x="150" y="372" width="320" height="270" rx="118" fill="none" stroke="GLYPH" stroke-width="58"/>
+  <rect x="554" y="372" width="320" height="270" rx="118" fill="none" stroke="GLYPH" stroke-width="58"/>
+  <path d="M470 470 Q512 436 554 470" fill="none" stroke="GLYPH" stroke-width="58" stroke-linecap="round"/>
+  <path d="M220 450 L300 450" fill="none" stroke="ACCENT" stroke-width="30" stroke-linecap="round"/>
+  <rect width="1024" height="1024" fill="url(#sheen)"/>
+</svg>
