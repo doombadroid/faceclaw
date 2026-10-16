@@ -1,1 +1,10 @@
 /* OcuSmart update screens. Tokens and shared row styles live in ocusmart.css. */
+.os-update-header { padding: 16; }
+.os-tile.os-update-icon { width: 54; height: 54; border-radius: 13; margin-right: 13; background-color: #1C1C1E; }
+.os-update-icon .os-tile-icon { width: 32; height: 32; }
+.os-update-title { font-size: 20; font-weight: 600; color: #000000; }
+.os-update-body { font-size: 15; color: #000000; margin-top: 12; }
+
+.ns-dark .os-tile.os-update-icon { background-color: #2C2C2E; }
+.ns-dark .os-update-title,
+.ns-dark .os-update-body { color: #FFFFFF; }
