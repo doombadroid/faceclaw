@@ -14,6 +14,7 @@
  * All state lives in the engine (timer-engine.ts); this file only paints it
  * and turns gestures into engine calls.
  */
+import { APP_NAME } from "../../branding";
 import { GrayImage, type UiFont } from "../../graphics/image";
 import { getFont } from "../../graphics/bdffont";
 import { ensurePreinstalledFonts, installedFontPath } from "../../graphics/installed-fonts";
@@ -861,7 +862,9 @@ export class TimersLayer implements Layer {
             issues.length === 0
               ? "No problems found: the phone can ring for alarms when the glasses cannot."
               : issues.map((issue) => `- ${issue.message}`).join("\n") +
-                "\n\nFix these from the warning triangle on the phone's home screen.";
+                (global.isIOS
+                  ? `\n\nFix these in iPhone Settings > ${APP_NAME} > Notifications.`
+                  : "\n\nFix these from the warning triangle on the phone's home screen.");
           ctx.stack.push(new TextPageLayer("Phone alarm check", body));
         },
       },
