@@ -1,5 +1,5 @@
 import { finishOnboardingNavigation } from "./onboarding-navigation";
-import { Frame, Observable, Screen } from "@nativescript/core";
+import { Frame, Observable, Screen, Utils } from "@nativescript/core";
 import { IOS_PRIVACY_NOTICE } from "../analytics/privacy-disclosure";
 import { APP_NAME } from "../branding";
 
@@ -150,7 +150,8 @@ export class OnboardingViewModel extends Observable {
     return Math.min(480, Math.round((global.isIOS ? this._pageHeight : Screen.mainScreen.heightDIPs) * 0.4));
   }
 
-  private _pageHeight = 0;
+  // Seeded from the window (the page fills it) so the first frame already has the logo.
+  private _pageHeight = global.isIOS ? Utils.getWindow<UIWindow>()?.bounds.size.height ?? 0 : 0;
 
   /** iOS only: the page's laid-out height, from onboarding-page's layoutChanged. */
   setPageHeight(height: number): void {

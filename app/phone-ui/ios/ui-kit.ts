@@ -1,4 +1,4 @@
-import { GridLayout, Image, Label, Page, ScrollView, StackLayout, Switch, type PropertyChangeData, type View } from '@nativescript/core'
+import { GridLayout, Image, Label, Page, ScrollView, StackLayout, Switch, Utils, type PropertyChangeData, type View } from '@nativescript/core'
 
 // Code-built inset-grouped lists. ListView is a plain UITableView, so sections
 // are StackLayouts; colours live in kit.css (light + .ns-dark).
@@ -39,7 +39,9 @@ export function readableMargin(width: number, max = READABLE_WIDTH): number {
 /**
  * Keeps `targets` in a centred column at most `max` wide, from `measured`'s
  * width: no size class, so a Split View pane and a fold behave the same.
- * Margins, not padding, so the targets' own CSS padding stays.
+ * Margins, not padding, so the targets' own CSS padding stays. Its own side
+ * safe-area insets come off first: NativeScript stretches a container's frame
+ * across them but lays its children out inside them.
  */
 export function readableColumn(measured: View, targets: () => View[], max = READABLE_WIDTH): void {
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -48,7 +50,9 @@ export function readableColumn(measured: View, targets: () => View[], max = READ
     // Deferred out of UIKit's layout pass, which would drop the new layout request.
     timer = setTimeout(() => {
       timer = null
-      const margin = readableMargin(measured.getActualSize().width, max)
+      const insets = measured.getSafeAreaInsets()
+      const width = measured.getActualSize().width - Utils.layout.toDeviceIndependentPixels(insets.left + insets.right)
+      const margin = readableMargin(width, max)
       for (const view of targets()) {
         if (view.marginLeft === margin && view.marginRight === margin) continue
         view.marginLeft = margin; view.marginRight = margin

@@ -180,9 +180,11 @@ function setupPage() {
     on(event, fn) { this.events.set(event, fn); }
     addChild(view) { this.children.push(view); }
     getActualSize() { return { width: this.width ?? 0, height: 0 }; }
+    getSafeAreaInsets() { return { left: (this.side ?? 0) * 3, top: 0, right: (this.side ?? 0) * 3, bottom: 0 }; }
     static setRow(view, row) { view.row = row; } static setColumn(view, col) { view.col = col; }
   }
-  const core = { Button: View, GridLayout: View, Image: View, Label: View, Page: View, ScrollView: View, StackLayout: View };
+  const core = { Button: View, GridLayout: View, Image: View, Label: View, Page: View, ScrollView: View, StackLayout: View,
+    Utils: { layout: { toDeviceIndependentPixels: px => px / 3 } } };
   const setup = load('app/phone-ui/ios/setup-page.ts', {
     '@nativescript/core': core,
     './ui-kit': load('app/phone-ui/ios/ui-kit.ts', { '@nativescript/core': core }, { setTimeout: fn => { fn(); return null; } }),
@@ -215,6 +217,8 @@ test('Set Up narrows its text and Continue to a centred 500pt column in wide win
   assert.deepEqual(sides(), [[225.5, 225.5], [225.5, 225.5]], 'iPhone Duo inner display');
   root.width = 475; root.events.get('layoutChanged')();
   assert.deepEqual(sides(), [[0, 0], [0, 0]], 'narrowed again (a fold, a Split View pane)');
+  root.side = 59; root.width = 852; root.events.get('layoutChanged')();
+  assert.deepEqual(sides(), [[117, 117], [117, 117]], 'landscape notched iPhone: 500pt, centred inside the 59pt side insets');
 });
 
 test('Set Up describes what the pairing flow actually asks for', () => {
@@ -237,8 +241,9 @@ test('Set Up describes what the pairing flow actually asks for', () => {
 test('onboarding sizes its logo from the page on iOS and from the screen, as before, on Android', () => {
   const model = isIOS => {
     class Observable { notifyPropertyChange(name, value) { this.notified = [name, value]; } }
+    const Utils = { getWindow() { if (!isIOS) throw new Error('window read on Android'); return { bounds: { size: { height: 812 } } }; } };
     const { OnboardingViewModel } = load('app/phone-ui/onboarding-view-model.ts', {
-      './onboarding-navigation': {}, '@nativescript/core': { Observable, Frame: {}, Screen: { mainScreen: { heightDIPs: 800 } } },
+      './onboarding-navigation': {}, '@nativescript/core': { Observable, Frame: {}, Screen: { mainScreen: { heightDIPs: 800 } }, Utils },
       '../analytics/privacy-disclosure': { IOS_PRIVACY_NOTICE: '' }, './onboarding-state': {}, '../branding': { APP_NAME: 'X' },
     }, { global: { isIOS } });
     return new OnboardingViewModel(1);
@@ -246,6 +251,7 @@ test('onboarding sizes its logo from the page on iOS and from the screen, as bef
   const android = model(false);
   assert.equal(android.logoHeight, 320, '40% of the screen');
   const ios = model(true);
+  assert.equal(ios.logoHeight, 325, 'the first frame already has the logo, from the window');
   ios.setPageHeight(669);
   assert.deepEqual(ios.notified, ['logoHeight', 268], 'the page, not the 800pt screen');
   ios.setPageHeight(393);
@@ -267,7 +273,7 @@ test('onboarding names the app OcuSmart on iOS and stays byte-identical on Andro
     const branding = load('app/branding.ts', {}, { global: { isIOS } });
     class Observable { notifyPropertyChange() {} }
     const { OnboardingViewModel } = load('app/phone-ui/onboarding-view-model.ts', {
-      './onboarding-navigation': {}, '@nativescript/core': { Observable, Frame: {}, Screen: { mainScreen: { heightDIPs: 800 } } },
+      './onboarding-navigation': {}, '@nativescript/core': { Observable, Frame: {}, Screen: { mainScreen: { heightDIPs: 800 } }, Utils: { getWindow: () => undefined } },
       '../analytics/privacy-disclosure': { IOS_PRIVACY_NOTICE: '' }, './onboarding-state': {}, '../branding': branding,
     }, { global: { isIOS } });
     return [new OnboardingViewModel(1).headline, new OnboardingViewModel(3).body];

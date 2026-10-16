@@ -152,6 +152,10 @@ test('My Glasses caps the lens mirror to the visible height and 560pt, keeping 4
   assert.deepEqual(size(337, 852), [337, 252.75], 'iPhone portrait: card-wide, as before');
   assert.deepEqual(size(694, 393), [310.6666666666667, 233], 'iPhone landscape: the page height minus 160pt, not 520pt tall');
   assert.deepEqual(size(895, 669), [560, 420], 'iPhone Duo inner display: 560pt wide, not 671pt tall in a 669pt window');
+  page.setState({ ...connected, battery: 12 });
+  const rebuilt = page.mirror();
+  assert.notEqual(rebuilt, lens);
+  assert.deepEqual([rebuilt.width, rebuilt.height], [560, 420], 'a rebuilt mirror starts capped, not card-wide for a frame');
   assert.equal(page.api.lensMirrorWidth(300, 100), 0, 'never negative');
   const before = [lens.width, lens.height];
   page.page.height = 0; slot.width = 100; slot.handlers.layoutChanged();

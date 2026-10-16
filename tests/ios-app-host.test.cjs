@@ -221,10 +221,13 @@ test('iOS grouped lists centre a 672pt column in wide windows, whatever column t
     events = new Map(); actionBar = { set() {}, setColor() {} };
     on(event, fn) { this.events.set(event, fn); }
     getActualSize() { return { width: this.width ?? 0, height: 0 }; }
+    // Device pixels at 3x, as NativeScript reports them.
+    getSafeAreaInsets() { return { left: (this.side ?? 0) * 3, top: 0, right: (this.side ?? 0) * 3, bottom: 0 }; }
     removeChildren() {}
   }
   const timers = [];
-  const kit = load('app/phone-ui/ios/ui-kit.ts', { require: () => ({ Page: View, ScrollView: View, StackLayout: View }),
+  const Utils = { layout: { toDeviceIndependentPixels: px => px / 3 } };
+  const kit = load('app/phone-ui/ios/ui-kit.ts', { require: () => ({ Page: View, ScrollView: View, StackLayout: View, Utils }),
     setTimeout: fn => { timers.push(fn); return timers.length; } });
   const { page } = kit.groupedPage({ title: 'Hub', build() {} });
   const scroll = page.content, list = scroll.content;
@@ -238,6 +241,9 @@ test('iOS grouped lists centre a 672pt column in wide windows, whatever column t
   const hubColumn = new View(); scroll.content = hubColumn;
   resize(800);
   assert.deepEqual([hubColumn.marginLeft, hubColumn.marginRight], [64, 64], "Hub's whole column, search bar included");
+  // NativeScript stretches the scroll view's frame across the side insets but lays the column out inside them.
+  scroll.side = 59; resize(852);
+  assert.deepEqual([hubColumn.marginLeft, hubColumn.marginRight], [31, 31], 'landscape notched iPhone: 672pt inside its 59pt side insets');
   assert.equal(kit.readableMargin(600), 0);
 });
 

@@ -88,6 +88,8 @@ export function createPage(): Page {
   const runtime = getRuntime(), controller = runtime.controller
   let shown = ''
   let mirror: Image | null = null
+  // The last capped width, so a rebuilt mirror starts at it rather than card-wide for a frame.
+  let lensWidth = 0
   const { page, refresh } = groupedPage({ title: 'My Glasses', build: container => {
     const state = controller.connectionState, connected = runtime.connected, warning = reportedState(state)?.firmwareWarning
     shown = shownKey(state, runtime.evenHubButton)
@@ -111,6 +113,7 @@ export function createPage(): Page {
     // src, not imageSource: teardown nulls an imageSource's native image, and this one is the runtime's shared cached frame.
     if (runtime.frame) view.src = runtime.frame.image
     view.horizontalAlignment = 'center'
+    if (lensWidth > 0) { view.width = lensWidth; view.height = lensWidth * 3 / 4 }
     view.on('tap', () => pushInTab('glasses', 'ocusmart/remote'))
     // The slot stretches to the card, so its width is what the mirror may use.
     const slot = new GridLayout()
@@ -120,6 +123,7 @@ export function createPage(): Page {
       const height = page.getActualSize().height
       const width = lensMirrorWidth(slot.getActualSize().width, height)
       if (height <= 0 || width <= 0 || (view.width === width && view.height === width * 3 / 4)) return
+      lensWidth = width
       view.width = width; view.height = width * 3 / 4
     }, 0))
     const lens = new StackLayout()
