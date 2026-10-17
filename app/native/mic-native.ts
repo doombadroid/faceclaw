@@ -6,6 +6,7 @@
 import { Utils } from "@nativescript/core";
 
 import { toJavaBytes } from "./cloud-stt";
+import { toUint8Array } from "../util/array-util";
 import { isAsrModelReady } from "./asr-model";
 
 declare const android: any;
@@ -65,6 +66,22 @@ export function embeddingToFloat32(javaFloats: any): Float32Array {
   const out = new Float32Array(length);
   for (let i = 0; i < length; i++) out[i] = Number(javaFloats[i]);
   return out;
+}
+
+/** The CFW mic_control forwarding listener; keep it referenced while forwarding runs. */
+export function createForwardingListener(handler: (packet: Uint8Array, arm: string) => void): any {
+  return new com.faceclaw.app.FaceclawAudioPacketListener({
+    onAudioPacket: (data: any, arm: string, _arrivalMs: number) => handler(toUint8Array(data), String(arm)),
+  });
+}
+
+/** False before Connect or while another capture holds the glasses mic. */
+export function startForwarding(communicator: any, listener: any): boolean {
+  return Boolean(communicator.startG2AudioForwarding(listener));
+}
+
+export function stopForwarding(communicator: any): void {
+  communicator?.stopG2AudioForwarding();
 }
 
 export function createWavRecorder(path: string, sampleRate: number, channels: number): any {

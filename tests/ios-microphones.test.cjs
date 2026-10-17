@@ -151,3 +151,19 @@ test('iOS conversation detail plays its recording and offers Delete from one Mor
   // No speakers on iOS yet, so no Split; Delete removes the row and goes back.
   assert.deepEqual(calls.slice(3).map(call => JSON.stringify(call)), ['["action",["Delete conversation"]]', '["delete",4]', '["back"]']);
 });
+
+test('iOS 4-mic forwarding runs through the session bridge and its capture-slot owner', () => {
+  const { mic } = setup();
+  const packets = [], bridge = { calls: [], startAudioForwarding(fn) { this.calls.push('start'); this.fn = fn; return this.free; },
+    stopAudioForwarding() { this.calls.push('stop'); }, free: true };
+  const listener = mic.createForwardingListener((packet, arm) => packets.push([[...packet], arm]));
+  assert.equal(mic.startForwarding(bridge, listener), true);
+  bridge.fn(new Uint8Array([1, 2]), 'L');
+  assert.deepEqual(packets, [[[1, 2], 'L']]);
+  bridge.free = false;
+  assert.equal(mic.startForwarding(bridge, listener), false, 'refused while the voice mic holds the slot');
+  mic.stopForwarding(bridge); mic.stopForwarding(null);
+  assert.deepEqual(bridge.calls, ['start', 'start', 'stop']);
+  // mic-session reaches the glasses only through the seam and the bridge lookup.
+  assert.doesNotMatch(fs.readFileSync('app/apps/microphones/mic-session.ts', 'utf8'), /\bcom\.faceclaw|\bjava\.|Utils\.android|isAndroid/);
+});

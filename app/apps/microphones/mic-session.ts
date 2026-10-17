@@ -1,6 +1,5 @@
 import { addCompassListener, setCompassEnabled } from "../../native/compass";
 import { encodeBase64 } from "../../native/cloud-stt";
-import { toUint8Array } from "../../util/array-util";
 import { voiceControlBridge } from "../../native/voice-control";
 import { voiceActivity } from "../../ui/shell/voice-activity";
 import { onSettingsStoreChanged } from "../../native/settings-store";
@@ -10,6 +9,7 @@ import {
   conversationStore,
   createCaptionEngine,
   createCaptionListener,
+  createForwardingListener,
   createNoiseSuppressor,
   createWavRecorder,
   deleteFile,
@@ -18,6 +18,8 @@ import {
   prepareCaptions,
   recordingsDir,
   repairWavHeader,
+  startForwarding,
+  stopForwarding,
   toNativePcm,
   transcodeRecording,
 } from "../../native/mic-native";
@@ -80,7 +82,6 @@ import { postAmbientCard } from "../../ui/shell/ambient-cards";
 import { formatRelativeTime } from "../../util/date-util";
 import { deviceLanguage, identifyLanguage, translateText } from "./translate";
 
-declare const com: any;
 
 /**
  * The Microphones session: owns mic capture while the app window is open,
@@ -560,7 +561,7 @@ class MicSession {
       if (this.mode === "extended" && this.captureUp) {
         micArrayController.stopStreaming();
         try {
-          this.nativeCommunicator()?.stopG2AudioForwarding();
+          stopForwarding(this.nativeCommunicator());
         } catch {
           // Disconnected; nothing to stop.
         }
@@ -627,7 +628,7 @@ class MicSession {
     const communicator = this.nativeCommunicator();
     if (!communicator?.isSessionReady()) return false;
     if (!communicator.isAudioCaptureActive()) {
-      if (!this.forwardingProxy || !communicator.startG2AudioForwarding(this.forwardingProxy)) return false;
+      if (!this.forwardingProxy || !startForwarding(communicator, this.forwardingProxy)) return false;
       // Routine after the voice dialog or a reconnect; the frame check below
       // reports a stall if the temples don't start streaming.
       return this.armExtended() && !this.captureStalled;
@@ -822,12 +823,8 @@ class MicSession {
       ["left", new TempleAudioPipeline("left", SAMPLE_RATE)],
       ["right", new TempleAudioPipeline("right", SAMPLE_RATE)],
     ]);
-    this.forwardingProxy = new com.faceclaw.app.FaceclawAudioPacketListener({
-      onAudioPacket: (data: any, arm: string, _arrivalMs: number) => {
-        this.handleExtendedPacket(toUint8Array(data), String(arm));
-      },
-    });
-    if (!communicator.startG2AudioForwarding(this.forwardingProxy)) return false;
+    this.forwardingProxy = createForwardingListener((data, arm) => this.handleExtendedPacket(data, arm));
+    if (!startForwarding(communicator, this.forwardingProxy)) return false;
     return this.armExtended();
   }
 
@@ -851,7 +848,7 @@ class MicSession {
     micArrayController.stopStreaming();
     const communicator = this.nativeCommunicator();
     try {
-      communicator?.stopG2AudioForwarding();
+      stopForwarding(communicator);
     } catch {
       // Already disconnected.
     }

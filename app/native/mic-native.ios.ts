@@ -115,6 +115,20 @@ export function embeddingToFloat32(_embedding: unknown): Float32Array {
   return new Float32Array(0);
 }
 
+/** The bridge takes a plain function and owns its native proxy. */
+export function createForwardingListener(handler: (packet: Uint8Array, arm: string) => void): any {
+  return handler;
+}
+
+/** False before Connect or while the voice mic (STT or the raw tap) holds the capture slot. */
+export function startForwarding(communicator: any, listener: (packet: Uint8Array, arm: string) => void): boolean {
+  return communicator.startAudioForwarding((packet: Uint8Array, arm: string) => listener(packet, arm));
+}
+
+export function stopForwarding(communicator: any): void {
+  communicator?.stopAudioForwarding();
+}
+
 export function createWavRecorder(path: string, sampleRate: number, channels: number): any {
   const recorder = FaceclawKitIosWavRecorder.alloc().initWithPathSampleRateChannels(path, sampleRate, channels);
   if (!recorder.isOpen()) throw new Error(`could not create ${path}`);
