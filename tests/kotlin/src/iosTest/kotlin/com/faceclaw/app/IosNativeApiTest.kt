@@ -72,4 +72,15 @@ class IosNativeApiTest {
         val short = byteArrayOf(9, 0, 9, 0, 1).data()
         assertContentEquals(short.byteArray(), protocol.tone(short, 2.2f, true).byteArray(), "a malformed packet passes through")
     }
+
+    @Test
+    fun videoPlayerReportsUnplayableFilesAndHasNoFrameBeforeStart() {
+        val player = IosVideoPlayer()
+        assertTrue(player.probe("/nonexistent.mp4").contains("\"error\""))
+        assertNull(player.lastFrame(4, 2))
+        player.start("/nonexistent.mp4", 0, 0, false, 2.2f, false, 0.0)
+        assertFalse(player.isPlaying(), "a zero-size rect never starts")
+        assertEquals(0.0, player.positionMs())
+        player.stop()
+    }
 }

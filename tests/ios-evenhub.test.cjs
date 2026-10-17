@@ -42,8 +42,8 @@ test('Files on iOS exposes Run app for EHPKs and passes the selected local path'
   });
   load('app/apps/files/files-app.ts').createFilesAppWindow({ openEhpkApp: path => { opened = path; }, installEhpkApp: path => { installed = path; } });
   assert.equal(browserOptions.isSupportedFile('test.EHPK'), true);
-  // Video playback is Android-only for now.
-  assert.equal(browserOptions.isSupportedFile('clip.mp4'), false);
+  assert.equal(browserOptions.isSupportedFile('clip.mp4'), true);
+  assert.equal(browserOptions.isSupportedFile('clip.mkv'), false);
   const ctx = { stack: { push() {}, pop() {} } };
   browserOptions.onFilePicked({ name: 'test.ehpk', path: '/Documents/test.ehpk' }, ctx);
   assert.deepEqual(Array.from(actions, a => a.label), ['Run app', 'Install']);
@@ -53,7 +53,7 @@ test('Files on iOS exposes Run app for EHPKs and passes the selected local path'
   browserOptions.onFilePicked({ name: 'photo.heic', path: '/Documents/photo.heic' }, ctx);
   assert.deepEqual(Array.from(actions, a => a.label), ['View here', 'Open in new window']);
   browserOptions.onFilePicked({ name: 'clip.mp4', path: '/Documents/clip.mp4' }, ctx);
-  assert.equal(actions.length, 0);
+  assert.deepEqual(Array.from(actions, a => a.label), ['Play video']);
 });
 
 test('iOS image files decode through ImageIO and take the photo tone in Kotlin', () => {
@@ -237,4 +237,39 @@ test('EvenHub buzzer RPC uses the host action on iOS and chunks and paces long s
   await h.session.dispatchExtension('playBuzzer', [[null, { freq: 'bad', ms: 10 }]]);
   assert.equal(played.length, 2);
   h.session.close();
+});
+
+test('iOS video player drives the Kotlin AVPlayer wrapper and decodes probes and frames', () => {
+  const calls = [];
+  const native = new Proxy({}, { get: (_, name) => (...args) => {
+    calls.push([name, ...args]);
+    if (name === 'probePath') return args[0] === '/bad.mov' ? '{"error":"No playable video track"}'
+      : '{"width":360,"height":640,"rotation":90,"durationMs":1500,"hasAudio":true}';
+    if (name === 'lastFrameWidthHeight') return args[0] === 2 ? { bytes: [7, 8] } : null;
+    if (name === 'positionMs') return 1234.5;
+    if (name === 'isPlaying') return 1;
+  } });
+  const api = loader({ console, interop: { bufferFromData: d => new Uint8Array(d.bytes).buffer },
+    FaceclawKitIosVideoPlayer: { new: () => native }, FaceclawKitIosVideoListener: 'video' }, {
+    './kotlin-listener.ios': { kotlinListener: (protocol, methods) => ({ protocol, ...methods }) },
+    '../graphics/image': { GrayImage: class { constructor(w, h) { this.width = w; this.height = h; this.pixels = new Uint8Array(w * h); } } },
+  })('app/native/video-player.ios.ts');
+  assert.deepEqual(['a.MOV', 'b.mp4', 'c.m4v', 'd.mkv', 'e.webm'].map(api.isPlayableVideoFile), [true, true, true, false, false]);
+  assert.deepEqual({ ...api.probeVideo('/a.mov') }, { width: 360, height: 640, durationMs: 1500, hasAudio: true });
+  assert.deepEqual({ ...api.probeVideo('/bad.mov') }, { error: 'No playable video track' });
+  const events = [];
+  const player = new api.VideoPlayer({ onState: (s, ms) => events.push([s, ms]), onError: m => events.push(['error', m]),
+    onFrame: () => events.push(['frame']) });
+  const listener = calls.find(c => c[0] === 'setListenerListener')[1];
+  assert.equal(listener.protocol, 'video');
+  listener.onStateChangedStatePositionMs('ended', 1500); listener.onErrorMessage('bad'); listener.onFrame();
+  assert.deepEqual(events, [['ended', 1500], ['error', 'bad'], ['frame']]);
+  player.start({ path: '/a.mov', surfaceId: 's', rect: { x: 5, y: 6, width: 300.4, height: 168.6 }, monochrome: false, gamma: 2.2, audio: true, startMs: -3 });
+  assert.deepEqual(calls.at(-1), ['startPathWidthHeightMonochromeGammaAudioStartMs', '/a.mov', 300, 169, false, 2.2, true, 0]);
+  player.seekTo(-5); assert.deepEqual(calls.at(-1), ['seekToPositionMs', 0]);
+  assert.equal(player.positionMs(), 1234.5); assert.equal(player.isPlaying(), true);
+  assert.deepEqual([...player.lastFrame(2, 1).pixels], [7, 8]);
+  assert.equal(player.lastFrame(4, 4), null);
+  player.pause(); player.resume(); player.stop(); player.release();
+  assert.deepEqual(calls.slice(-5).map(c => c[0]), ['pause', 'resume', 'stop', 'stop', 'setListenerListener']);
 });

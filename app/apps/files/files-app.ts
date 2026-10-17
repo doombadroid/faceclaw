@@ -49,8 +49,7 @@ export function createFilesAppWindow(options: FilesAppOptions): InProcessWindow 
   let created: InProcessWindow | null = null;
   const browser = new FileBrowserLayer({
     isSupportedFile: (name) =>
-      TEXT_FILE.test(name) || isFontFile(name) || EHPK_FILE.test(name) || isDecodableImageFile(name) ||
-      (!global.isIOS && isPlayableVideoFile(name)),
+      TEXT_FILE.test(name) || isFontFile(name) || EHPK_FILE.test(name) || isDecodableImageFile(name) || isPlayableVideoFile(name),
     // The browser handles double-click itself (up a level), so it is not
     // wrapped in YieldAtRootLayer; it yields explicitly from the top level.
     onLeave: () => shell.yieldFocusToSidebar(),
@@ -175,7 +174,6 @@ function confirmEhpkPermissions(ctx: LayerContext, entry: DirectoryEntry, procee
  * window for viewable types, empty for everything else (metadata only).
  */
 function fileOpenActions(entry: DirectoryEntry, options: FilesAppOptions): FileInfoAction[] {
-  if (global.isIOS && isPlayableVideoFile(entry.name)) return [];
   if (TEXT_FILE.test(entry.name)) {
     return [
       {
