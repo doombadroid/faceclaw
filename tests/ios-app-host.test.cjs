@@ -665,6 +665,7 @@ test('iOS screen recording captures once a second and is saved before its displa
   const preview = target('preview'), session = target('session');
   const host = Object.assign(Object.create(IosPreviewController.prototype), {
     previewTarget: preview, communicator: null, recordTimer: null, sessionOffs: [], glance: { reset() {} },
+    evenHub: { cancelSuspendTimer() {}, wakeLeaseState: null }, evenHubEngaged: false,
     logBluetooth: message => logs.push(message) });
   assert.equal(host.stopScreenRecording(), '', 'idle');
   host.startScreenRecording(); host.startScreenRecording();

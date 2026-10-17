@@ -93,8 +93,9 @@ test('the phone catalog lists exactly the settings the glasses offer on iOS, min
     const glasses = glassesSettings(load);
     for (const name of IOS_INERT) assert.ok(glasses.has(settings[name]), `${name} is still listed on the glasses (else drop it from IOS_INERT)`);
     // The iOS filter in settings-menus.ts already removed these; the catalog must not bring them back.
-    for (const name of ['watchRemoteEnabledSetting', 'suspendEvenHubWhenScreenOffSetting'])
-      assert.ok(!glasses.has(settings[name]), name);
+    assert.ok(!glasses.has(settings.watchRemoteEnabledSetting), 'watchRemoteEnabledSetting');
+    // EvenHub suspend runs on iOS (off by default there).
+    assert.ok(glasses.has(settings.suspendEvenHubWhenScreenOffSetting), 'suspendEvenHubWhenScreenOffSetting');
     // Mic control only drives the Microphones app, so it shows once that is ported.
     assert.equal(glasses.has(settings.useMicControlSetting), micsPorted, position);
     for (const name of ['screenTimeoutSetting', 'ringConnectionModeSetting', 'firmwareDebugFlagsSetting', 'saveVoiceRecordingsSetting'])

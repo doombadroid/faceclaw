@@ -149,7 +149,7 @@ function fixture() {
     "../native/imu.ios": imu,
     '@nativescript/core': { File: { fromPath: () => ({ writeTextSync() {} }) },
       knownFolders: { documents: () => ({ path: '/tmp' }) }, path },
-    '../native/ios-voice-input': { iosVoiceInput: { handleSessionEnded() {}, stopPhoneCapture() {}, hasSuspendedCapture: () => false } },
+    '../native/ios-voice-input': { iosVoiceInput: { handleSessionEnded() {}, stopPhoneCapture() {}, hasSuspendedCapture: () => false, isCaptureHeld: () => false } },
     '../ui/shell/voice-activity': { voiceActivity: { setActive() {} } },
     '../native/faceclaw-communicator.ios': { FaceclawCommunicatorBridge, resolveIosPeripherals: async addresses => addresses },
     '../native/preview-display.ios': { PreviewDisplayTarget },
@@ -157,6 +157,9 @@ function fixture() {
     '../native/nightscout-bridge': { nightscoutBridge: { async start() {}, async stop() {} } },
     '../native/weather': { weatherBridge: { setSessionActive() {} } },
     './glance-host': { GlanceHost }, './events': events,
+    // The shared suspender runs for real with its setting off (the iOS default): it stays idle.
+    './evenhub-suspend': load('app/g2/evenhub-suspend.ts', { '../native/frame-timings': timings,
+      '../ui/dashboard-settings': { suspendEvenHubWhenScreenOffSetting: { get: () => false } } }),
     // Whole-panel mirror: the pixel assertions below index the full 640x480 preview.
     './phone-preview-crop': { phonePreviewCrop: () => null, mirrorToPanelFraction: (_crop, nx, ny) => ({ nx, ny }) },
     './lock-screen': { LOCK_SCREEN_SURFACE_ID: 'lock-screen', LOCK_SCREEN_TIMEOUT_MS: 15_000, createLockScreenImage: () => new images.GrayImage(640, 480, 123) },
@@ -171,7 +174,7 @@ function fixture() {
     '../apps/onboarding/onboarding-progress': { claimGlassesOnboardingAutoLaunch: () => false },
     '../branding': { APP_NAME: 'OcuSmart' },
     '../ui/shell/worker-window': {}, '../ui/shell/in-process-window': {},
-    '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, brightnessSettingToLevel: () => null, getBrightnessPreferences: () => ({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0,1000:100', fadeMs: 280 }), lockScreenEnabledSetting: { get: () => settings.lock }, onAnySettingChanged: fn => { settingsChanged = fn; return () => {}; }, previewColorSetting: { get: () => 'white' },
+    '../ui/dashboard-settings': { suspendEvenHubWhenScreenOffSetting: { get: () => false }, brightnessSetting: { get: () => 'auto' }, brightnessSettingToLevel: () => null, getBrightnessPreferences: () => ({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0,1000:100', fadeMs: 280 }), lockScreenEnabledSetting: { get: () => settings.lock }, onAnySettingChanged: fn => { settingsChanged = fn; return () => {}; }, previewColorSetting: { get: () => 'white' },
       screenTimeoutSetting: { get: () => settings.timeout }, screenTimeoutSettingToMs: value => value === 'never' ? null : parseInt(value, 10) * 1000,
       ringConnectionModeSetting: { get: () => settings.ringMode }, firmwareDebugFlagsSetting: { get: () => settings.debugFlags } },
     '../native/phone-battery': { readPhoneBatteryState: () => ({ battery: 80, charging: false }) },

@@ -24,6 +24,7 @@ import { FaceclawCommunicatorBridge, resolveIosPeripherals, type CommunicatorSta
 import { PreviewDisplayTarget, type DisplayTarget } from '../native/preview-display.ios'
 import { AncsClient, ANCS_FIRMWARE_VERSION } from './ancs-client'
 import { GlanceHost, type GlanceDisplay } from './glance-host'
+import { EvenHubSuspender } from './evenhub-suspend'
 import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID, LOCK_SCREEN_TIMEOUT_MS } from './lock-screen'
 import { OsEventTypeList } from './events'
 import { loadDeviceAddresses } from './device-addresses'
@@ -52,7 +53,8 @@ import { onAnySettingChanged,
   previewColorSetting, lockScreenEnabledSetting, getBrightnessPreferences, getStringSettingById,
   nightscoutSiteUrlSetting, nightscoutApiTokenSetting, voiceProviderSetting, elevenLabsApiKeySetting,
   openAiApiKeySetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs,
-  ringConnectionModeSetting, firmwareDebugFlagsSetting, saveVoiceRecordingsSetting } from '../ui/dashboard-settings'
+  ringConnectionModeSetting, firmwareDebugFlagsSetting, saveVoiceRecordingsSetting,
+  suspendEvenHubWhenScreenOffSetting } from '../ui/dashboard-settings'
 import type { VoiceProviderSelection } from '../native/cloud-stt-provider'
 import type { PhoneGesture } from '../phone-ui/phone-gestures'
 import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from '../apps/onboarding/onboarding-progress'
@@ -117,18 +119,47 @@ export class IosPreviewController {
     getDisplay: () => this.display ? this.glanceDisplay : null,
     getProvider: () => ALL_APPS.find(app => app.glanceboard)?.glanceboard ?? null,
     canShow: () => this.runtimeNeeded && !this.glassesLocked,
-    // iOS retains the EvenHub session while the shell sleeps. The board's
-    // opaque first frame is ready before we unblank the compositor.
-    ensureSessionActive: async () => {
+    // The board's opaque first frame is ready before we unblank the compositor.
+    // A suspended EvenHub session (an opt-in developer setting) resumes first.
+    ensureSessionActive: async frameId => {
+      if (this.evenHubAsleep()) return this.evenHub.ensureActive(frameId)
       await this.display?.setScreenBlanked(false); this.schedulePreviewUpdate(); return true
     },
     onHiddenWhileAsleep: () => {
-      if (!shell.isScreenOn()) void this.display?.setScreenBlanked(true).then(() => this.schedulePreviewUpdate())
-      else this.schedulePreviewUpdate()
+      if (!shell.isScreenOn()) {
+        void this.display?.setScreenBlanked(true).then(() => this.schedulePreviewUpdate())
+        this.evenHub.scheduleSuspend()
+      } else this.schedulePreviewUpdate()
     },
     onVisibilityChanged: () => this.schedulePreviewUpdate(),
     appendLog: message => this.logBluetooth(message),
   })
+  // Developer > Suspend EvenHub when screen off: shared with Android, off by default
+  // on iOS. iOS only holds the wake lease for it (Android also for the wake word).
+  private readonly evenHub = new EvenHubSuspender({
+    communicator: () => this.communicator,
+    phase: () => this.state.phase,
+    isScreenOn: () => shell.isScreenOn(),
+    glanceVisible: () => this.glance.isVisible(),
+    captureHeld: () => iosVoiceInput.isCaptureHeld(),
+    wantsWakeLease: () => this.firmwareCompatible && suspendEvenHubWhenScreenOffSetting.get(),
+    wakePreview: async () => {
+      if (!this.display) return false
+      await this.display.setScreenBlanked(false); this.schedulePreviewUpdate(); return true
+    },
+    onSuspended: () => iosVoiceInput.handleSessionEnded(),
+    log: message => this.logBluetooth(message),
+    formatError: error => error instanceof Error ? error.message : String(error),
+  })
+  /** The EvenHub session is suspended, or a wake barrier is restoring it. */
+  private evenHubAsleep(): boolean { return this.evenHub.suspended || !!this.evenHub.resumePromise }
+  // The setting was on at some point this session. Until then nothing (not even a
+  // lease release) goes to the glasses, so the default-off path is unchanged.
+  private evenHubEngaged = false
+  private syncEvenHub(): void {
+    if (suspendEvenHubWhenScreenOffSetting.get()) this.evenHubEngaged = true
+    if (this.evenHubEngaged) this.evenHub.syncScreenOffSetting()
+  }
   private previewTimer: ReturnType<typeof setTimeout> | null = null
   private recordTimer: ReturnType<typeof setInterval> | null = null
   /** The screen area the mirror's image shows (Preview scaling), or null for the whole panel. */
@@ -220,8 +251,11 @@ export class IosPreviewController {
         this.requestShellRender()
       },
       onScreenStateChanged: on => {
-        if (on) this.glance.dismiss()
-        void this.display?.setScreenBlanked(!on).catch(error => this.fail(error))
+        if (on) { this.glance.dismiss(); this.evenHub.cancelSuspendTimer() }
+        // The wake barrier resumes a suspended session before it unblanks.
+        if (on && this.evenHubAsleep()) void this.evenHub.ensureActive().catch(error => this.fail(error))
+        else void this.display?.setScreenBlanked(!on).catch(error => this.fail(error))
+        if (!on) this.evenHub.scheduleSuspend()
         this.requestShellRender()
       },
     })
@@ -422,6 +456,7 @@ export class IosPreviewController {
       this.syncLockSetting()
       this.pushBrightness()
       syncAssistantBridgeFromSettings()
+      this.syncEvenHub()
       this.relayout()
       shell.foregroundWindow()?.requestRender()
       this.requestShellRender()
@@ -633,6 +668,8 @@ export class IosPreviewController {
         if (shell.isScreenOn()) shell.sleep()
         else shell.wake('sidebar')
       } else if (event.type === 'display-wake' && !shell.isScreenOn()) shell.wake('sidebar')
+      // Input waits on a wake barrier the wake started, as on Android.
+      await this.evenHub.resumePromise?.catch(() => false)
       this.requestShellRender()
       return
     }
@@ -645,6 +682,7 @@ export class IosPreviewController {
       }
     }
     await shell.receiveInput(event)
+    await this.evenHub.resumePromise?.catch(() => false)
     this.requestShellRender()
   }
   private async mirrorTap(mirrorNx: number, mirrorNy: number): Promise<void> {
@@ -898,7 +936,12 @@ export class IosPreviewController {
         // phase, handled in handleSessionState); this only records why, for the warning.
         const firmwareWarning = firmwareIncompatibilityMessage(info) ?? ''
         if (firmwareWarning && firmwareWarning !== this.state.firmwareWarning) this.logBluetooth(`Firmware compatibility warning: ${firmwareWarning}`)
-        this.firmwareCompatible = !firmwareWarning && hasCompatibleFirmware(info)
+        const compatible = !firmwareWarning && hasCompatibleFirmware(info)
+        if (compatible !== this.firmwareCompatible) {
+          this.firmwareCompatible = compatible
+          this.evenHub.wakeLeaseState = null
+          if (this.evenHubEngaged) void this.evenHub.syncWakeLease().catch(error => this.logBluetooth(`Wake lease: ${String(error)}`))
+        }
         this.state = { ...this.state, leftVersion: info.leftVersion || this.state.leftVersion,
           rightVersion: info.rightVersion || this.state.rightVersion, capabilities: info.extension || this.state.capabilities,
           firmwareWarning }
@@ -946,11 +989,17 @@ export class IosPreviewController {
     // The shared session's halt text names Faceclaw, under an alert that names this app.
     const status = state.phase === 'incompatible-firmware'
       ? `The glasses firmware is not compatible with this version of ${APP_NAME}. Install the custom firmware, then connect.` : state.status
+    if (phase === 'connected' && this.state.phase !== 'connected') {
+      // A new transport starts with a live EvenHub lifecycle and no firmware lease.
+      this.evenHub.suspended = false; this.evenHub.wakeLeaseState = null
+    }
     this.update(phase, status)
+    if (phase !== 'connected') { this.evenHub.cancelSuspendTimer(); this.evenHub.suspended = false }
     if (phase === 'connected') {
       imuSessionReady()
       this.syncNotifications(communicator)
       this.ensureWearDetection(communicator)
+      this.syncEvenHub()
     } else if ((phase === 'disconnected' || phase === 'error') && !this.stopping) {
       // The session ended on its own (an arm unpaired, incompatible firmware): release it and go headless.
       void this.disconnect(status)
@@ -1025,6 +1074,9 @@ export class IosPreviewController {
     this.notifications = null
     this.communicator = null
     this.glance.reset()
+    this.evenHub.cancelSuspendTimer(); this.evenHub.suspended = false; this.evenHub.resumePromise = null
+    if (this.evenHubEngaged && this.evenHub.wakeLeaseState !== false) await communicator.setFaceclawWakeLeaseEnabled(false).catch(() => false)
+    this.evenHub.wakeLeaseState = null; this.evenHubEngaged = false
     await communicator.close().catch(error => this.logBluetooth(`Close: ${String(error)}`))
   }
   private maybeLaunchOnboarding(state: SessionState): void {

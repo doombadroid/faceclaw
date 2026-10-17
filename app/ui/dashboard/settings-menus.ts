@@ -233,9 +233,10 @@ function settingsSections(): SettingsSection[] {
   if (!global.isIOS) return sections;
   const deferred = new Set(["Watch"]);
   return sections.map(section => {
-    // EvenHub suspend has no iOS runtime yet; mic control only drives the Microphones app.
+    // Mic control only drives the Microphones app.
     if (section.label === "Developer") return { ...section, items: [enumSettingMenuItem(ringConnectionModeSetting),
       toggleSettingMenuItem(saveVoiceRecordingsSetting), toggleSettingMenuItem(firmwareDebugFlagsSetting),
+      toggleSettingMenuItem(suspendEvenHubWhenScreenOffSetting),
       ...(iosAppUnavailableReason("microphones") ? [] : [toggleSettingMenuItem(useMicControlSetting)]), toggleSettingMenuItem(showBleBandwidthSetting)] };
     // No downloadable on-device models: iOS's on-device option is Apple's recognizer.
     if (section.label === "Voice") return { label: "Voice", items: [enumSettingMenuItem(wakeWordActionSetting),

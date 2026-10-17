@@ -162,6 +162,8 @@ export class IosVoiceControlBridge {
     this.teardown()
   }
   hasSuspendedCapture(): boolean { return this.suspended.size > 0 }
+  /** Whether anyone holds the mic, including across a session outage (Android's contract). */
+  isCaptureHeld(): boolean { return this.holders.size > 0 || this.suspended.size > 0 }
   /** A new glasses session is up (or the glasses unlocked): restart a parked continuous capture. */
   resumeCapture(session: IosMicrophoneSession, voice: VoiceProviderSelection, log: (message: string) => void): Promise<void> {
     if (!this.suspended.delete('continuous')) return Promise.resolve()

@@ -11,6 +11,7 @@ import {
 } from "./android-permissions";
 import { FaceclawCommunicatorBridge, type RawInputEvent } from "../native/faceclaw-communicator";
 import * as frameTimings from "../native/frame-timings";
+import { EvenHubSuspender } from "./evenhub-suspend";
 import { startForegroundNotification, stopForegroundNotification, updateForegroundNotification } from "../native/foreground-service";
 import { mediaControllerBridge } from "../native/media-controller";
 import { nightscoutBridge } from "../native/nightscout-bridge";
@@ -167,8 +168,6 @@ const PREVIEW_INTERVAL_MS = 1_000;
 const SCREEN_TIMEOUT_CHECK_MS = 1_000;
 // voiceActivity holder for Transcribe's continuous capture.
 const CONTINUOUS_CAPTURE_HOLDER = "continuous-capture";
-const EVENHUB_SCREEN_OFF_SUSPEND_DELAY_MS = 5_000;
-const EVENHUB_WAKE_READY_TIMEOUT_MS = 4_500;
 const FOREGROUND_NOTIFICATION_MIN_UPDATE_MS = 30_000;
 const FRAME_TRANSMIT_BACKPRESSURE_TIMEOUT_MS = 6_000;
 // Preview refresh floor. Refreshes are scheduled per composited frame with a
@@ -292,8 +291,32 @@ class DashboardController {
   private shellRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private previewTimer: ReturnType<typeof setInterval> | null = null;
   private screenTimeoutTimer: ReturnType<typeof setInterval> | null = null;
-  private evenHubSuspendTimer: ReturnType<typeof setTimeout> | null = null;
-  private evenHubSessionSuspended = false;
+  // Developer > Suspend EvenHub when screen off, the wake barrier and the wake lease.
+  private readonly evenHub = new EvenHubSuspender({
+    communicator: () => this.communicator,
+    phase: () => this.phase,
+    isScreenOn: () => shell.isScreenOn(),
+    glanceVisible: () => this.glance.isVisible(),
+    captureHeld: () => voiceControlBridge.isCaptureHeld(),
+    // The same firmware lease owns two stock wake paths: deferred dashboard
+    // launch while EvenHub is suspended, and suppression of the stock Even AI
+    // foreground app when Faceclaw handles the glasses wakeword. Without the
+    // latter, Even AI displaces EvenHub before our first wake frame can ACK.
+    wantsWakeLease: () =>
+      this.customFirmwareConfirmed &&
+      (suspendEvenHubWhenScreenOffSetting.get() || wakeWordActionSetting.get() !== "off"),
+    wakePreview: () => {
+      const preview = this.previewTarget;
+      if (!preview) return Promise.resolve(false);
+      return preview.setScreenBlanked(false).then(() => {
+        this.schedulePreviewUpdate();
+        return true;
+      });
+    },
+    onSuspended: () => voiceControlBridge.handleSessionEnded(),
+    log: (message) => this.appendLog(message),
+    formatError: (error) => this.formatError(error),
+  });
   /**
    * The Glanceboard: the alternate sleep-time display, on its own surface
    * above the shell. Fed sleep-time input from handleInputEvent; it uses the
@@ -304,7 +327,7 @@ class DashboardController {
     getDisplay: () => this.display,
     getProvider: () => ALL_APPS.find((app) => app.glanceboard)?.glanceboard ?? null,
     canShow: () => (this.phase === "connected" || this.isPreviewDisplayActive()) && !this.glassesLocked,
-    ensureSessionActive: (frameId) => this.ensureEvenHubSessionActive(frameId),
+    ensureSessionActive: (frameId) => this.evenHub.ensureActive(frameId),
     onHiddenWhileAsleep: () => {
       if (!shell.isScreenOn()) this.handleScreenStateChanged(false);
     },
@@ -314,10 +337,8 @@ class DashboardController {
     },
     appendLog: (message) => this.appendLog(message),
   });
-  private evenHubResumePromise: Promise<boolean> | null = null;
   /** Faceclaw's firmware at the required revision reported in; its extensions can be used. */
   private customFirmwareConfirmed = false;
-  private faceclawWakeLeaseState: boolean | null = null;
   private glassesWorn: boolean | null = null;
   /** Put on while charging: Java reconnects on that, and the wake waits for the new session. */
   private wakeAfterChargingReconnect = false;
@@ -455,7 +476,7 @@ class DashboardController {
       // Apply a firmware-debug-flags toggle live while connected (Java dedups).
       this.pushFirmwareDebugFlags();
       this.pushBrightness();
-      this.syncEvenHubScreenOffSetting();
+      this.evenHub.syncScreenOffSetting();
       // Display mode size first: a reflow repositions every surface too, so
       // the band-position check after it then has nothing left to do.
       this.applyDisplayModeIfChanged();
@@ -626,8 +647,8 @@ class DashboardController {
 
   private handleScreenStateChanged(on: boolean): void {
     if (on) {
-      this.cancelEvenHubSuspendTimer();
-      void this.ensureEvenHubSessionActive().catch((error) => {
+      this.evenHub.cancelSuspendTimer();
+      void this.evenHub.ensureActive().catch((error) => {
         this.appendLog(`screen wake failed: ${this.formatError(error)}`);
       });
       return;
@@ -643,7 +664,7 @@ class DashboardController {
       })().catch((error) => {
         this.appendLog(`screen sleep failed: ${this.formatError(error)}`);
       });
-      this.scheduleEvenHubSuspend();
+      this.evenHub.scheduleSuspend();
       return;
     }
     const preview = this.previewTarget;
@@ -783,205 +804,6 @@ class DashboardController {
     if (!communicator || !this.lockSurfaceConfigured) return;
     await communicator.setSurfaceVisible(LOCK_SCREEN_SURFACE_ID, this.glassesLocked);
     this.updateCompositePreview();
-  }
-
-  /**
-   * The single wake barrier for every source: restore the EvenHub lifecycle,
-   * unblank the retained compositor, and resolve only after that frame is
-   * visible. Concurrent display-wake, shell, and wakeword callbacks share the
-   * same operation.
-   */
-  /**
-   * frameId (0 when the caller has none) attributes the barrier's four
-   * round trips to the input frame waiting on them; a wake barrier is the
-   * largest single input-to-display term there is, so knowing which step
-   * owns the second matters. Callers that join an in-flight barrier share
-   * the first caller's spans.
-   */
-  private ensureEvenHubSessionActive(frameId = 0): Promise<boolean> {
-    if (this.evenHubResumePromise) return this.evenHubResumePromise;
-    const communicator = this.communicator;
-    if (!communicator) {
-      // Preview mode has no plugin session to restore; waking is just
-      // unblanking the headless compositor so the mirror lights back up.
-      const preview = this.previewTarget;
-      if (!preview) return Promise.resolve(false);
-      return preview.setScreenBlanked(false).then(() => {
-        this.schedulePreviewUpdate();
-        return true;
-      });
-    }
-    if (this.phase === "charging" || this.phase === "disconnected") {
-      return Promise.resolve(false);
-    }
-
-    const operation = (async () => {
-      await frameTimings.spanAsync(frameId, "wake:screen-on", () => communicator.setG2ScreenOn(true));
-      const resumed = await frameTimings.spanAsync(frameId, "wake:resume-session", () =>
-        communicator.resumeEvenHubSession(),
-      );
-      if (!resumed) {
-        return false;
-      }
-      // Resume first: setScreenBlanked(false) then recomposites retained state
-      // as the desired first frame for the fresh layout.
-      await frameTimings.spanAsync(frameId, "wake:unblank", () => communicator.setScreenBlanked(false));
-      const ready = await frameTimings.spanAsync(frameId, "wake:await-ready", () =>
-        communicator.awaitEvenHubSessionReady(EVENHUB_WAKE_READY_TIMEOUT_MS),
-      );
-      if (ready && this.communicator === communicator) {
-        this.evenHubSessionSuspended = false;
-      }
-      return ready;
-    })();
-    this.evenHubResumePromise = operation;
-    const clearOperation = () => {
-      if (this.evenHubResumePromise === operation) {
-        this.evenHubResumePromise = null;
-      }
-    };
-    void operation.then(clearOperation, clearOperation);
-    return operation;
-  }
-
-  private desiredFaceclawWakeLeaseState(): boolean {
-    // The same firmware lease owns two stock wake paths: deferred dashboard
-    // launch while EvenHub is suspended, and suppression of the stock Even AI
-    // foreground app when Faceclaw handles the glasses wakeword. Without the
-    // latter, Even AI displaces EvenHub before our first wake frame can ACK.
-    return (
-      this.customFirmwareConfirmed &&
-      (suspendEvenHubWhenScreenOffSetting.get() || wakeWordActionSetting.get() !== "off")
-    );
-  }
-
-  private async syncFaceclawWakeLease(
-    communicator = this.communicator,
-    force = false,
-  ): Promise<boolean> {
-    if (!communicator || communicator !== this.communicator) return false;
-    const enabled = this.desiredFaceclawWakeLeaseState();
-    if (!force && this.faceclawWakeLeaseState === enabled) return true;
-    const applied = await communicator.setFaceclawWakeLeaseEnabled(enabled);
-    if (this.communicator === communicator) {
-      this.faceclawWakeLeaseState = applied || !enabled ? enabled : null;
-    }
-    return applied;
-  }
-
-  private syncEvenHubScreenOffSetting(): void {
-    void this.syncFaceclawWakeLease().catch((error) => {
-      this.appendLog(`wake takeover lease sync failed: ${this.formatError(error)}`);
-    });
-    if (suspendEvenHubWhenScreenOffSetting.get() && !shell.isScreenOn()) {
-      this.scheduleEvenHubSuspend();
-      return;
-    }
-
-    this.cancelEvenHubSuspendTimer();
-    if (!this.evenHubSessionSuspended) return;
-
-    // Turning the experiment off restores the legacy all-black page even if
-    // the screen remains asleep.
-    const communicator = this.communicator;
-    if (!communicator) return;
-    void communicator
-      .resumeEvenHubSession()
-      .then((resumed) => {
-        if (resumed && this.communicator === communicator) {
-          this.evenHubSessionSuspended = false;
-        }
-      })
-      .catch((error) => {
-        this.appendLog(`EvenHub resume failed: ${this.formatError(error)}`);
-      });
-  }
-
-  private scheduleEvenHubSuspend(): void {
-    this.cancelEvenHubSuspendTimer();
-    if (
-      !suspendEvenHubWhenScreenOffSetting.get() ||
-      shell.isScreenOn() ||
-      this.glance.isVisible() ||
-      this.phase !== "connected" ||
-      !this.communicator ||
-      this.evenHubSessionSuspended
-    ) {
-      return;
-    }
-
-    const communicator = this.communicator;
-    this.evenHubSuspendTimer = setTimeout(() => {
-      this.evenHubSuspendTimer = null;
-      if (
-        !suspendEvenHubWhenScreenOffSetting.get() ||
-        shell.isScreenOn() ||
-        this.glance.isVisible() ||
-        this.phase !== "connected" ||
-        this.communicator !== communicator
-      ) {
-        // A showing Glanceboard re-arms this when it hides.
-        return;
-      }
-
-      if (voiceControlBridge.isCaptureHeld()) {
-        // Ending the plugin task ends the mic with it, so a live capture (the
-        // Transcribe window, typically) outranks the screen-off power save.
-        // Check before the lease refresh below, which costs a BLE message.
-        this.scheduleEvenHubSuspend();
-        return;
-      }
-
-      void (async () => {
-        if (this.customFirmwareConfirmed) {
-          // Refresh immediately before teardown so the first suspended wake
-          // cannot race an old lease's expiry.
-          const leaseReady = await this.syncFaceclawWakeLease(communicator, true);
-          if (!leaseReady) {
-            this.appendLog("EvenHub suspend deferred; wake takeover lease was not delivered");
-            this.scheduleEvenHubSuspend();
-            return;
-          }
-        }
-        if (
-          !suspendEvenHubWhenScreenOffSetting.get() ||
-          shell.isScreenOn() ||
-          this.glance.isVisible() ||
-          this.phase !== "connected" ||
-          this.communicator !== communicator
-        ) {
-          return;
-        }
-        this.evenHubSessionSuspended = true;
-        return communicator.suspendEvenHubSession();
-      })()
-        .then((suspended) => {
-          if (suspended === undefined) return;
-          if (suspended) {
-            // A capture that raced the suspend lost its mic with the plugin
-            // task; park it for the resume path.
-            voiceControlBridge.handleSessionEnded();
-            this.appendLog("EvenHub session suspended while screen is off");
-            return;
-          }
-          if (this.communicator !== communicator || shell.isScreenOn()) return;
-          this.evenHubSessionSuspended = false;
-          this.scheduleEvenHubSuspend();
-        })
-        .catch((error) => {
-          if (this.communicator === communicator) {
-            this.evenHubSessionSuspended = false;
-            this.appendLog(`EvenHub suspend failed: ${this.formatError(error)}`);
-            this.scheduleEvenHubSuspend();
-          }
-        });
-    }, EVENHUB_SCREEN_OFF_SUSPEND_DELAY_MS);
-  }
-
-  private cancelEvenHubSuspendTimer(): void {
-    if (this.evenHubSuspendTimer === null) return;
-    clearTimeout(this.evenHubSuspendTimer);
-    this.evenHubSuspendTimer = null;
   }
 
   private pushFirmwareDebugFlags(): void {
@@ -1434,10 +1256,10 @@ class DashboardController {
 
     let communicator: FaceclawCommunicatorBridge | null = null;
     this.customFirmwareConfirmed = false;
-    this.faceclawWakeLeaseState = null;
+    this.evenHub.wakeLeaseState = null;
     this.lockSurfaceConfigured = false;
     this.glance.reset();
-    this.evenHubResumePromise = null;
+    this.evenHub.resumePromise = null;
     this.connectRunning = true;
 
     try {
@@ -1484,11 +1306,11 @@ class DashboardController {
         if (mappedPhase === "connected" && this.phase !== "connected") {
           // A transport reconnect starts with a live EvenHub lifecycle again;
           // if the shell is asleep, begin a fresh five-second grace period.
-          this.evenHubSessionSuspended = false;
+          this.evenHub.suspended = false;
           // Firmware leases are volatile, and the Java transport may have been
           // rebuilt underneath this long-lived controller. Do not let a cached
           // TypeScript value suppress re-acquisition on the new session.
-          this.faceclawWakeLeaseState = null;
+          this.evenHub.wakeLeaseState = null;
           // Push the CFW firmware-debug-flags overlay preference; Java emits the
           // mode-7 control message once the dashboard container is warmed up.
           this.pushFirmwareDebugFlags();
@@ -1511,12 +1333,12 @@ class DashboardController {
         this.setPhase(mappedPhase);
         this.setStatus(state.status);
         if (mappedPhase === "connected") {
-          this.syncEvenHubScreenOffSetting();
+          this.evenHub.syncScreenOffSetting();
           this.ensureWearStateTracking();
           this.maybeWakeAfterChargingReconnect();
         } else if (mappedPhase !== "charging") {
-          this.cancelEvenHubSuspendTimer();
-          this.evenHubSessionSuspended = false;
+          this.evenHub.cancelSuspendTimer();
+          this.evenHub.suspended = false;
         }
       });
       this.offRing = communicator.onRingEvent((event) => {
@@ -1605,8 +1427,8 @@ class DashboardController {
         const customFirmwareConfirmed = !warning && hasCompatibleFirmware(info);
         if (customFirmwareConfirmed !== this.customFirmwareConfirmed) {
           this.customFirmwareConfirmed = customFirmwareConfirmed;
-          this.faceclawWakeLeaseState = null;
-          void this.syncFaceclawWakeLease().catch((error) => {
+          this.evenHub.wakeLeaseState = null;
+          void this.evenHub.syncWakeLease().catch((error) => {
             this.appendLog(`wake takeover lease sync failed: ${this.formatError(error)}`);
           });
           this.ensureWearStateTracking();
@@ -1654,7 +1476,7 @@ class DashboardController {
       }
       await communicator.start();
       await this.syncLockSurface();
-      this.syncEvenHubScreenOffSetting();
+      this.evenHub.syncScreenOffSetting();
       shell.foregroundWindow()?.requestRender();
       this.requestShellRender();
       // Refresh the top-bar clock and the phone-side preview once a minute,
@@ -1707,8 +1529,8 @@ class DashboardController {
       this.lockSurfaceConfigured = false;
       this.glance.reset();
       this.customFirmwareConfirmed = false;
-      this.faceclawWakeLeaseState = null;
-      this.evenHubResumePromise = null;
+      this.evenHub.wakeLeaseState = null;
+      this.evenHub.resumePromise = null;
       this.clearDashboardTimer();
       stopForegroundNotification();
       this.setPhase("disconnected");
@@ -1808,8 +1630,8 @@ class DashboardController {
     this.communicator = null;
     this.lockSurfaceConfigured = false;
     this.glance.reset();
-    this.evenHubSessionSuspended = false;
-    this.evenHubResumePromise = null;
+    this.evenHub.suspended = false;
+    this.evenHub.resumePromise = null;
 
     // The recording's frame store lives in the communicator, so save what has
     // accumulated rather than silently losing it with the connection.
@@ -1831,7 +1653,7 @@ class DashboardController {
           return false;
         });
         if (leaseReleased === true) {
-          this.faceclawWakeLeaseState = false;
+          this.evenHub.wakeLeaseState = false;
         }
       }
 
@@ -1868,7 +1690,7 @@ class DashboardController {
     } finally {
       stopForegroundNotification();
       this.customFirmwareConfirmed = false;
-      this.faceclawWakeLeaseState = null;
+      this.evenHub.wakeLeaseState = null;
       this.setPhase("disconnected");
       this.setStatus("Disconnected.");
       this.appendLog("Disconnected from the glasses.");
@@ -2235,7 +2057,7 @@ class DashboardController {
           } else {
             shell.wake("sidebar");
             const ready = await frameTimings.spanAsync(frameId, "wake-barrier", () =>
-              this.ensureEvenHubSessionActive(frameId),
+              this.evenHub.ensureActive(frameId),
             );
             if (!ready) {
               this.appendLog("EvenHub wake barrier timed out for locked display");
@@ -2270,9 +2092,9 @@ class DashboardController {
         if (!shell.isScreenOn()) {
           shellPreWoke = shell.wake("sidebar");
         }
-        if (shellPreWoke || this.evenHubSessionSuspended || this.evenHubResumePromise) {
+        if (shellPreWoke || this.evenHub.suspended || this.evenHub.resumePromise) {
           const ready = await frameTimings.spanAsync(frameId, "wake-barrier", () =>
-            this.ensureEvenHubSessionActive(frameId),
+            this.evenHub.ensureActive(frameId),
           );
           if (!ready) {
             this.appendLog(`EvenHub wake barrier timed out for ${event.kind}`);
@@ -2778,7 +2600,7 @@ class DashboardController {
   }
 
   private clearDashboardTimer(): void {
-    this.cancelEvenHubSuspendTimer();
+    this.evenHub.cancelSuspendTimer();
     if (this.shellRefreshTimer) {
       clearInterval(this.shellRefreshTimer);
       this.shellRefreshTimer = null;
