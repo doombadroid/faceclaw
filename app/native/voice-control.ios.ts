@@ -83,7 +83,7 @@ export class IosVoiceControlBridge {
       this.native.eventHandler = (json: string) => this.receive(JSON.parse(json))
       this.native.pcmHandler = (pcm: NSData) => {
         this.verifier?.acceptPcm(pcm)
-        this.cloud?.acceptPcm(new Uint8Array(interop.bufferFromData(pcm)))
+        this.cloud?.acceptPcm(new Uint8Array(interop.bufferFromData(pcm)).slice())
       }
     }
     return this.native

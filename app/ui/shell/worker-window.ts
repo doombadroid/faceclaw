@@ -286,8 +286,8 @@ export class WorkerAppHost {
           if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 640 || height > 480) break;
           const data = NSData.alloc().initWithBase64EncodedStringOptions(message.pixels, 0 as NSDataBase64DecodingOptions);
           const draws = message.draws ? NSData.alloc().initWithBase64EncodedStringOptions(message.draws, 0 as NSDataBase64DecodingOptions) : null;
-          if (data?.length === width * height) this.options.submitPixels(message.surfaceId, new Uint8Array(interop.bufferFromData(data)), width, height,
-            draws ? interop.bufferFromData(draws) : null);
+          if (data?.length === width * height) this.options.submitPixels(message.surfaceId, new Uint8Array(interop.bufferFromData(data)).slice(), width, height,
+            draws ? interop.bufferFromData(draws).slice(0) : null);
           break;
         }
         case "worker-ready":

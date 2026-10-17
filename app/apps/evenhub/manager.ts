@@ -28,7 +28,7 @@ import { shell } from "../../ui/shell/shell";
 import { GrayImage } from "../../graphics/image";
 import { grayImageToWhiteIconSource } from "../../native/gray-image-preview";
 import {
-  readEvenHubPackageManifest,
+  inspectEvenHubPackageManifest,
   installedEvenHubAppId,
   installedEvenHubPackagePath,
   type InstalledEvenHubApp,
@@ -97,8 +97,7 @@ export async function launchPackage(
     }
   }
 
-  const manifest = readEvenHubPackageManifest(ehpkPath);
-  if (!manifest) throw new Error('Could not read the EHPK manifest.');
+  const manifest = inspectEvenHubPackageManifest(ehpkPath);
   // Unpack off the iOS UI thread; reserve a unique directory before awaiting.
   const safeId = manifest.packageId.replace(/[^A-Za-z0-9._-]/g, "_");
   if (!safeId || safeId === '.' || safeId === '..') throw new Error('Invalid EHPK package ID');

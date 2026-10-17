@@ -167,6 +167,18 @@ export function readEvenHubPackageManifest(path: string): EvenHubManifest | null
   }
 }
 
+/** A stored EHPK's manifest, or why it cannot be read (the parser's reason, with the package's size and first bytes). */
+export function inspectEvenHubPackageManifest(path: string): EvenHubManifest {
+  const bytes = readBinaryFile(path);
+  if (!bytes) throw new Error("Could not read the EHPK file.");
+  try {
+    return inspectEhpk(bytes).manifest;
+  } catch (error) {
+    const head = Array.from(bytes.subarray(0, 16), (b) => b.toString(16).padStart(2, "0")).join(" ");
+    throw new Error(`Could not read the EHPK manifest (${bytes.length} bytes, starts ${head}): ${(error as Error)?.message ?? error}`, { cause: error });
+  }
+}
+
 /** Inspect already-loaded package bytes before installation/first-run approval. */
 export function readEvenHubPackageManifestBytes(bytes: Uint8Array): EvenHubManifest | null {
   try {

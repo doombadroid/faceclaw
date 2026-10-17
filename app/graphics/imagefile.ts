@@ -61,7 +61,7 @@ function toArrayBuffer(raw: unknown): ArrayBuffer {
     return out.buffer;
   }
   if (global.isIOS && raw) {
-    return interop.bufferFromData(raw);
+    return interop.bufferFromData(raw).slice(0);
   }
   throw new Error(`Unsupported PNG byte source: ${String(raw)}`);
 }

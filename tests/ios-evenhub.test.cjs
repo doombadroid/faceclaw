@@ -85,7 +85,7 @@ test('local package runtimes unpack independently and clean up after closing or 
       deletePathRecursively: path => { for (const key of files.keys()) if (key.startsWith(path + '/')) files.delete(key); } },
     './session': { EvenHubSession: Session }, './evenhub-window': { createEvenHubWindow: () => ({}) },
     './webview': { createEvenHubWebView: () => ({ evaluateJs() {}, destroy() {} }) },
-    '../../ui/shell/shell': {}, './installed-apps': { readEvenHubPackageManifest: () => ({ packageId: 'test.app' }) },
+    '../../ui/shell/shell': {}, './installed-apps': { inspectEvenHubPackageManifest: () => ({ packageId: 'test.app' }) },
   });
   const manager = load('app/apps/evenhub/manager.ts'), ctx = { appendLog() {}, launchInProcessApp: async () => {} };
   await manager.launchPackage(ctx, '/test.ehpk'); await manager.launchPackage(ctx, '/test.ehpk');
@@ -98,6 +98,20 @@ test('local package runtimes unpack independently and clean up after closing or 
   archive = pack({ 'app.json': JSON.stringify(manifest) });
   await assert.rejects(manager.launchPackage(ctx, '/bad.ehpk'), /entrypoint is missing/);
   assert.equal(files.size, 0);
+});
+
+test("a stored package that will not parse fails its launch with the parser's reason, size and first bytes", async () => {
+  const bad = pack({ 'app.json': '{"package_id":"test.app"}' }); bad.fill(0xaa, 20, 24);
+  const load = loader({ global: { isIOS: true } }, {
+    '@nativescript/core': { Application: {} }, fzstd: require('fzstd'),
+    '../../native/file-access': { appFilesDirPath: () => '/app', readBinaryFile: path => path === '/bad.ehpk' ? bad : null, deletePathRecursively() {} },
+    '../../native/settings-store': {}, '../../native/icon-image': {}, '../../graphics/icons': {}, '../../graphics/image': {},
+    './session': {}, './evenhub-window': {}, './webview': {}, '../../ui/shell/shell': {},
+  });
+  const manager = load('app/apps/evenhub/manager.ts'), ctx = { appendLog() {} };
+  await assert.rejects(manager.launchPackage(ctx, '/bad.ehpk'),
+    new RegExp(`^Error: Could not read the EHPK manifest \\(${bad.length} bytes, starts 45 48 50 4b 00 00 00 00 14 00 00 00 00 00 00 00\\): ehpk: bad record magic at 20$`));
+  await assert.rejects(manager.launchPackage(ctx, '/gone.ehpk'), /^Error: Could not read the EHPK file\.$/);
 });
 
 function sessionHarness(overrides = {}, playBuzzer = () => {}, permissions = []) {
