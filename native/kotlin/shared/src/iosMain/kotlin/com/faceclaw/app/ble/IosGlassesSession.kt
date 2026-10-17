@@ -120,7 +120,7 @@ class IosGlassesSession internal constructor(
 
     // ----- controls -------------------------------------------------------------------
 
-    fun setG2ScreenOn(screenOn: Boolean) = boundary("IosGlassesSession.setG2ScreenOn", Unit) { core.setG2ScreenOn(screenOn) }
+    fun setG2ScreenOn(screenOn: Boolean): String? = boundaryError("IosGlassesSession.setG2ScreenOn") { core.setG2ScreenOn(screenOn) }
 
     fun setFirmwareDebugFlags(enabled: Boolean) = boundary("IosGlassesSession.setFirmwareDebugFlags", Unit) { core.setFirmwareDebugFlags(enabled) }
 
@@ -167,11 +167,12 @@ class IosGlassesSession internal constructor(
     }
 
     /** A curve Kotlin rejects leaves the previous settings in force (it is resent on every connect). */
-    fun configureBrightness(auto: Boolean, level: Int, minimum: Int, maximum: Int, curve: String, fadeMs: Int) =
-        boundary("IosGlassesSession.configureBrightness", Unit) { core.configureBrightness(auto, level, minimum, maximum, curve, fadeMs) }
+    // These three return the error like the compositor calls: their JS callers have failure paths (as on Android).
+    fun configureBrightness(auto: Boolean, level: Int, minimum: Int, maximum: Int, curve: String, fadeMs: Int): String? =
+        boundaryError("IosGlassesSession.configureBrightness") { core.configureBrightness(auto, level, minimum, maximum, curve, fadeMs) }
 
-    fun enableWearDetectionAndRequestState() =
-        boundary("IosGlassesSession.enableWearDetectionAndRequestState", Unit) { core.enableWearDetectionAndRequestState() }
+    fun enableWearDetectionAndRequestState(): String? =
+        boundaryError("IosGlassesSession.enableWearDetectionAndRequestState") { core.enableWearDetectionAndRequestState() }
 
     fun startBandwidthBenchmark(messageSize: Int, windowSize: Int, durationMs: Int): Boolean =
         boundary("IosGlassesSession.startBandwidthBenchmark", false) { core.startBandwidthBenchmark(messageSize, windowSize, durationMs) }

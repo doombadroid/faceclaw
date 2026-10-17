@@ -134,10 +134,10 @@ class IosVideoPlayer {
             """"durationMs":${assetDurationMs(asset).toLong()},"hasAudio":$hasAudio}"""
     }
 
-    /** Play [path] scaled to width x height (display orientation) from [startMs]. */
-    fun start(path: String, width: Int, height: Int, monochrome: Boolean, gamma: Float, audio: Boolean, startMs: Double): Unit = boundary("IosVideoPlayer.start", Unit) {
+    /** Play [path] scaled to width x height (display orientation) from [startMs]; a failure reaches listener.onError. */
+    fun start(path: String, width: Int, height: Int, monochrome: Boolean, gamma: Float, audio: Boolean, startMs: Double): Unit = boundaryError("IosVideoPlayer.start") {
         stop()
-        if (width <= 0 || height <= 0) return@boundary
+        if (width <= 0 || height <= 0) return@boundaryError
         val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(path), options = null)
         val track = asset.tracksWithMediaType(AVMediaTypeVideo).firstOrNull() as? AVAssetTrack
         val item = AVPlayerItem(asset = asset)
@@ -177,7 +177,7 @@ class IosVideoPlayer {
             avPlayer.play()
         }
         scheduleTick(run)
-    }
+    }.let { error -> if (error != null) dispatch_async(dispatch_get_main_queue()) { listener?.onError(error) } }
 
     fun pause(): Unit = boundary("IosVideoPlayer.pause", Unit) {
         playing = false

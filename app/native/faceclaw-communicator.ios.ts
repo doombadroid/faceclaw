@@ -497,7 +497,7 @@ export class FaceclawCommunicatorBridge {
   }
 
   async setG2ScreenOn(screenOn: boolean): Promise<void> {
-    await this.enqueueNativeCall(() => this.communicator.setG2ScreenOnScreenOn(Boolean(screenOn)));
+    await this.enqueueNativeCall(() => throwIfError(this.communicator.setG2ScreenOnScreenOn(Boolean(screenOn))));
   }
 
   async setFirmwareDebugFlags(enabled: boolean): Promise<void> {
@@ -510,11 +510,11 @@ export class FaceclawCommunicatorBridge {
   }
 
   async configureBrightness(p: { auto: boolean; level: number; minimum: number; maximum: number; curve: string; fadeMs: number }): Promise<void> {
-    await this.enqueueNativeCall(() => this.communicator.configureBrightnessAutoLevelMinimumMaximumCurveFadeMs(p.auto, p.level, p.minimum, p.maximum, p.curve, p.fadeMs));
+    await this.enqueueNativeCall(() => throwIfError(this.communicator.configureBrightnessAutoLevelMinimumMaximumCurveFadeMs(p.auto, p.level, p.minimum, p.maximum, p.curve, p.fadeMs)));
   }
 
   async enableWearDetectionAndRequestState(): Promise<void> {
-    await this.enqueueNativeCall(() => this.communicator.enableWearDetectionAndRequestState());
+    await this.enqueueNativeCall(() => throwIfError(this.communicator.enableWearDetectionAndRequestState()));
   }
 
   isSessionReady(): boolean {

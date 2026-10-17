@@ -4096,13 +4096,13 @@ __attribute__((swift_name("IosGlassesSession")))
 - (int32_t)compositeWidth __attribute__((swift_name("compositeWidth()")));
 
 /** A curve Kotlin rejects leaves the previous settings in force (it is resent on every connect). */
-- (void)configureBrightnessAuto:(BOOL)auto_ level:(int32_t)level minimum:(int32_t)minimum maximum:(int32_t)maximum curve:(NSString *)curve fadeMs:(int32_t)fadeMs __attribute__((swift_name("configureBrightness(auto:level:minimum:maximum:curve:fadeMs:)")));
+- (NSString * _Nullable)configureBrightnessAuto:(BOOL)auto_ level:(int32_t)level minimum:(int32_t)minimum maximum:(int32_t)maximum curve:(NSString *)curve fadeMs:(int32_t)fadeMs __attribute__((swift_name("configureBrightness(auto:level:minimum:maximum:curve:fadeMs:)")));
 
 /** Set the compositor's output frame size. Call before configuring surfaces. */
 - (NSString * _Nullable)configureCompositorScreenWidth:(int32_t)width height:(int32_t)height __attribute__((swift_name("configureCompositorScreen(width:height:)")));
 - (NSString * _Nullable)configureSurfaceId:(NSString *)id x:(int32_t)x y:(int32_t)y width:(int32_t)width height:(int32_t)height zOrder:(int32_t)zOrder transparency:(int32_t)transparency __attribute__((swift_name("configureSurface(id:x:y:width:height:zOrder:transparency:)")));
 - (void)disconnect __attribute__((swift_name("disconnect()")));
-- (void)enableWearDetectionAndRequestState __attribute__((swift_name("enableWearDetectionAndRequestState()")));
+- (NSString * _Nullable)enableWearDetectionAndRequestState __attribute__((swift_name("enableWearDetectionAndRequestState()")));
 
 /** Frame-timings export text (see FrameTimingsCore), for the phone-side debug page. */
 - (NSString *)frameTimingsExport __attribute__((swift_name("frameTimingsExport()")));
@@ -4139,7 +4139,7 @@ __attribute__((swift_name("IosGlassesSession")))
 - (void)setCompassEnabledForOwnerOwner:(NSString * _Nullable)owner enable:(BOOL)enable __attribute__((swift_name("setCompassEnabledForOwner(owner:enable:)")));
 - (BOOL)setFaceclawWakeLeaseEnabledEnabled:(BOOL)enabled __attribute__((swift_name("setFaceclawWakeLeaseEnabled(enabled:)")));
 - (void)setFirmwareDebugFlagsEnabled:(BOOL)enabled __attribute__((swift_name("setFirmwareDebugFlags(enabled:)")));
-- (void)setG2ScreenOnScreenOn:(BOOL)screenOn __attribute__((swift_name("setG2ScreenOn(screenOn:)")));
+- (NSString * _Nullable)setG2ScreenOnScreenOn:(BOOL)screenOn __attribute__((swift_name("setG2ScreenOn(screenOn:)")));
 - (void)setImuReportEnabledEnable:(BOOL)enable reportFrq:(int32_t)reportFrq __attribute__((swift_name("setImuReportEnabled(enable:reportFrq:)")));
 - (void)setListenerListener:(id<FaceclawKitFaceclawBleCommunicatorListener> _Nullable)listener __attribute__((swift_name("setListener(listener:)")));
 
@@ -4678,7 +4678,7 @@ __attribute__((swift_name("IosVideoPlayer")))
 - (void)seekToPositionMs:(double)positionMs __attribute__((swift_name("seekTo(positionMs:)")));
 - (void)setListenerListener:(id<FaceclawKitIosVideoListener> _Nullable)listener __attribute__((swift_name("setListener(listener:)")));
 
-/** Play [path] scaled to width x height (display orientation) from [startMs]. */
+/** Play [path] scaled to width x height (display orientation) from [startMs]; a failure reaches listener.onError. */
 - (void)startPath:(NSString *)path width:(int32_t)width height:(int32_t)height monochrome:(BOOL)monochrome gamma:(float)gamma audio:(BOOL)audio startMs:(double)startMs __attribute__((swift_name("start(path:width:height:monochrome:gamma:audio:startMs:)")));
 
 /** End playback and release AVFoundation; the last frame stays readable. */

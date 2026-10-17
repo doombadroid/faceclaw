@@ -124,3 +124,23 @@ test('a throwing bridge listener is logged and the next listener still hears the
   assert.match(logged.at(-1), /onAudioPacketDataArmArrivalMs.*packet/);
   await bridge.close();
 });
+
+test('brightness, screen and wear-detection failures reject, as on Android', async () => {
+  const errors = {
+    configureBrightnessAutoLevelMinimumMaximumCurveFadeMs: 'IosGlassesSession.configureBrightness: bad',
+    setG2ScreenOnScreenOn: 'IosGlassesSession.setG2ScreenOn: bad',
+    enableWearDetectionAndRequestState: 'IosGlassesSession.enableWearDetectionAndRequestState: bad',
+  };
+  const native = new Proxy({}, { get: (_, name) => () => name in errors ? errors[name] : true });
+  const { FaceclawCommunicatorBridge: Bridge } = loader({
+    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } }, console: quietConsole,
+    FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
+    FaceclawKitFaceclawCompassListener: {},
+    FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
+  }, { '@nativescript/core': {}, './ios-graphics': {}, './ios-bluetooth': {} })('app/native/faceclaw-communicator.ios.ts');
+  const bridge = new Bridge({ right: 'r', left: 'l' });
+  await assert.rejects(bridge.configureBrightness({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0', fadeMs: 0 }), /configureBrightness: bad/);
+  await assert.rejects(bridge.setG2ScreenOn(true), /setG2ScreenOn: bad/);
+  await assert.rejects(bridge.enableWearDetectionAndRequestState(), /enableWearDetectionAndRequestState: bad/);
+  await bridge.close();
+});
