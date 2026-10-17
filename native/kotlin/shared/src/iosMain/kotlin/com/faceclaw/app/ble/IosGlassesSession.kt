@@ -166,7 +166,10 @@ class IosGlassesSession internal constructor(
         core.setBrightness(autoAdjust, brightnessLevel)
     }
 
-    /** A curve Kotlin rejects leaves the previous settings in force (it is resent on every connect). */
+    /**
+     * A curve Kotlin rejects leaves the previous settings in force; the error is filed as a report
+     * and returned for JS to throw (pushBrightness logs it and retries on the next settings change).
+     */
     // These three return the error like the compositor calls: their JS callers have failure paths (as on Android).
     fun configureBrightness(auto: Boolean, level: Int, minimum: Int, maximum: Int, curve: String, fadeMs: Int): String? =
         boundaryError("IosGlassesSession.configureBrightness") { core.configureBrightness(auto, level, minimum, maximum, curve, fadeMs) }

@@ -658,18 +658,12 @@ class GlassesSessionCore(
         interruptibleSleep.interrupt()
     }
 
+    /**
+     * Throws IllegalArgumentException for a curve BrightnessPolicy rejects, leaving the previous
+     * settings in force: Android's JS logs it; IosGlassesSession returns it through boundaryError.
+     */
     fun configureBrightness(auto: Boolean, level: Int, minimum: Int, maximum: Int, curve: String, fadeMs: Int) {
-        monitor.withLock {
-            try {
-                brightnessPolicy.configure(auto, level, minimum, maximum, curve, fadeMs)
-            } catch (e: IllegalArgumentException) {
-                // The curve is a saved setting; an exception here would abort the iOS app on every connect.
-                // Without e: the report below names the curve, and logWarn(line, e) would file a second one.
-                logWarn("brightness curve '$curve' rejected (${e.message}); using default")
-                CaughtErrors.report("brightness", IllegalArgumentException("brightness curve '$curve' rejected (${e.message}); using the default", e))
-                brightnessPolicy.configure(auto, level, minimum, maximum, BrightnessPolicy.DEFAULT_CURVE, fadeMs)
-            }
-        }
+        monitor.withLock { brightnessPolicy.configure(auto, level, minimum, maximum, curve, fadeMs) }
         interruptibleSleep.interrupt()
     }
 

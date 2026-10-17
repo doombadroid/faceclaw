@@ -54,7 +54,6 @@ const catches = body => [...body.matchAll(/\bcatch\s*(?:\([^)]*\))?\s*\{/g)].map
 const HELPERS = [
   ['boundary()', /internal inline fun <T> boundary\([^]*?\)\s*:\s*T\s*=\s*try\s*\{/g],
   ['boundaryError()', /internal inline fun boundaryError\([^]*?\)\s*:\s*String\?\s*=\s*try\s*\{/g],
-  ['GlassesSessionCore.configureBrightness', /fun configureBrightness\(auto: Boolean[^)]*\)\s*\{/g],
   ['guardCallback', /export function guardCallback<R>\([^)]*\)[^{]*\{/g],
   ['logJsError', /export function logJsError\([^)]*\)[^{]*\{/g],
 ];
@@ -93,6 +92,16 @@ test('every catch in bootstrap files an error report; each reporter install has 
   for (const install of ['installErrorNotice', 'installKotlinErrorReports']) {
     assert.match(bootstrap, new RegExp(`try \\{ ${install}\\(\\) \\} catch`), install);
   }
+});
+
+test('a rejected brightness curve reaches JS on iOS as a reported error, as it throws on Android', () => {
+  const ios = sources.find(s => s.file.endsWith('iosMain/kotlin/com/faceclaw/app/ble/IosGlassesSession.kt')).text;
+  assert.match(ios, /fun configureBrightness\([^)]*\): String\? =\s*boundaryError\("IosGlassesSession\.configureBrightness"\) \{ core\.configureBrightness\(/);
+  const bridge = sources.find(s => s.file === 'app/native/faceclaw-communicator.ios.ts').text;
+  assert.match(bridge, /async configureBrightness\([^]*?\{\s*await this\.enqueueNativeCall\(\(\) => throwIfError\(this\.communicator\.configureBrightness/);
+  // The shared core throws (Android's FaceclawBleCommunicator passes it to JS); no fallback hides it.
+  const core = sources.find(s => s.file.endsWith('session/GlassesSessionCore.kt')).text;
+  assert.doesNotMatch(block(core, core.indexOf('fun configureBrightness(auto: Boolean')), /\bcatch\b/);
 });
 
 test('Kotlin catches reach IosErrorReports', () => {

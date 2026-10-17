@@ -308,22 +308,26 @@ class GlassesSessionCoreTest {
         assertFailsWith<IllegalArgumentException> { s.core.submitShellScene(ArrayByteReader(byteArrayOf(1, 0)), 0, 3) }
     }
 
-    @Test fun unusableSavedCurveFallsBackToTheDefaultInsteadOfThrowing() {
+    /**
+     * A rejected curve throws to the caller, as it did before iOS: Android's JS logs "brightness
+     * configuration failed" and retries; iOS's facade (IosGlassesSession.configureBrightness, checked
+     * by tests/never-silent.test.cjs) returns it through boundaryError, which files the report.
+     */
+    @Test fun unusableCurveThrowsAndLeavesThePreviousSettings() {
         val core = Session().core
         val als = ByteArray(24).also { byteArrayOf(65, 76, 1, 2, 11, 0, 2).copyInto(it) } // 0.2 lux
         core.configureBrightness(true, 50, 20, 100, "0:0,1000:100", 280)
-        val reported = mutableListOf<Pair<String, String>>()
+        val reported = mutableListOf<String>()
         val before = CaughtErrors.sink
-        CaughtErrors.sink = { source, error -> reported += source to error.toString() }
-        // ln(1+1e-17) == ln(1), so the knots collide; on iOS a throw here aborts the app.
-        try { core.configureBrightness(true, 50, 20, 100, "0:0,1e-17:100", 450) } finally { CaughtErrors.sink = before }
-        // The fallback is not silent: the owner gets a report naming the rejected curve.
-        assertEquals(1, reported.size)
-        assertEquals("brightness", reported[0].first)
-        assertTrue("0:0,1e-17:100" in reported[0].second, reported[0].second)
-        assertEquals(450, core.brightnessPolicy.fadeMs)
+        CaughtErrors.sink = { source, _ -> reported += source }
+        // ln(1+1e-17) == ln(1), so the knots collide.
+        try {
+            assertFailsWith<IllegalArgumentException> { core.configureBrightness(true, 50, 20, 100, "0:0,1e-17:100", 450) }
+        } finally { CaughtErrors.sink = before }
+        assertEquals(emptyList(), reported, "the caller reports it (boundaryError on iOS), not the core")
+        assertEquals(280, core.brightnessPolicy.fadeMs)
         core.brightnessPolicy.sample(als, 1000)
-        assertEquals(26, core.brightnessPolicy.target) // Default curve; the previous one gives 22.
+        assertEquals(22, core.brightnessPolicy.target) // The previous curve; the default gives 26.
     }
 
     /** Session-core catches log at WARN with the Throwable; on iOS that line alone is invisible. */
