@@ -415,6 +415,8 @@ export class WorkerAppHost {
     options.worker.onerror = (error) => {
       options.navigationSensors?.stop();
       console.error(`worker app ${options.appId} error: ${JSON.stringify(error)}`);
+      // The worker's uncaught errors: bootstrap's handlers only see the main isolate's.
+      reportError(`worker ${options.appId}`, error);
     };
   }
 

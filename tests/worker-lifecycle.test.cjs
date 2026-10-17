@@ -4,7 +4,7 @@ const { loader } = require('./helpers/load-typescript.cjs');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture() {
-  const sent = [], stopped = [], removed = [], focused = [], timers = new Map(), published = [];
+  const sent = [], reported = [], stopped = [], removed = [], focused = [], timers = new Map(), published = [];
   let kills = 0, resolveSurface;
   const worker = { postMessage: message => sent.push(message), terminate: () => kills++ };
   const shellWindows = new Map();
@@ -12,7 +12,7 @@ function fixture() {
     '../../graphics/image': {}, './chrome-layer': { windowIcon() {} },
     '../../assistant/tool-registry': { toolRegistry: { removeAppTools() {} } },
     './geometry': { appViewportSize: () => ({ width: 576, height: 288 }) },
-    '../../native/frame-timings': {}, '../../native/error-reports': {}, './worker-state': { publishWorkerState: (...args) => published.push(args) },
+    '../../native/frame-timings': {}, '../../native/error-reports': { reportError: (...args) => reported.push(args) }, './worker-state': { publishWorkerState: (...args) => published.push(args) },
     './shell': { shell: { registerWindow: w => shellWindows.set(w.windowId, w), setTrayIcon() {},
       focusWindow: id => focused.push(id), isWindowFocused: () => false } },
   });
@@ -20,7 +20,7 @@ function fixture() {
   const host = new WorkerAppHost({ appId: 'game', worker, onStopping: () => stopped.push(host),
     configureSurface: () => new Promise(resolve => { resolveSurface = resolve; }),
     setSurfaceVisible() {}, removeSurface: id => removed.push(id), requestShellRender() {} });
-  return { host, sent, stopped, timers, removed, focused, published, get kills() { return kills; },
+  return { host, worker, reported, sent, stopped, timers, removed, focused, published, get kills() { return kills; },
     ready: () => worker.onmessage({ data: { type: 'worker-ready' } }),
     reply: data => worker.onmessage({ data }),
     open: id => host.openWindow({ windowId: id, title: id, focus: true }),
@@ -138,4 +138,11 @@ test('both controllers remove only the retiring host and create a fresh worker o
     const next = host.ensureWorkerHost('flappy', () => ({})); assert.notEqual(next, first);
     first.options.onStopping(); assert.equal(host.appHosts.get('flappy'), next);
   }
+});
+
+test("a worker's uncaught error files an error report on the main isolate", () => {
+  const f = fixture(); f.ready();
+  const error = { message: 'Uncaught TypeError: x is undefined', filename: 'game.js', lineno: 3 };
+  f.worker.onerror(error);
+  assert.deepEqual(f.reported, [['worker game', error]]);
 });
