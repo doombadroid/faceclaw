@@ -566,11 +566,12 @@ export class IosPreviewController {
     await display.submitSurfaceFrame(id, pixels, { x: 0, y: 0, width, height }, `${id}#${++this.nextWorkerFrame}`, -1, 0, draws)
     this.schedulePreviewUpdate()
   }
+  // After displayReady, as submit() is: on a fresh display the surface may not be registered yet.
   private setWindowSurfaceVisible(id: string, visible: boolean): void {
-    void this.display?.setSurfaceVisible(id, visible).then(() => this.schedulePreviewUpdate()).catch(error => this.fail(error))
+    void this.displayReady.then(() => this.display?.setSurfaceVisible(id, visible)).then(() => this.schedulePreviewUpdate()).catch(error => this.fail(error))
   }
   private removeWindowSurface(id: string): void {
-    void this.display?.removeSurface(id).then(() => this.schedulePreviewUpdate()).catch(error => this.fail(error))
+    void this.displayReady.then(() => this.display?.removeSurface(id)).then(() => this.schedulePreviewUpdate()).catch(error => this.fail(error))
   }
   /** Re-render and resubmit the shell surface; one render in flight, at most one queued. */
   private requestShellRender(): void {

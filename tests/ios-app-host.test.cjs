@@ -516,6 +516,7 @@ test('iOS configures an in-process surface before submitting constructor-trigger
   controller.requestShellRender = () => {};
   controller.schedulePreviewUpdate = () => {};
   controller.communicator = null;
+  controller.displayReady = Promise.resolve();
   controller.previewTarget = {
     async configureSurface(id) { surfaces.add(id); }, async setSurfaceVisible() {},
     async removeSurface(id) { surfaces.delete(id); },
