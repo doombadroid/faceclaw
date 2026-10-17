@@ -15,6 +15,13 @@ __attribute__((swift_name("KotlinBase")))
 - (instancetype)init __attribute__((unavailable));
 + (instancetype)new __attribute__((unavailable));
 @end
+@interface FaceclawKitBase (FaceclawKitBaseCopying) <NSCopying>
+@end
+__attribute__((swift_name("BlockingQueue")))
+@interface FaceclawKitBlockingQueue<T> : FaceclawKitBase
+- (instancetype)init __attribute__((swift_name("init()"))) __attribute__((objc_designated_initializer));
+- (void)putItem:(T _Nullable)item __attribute__((swift_name("put(item:)")));
+@end
 __attribute__((swift_name("IosAudioPacketListener")))
 @protocol FaceclawKitIosAudioPacketListener
 @required
@@ -48,7 +55,7 @@ function check(source) {
   const header = path.join(dir, 'FaceclawKit.h');
   const file = path.join(dir, 'probe.ios.ts');
   fs.writeFileSync(header, HEADER);
-  fs.writeFileSync(file, `declare const FaceclawKitIosGlassesSession: any, FaceclawKitIosGifRecorder: any, FaceclawKitIosAudioPacketListener: any, FaceclawKitIosTranscriptListener: any;\n${source}`);
+  fs.writeFileSync(file, `declare const FaceclawKitIosGlassesSession: any, FaceclawKitIosGifRecorder: any, FaceclawKitBlockingQueue: any, FaceclawKitIosAudioPacketListener: any, FaceclawKitIosTranscriptListener: any;\n${source}`);
   try { return run({ kotlinHeader: header, files: [file] }).errors; } finally { fs.rmSync(dir, { recursive: true }); }
 }
 
@@ -101,6 +108,7 @@ test('calls into native classes are checked through variables, fields and return
     other.startG2AudioForwarding(null);
     other.copySession().mtuSize;
     FaceclawKitIosGlassesSession.new();
+    FaceclawKitBlockingQueue.alloc().init().take();
     class Bridge { constructor() { this.native = FaceclawKitIosGlassesSession.alloc().initWithRightAddressLeftAddress('r', null); }
       go() { return this.native.startAudio(); } }`);
   assert.deepEqual(errors.map(e => e.replace(/^.*?: /, '')), [
@@ -108,6 +116,7 @@ test('calls into native classes are checked through variables, fields and return
     'an instance of FaceclawKitIosGlassesSession has no member `startG2AudioForwarding`',
     'an instance of FaceclawKitIosGlassesSession has no member `mtuSize`',
     'FaceclawKitIosGlassesSession has no class member `new`',
+    'an instance of FaceclawKitBlockingQueue has no member `take`',
     'an instance of FaceclawKitIosGlassesSession has no member `startAudio`',
   ]);
 });

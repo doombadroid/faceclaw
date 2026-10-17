@@ -85,7 +85,7 @@ function typeRef(type) {
 }
 
 function emptyType(kind, name) {
-  return { kind, name, supers: [], instance: new Map(), statics: new Map(), required: new Map(), unavailable: new Set(), unavailableStatics: new Set() };
+  return { kind, name, superclass: null, supers: [], instance: new Map(), statics: new Map(), required: new Map(), unavailable: new Set(), unavailableStatics: new Set() };
 }
 
 function parseHeader(text, model) {
@@ -95,12 +95,14 @@ function parseHeader(text, model) {
   for (const raw of lines) {
     const line = raw.trim();
     if (!current) {
-      const head = line.match(/^@(interface|protocol)\s+(\w+)\s*(?::\s*(\w+))?\s*(?:\(\s*\w*\s*\))?\s*(?:<([^>]*)>)?/);
+      // `@interface Name<Generics> (Category) : Super<Generics> <Protocols>` / `@protocol Name <Protocols>`.
+      const head = line.match(/^@(interface|protocol)\s+(\w+)\s*(<[^>]*>)?\s*(?:\(\s*\w*\s*\))?\s*(?::\s*(\w+)\s*(?:<[^>]*>)?)?\s*(?:<([^>]*)>)?/);
       if (!head || /;\s*$/.test(line)) continue; // a forward declaration (`@protocol X;`)
-      const [, kind, name, superName, protocols] = head;
+      const [, kind, name, angle, superName, trailing] = head;
+      const protocols = kind === 'protocol' ? (angle || '').slice(1, -1) : trailing;
       current = model.get(name) || emptyType(kind, name);
       model.set(name, current);
-      if (superName) current.supers.push(superName);
+      if (superName) current.superclass = superName;
       if (protocols) current.supers.push(...protocols.split(',').map(s => s.trim()).filter(Boolean));
       required = true;
       continue;
@@ -149,7 +151,7 @@ function parseSwift(text, model, unparsed) {
     if (keyword === 'class' && !/\bstatic\b/.test(modifiers) && !/func/.test(modifiers)) {
       const name = explicit || ident;
       current = model.get(name) || emptyType('interface', name);
-      current.supers.push('NSObject');
+      current.superclass = 'NSObject';
       model.set(name, current);
       continue;
     }
@@ -178,25 +180,27 @@ function loadModel(kotlinHeader) {
 const NSOBJECT_STATICS = new Set(['alloc', 'new', 'class', 'extend', 'ObjCProtocols']);
 const NSOBJECT_INSTANCE = new Set(['init', 'description', 'respondsToSelector', 'isKindOfClass', 'isEqual', 'hash', 'retain', 'release']);
 
-/** A member of a type, searching superclasses and protocols (the nearest declaration wins, an
- * `unavailable` one included). Types outside the headers other than NSObject (UIKit, WebKit) are open. */
-function lookup(model, typeName, member, statics, seen = new Set()) {
+/** A member of a type, searching its superclass and protocols (the nearest declaration wins, an
+ * `unavailable` one included). A superclass outside the headers other than NSObject (UIKit, WebKit)
+ * leaves the type open; a protocol outside them (NSCopying, WKScriptMessageHandler) adds nothing JS
+ * calls, so it closes, or every Kotlin class would be open through FaceclawKitBase <NSCopying>. */
+function lookup(model, typeName, member, statics, seen = new Set(), viaProtocol = false) {
   if (typeName === 'NSObject') {
     if (!(statics ? NSOBJECT_STATICS : NSOBJECT_INSTANCE).has(member)) return null;
-    return { selector: member, ret: member === 'alloc' || member === 'new' ? 'instancetype' : '' };
+    return { selector: member, ret: member === 'alloc' || member === 'new' || member === 'init' ? 'instancetype' : '' };
   }
   const type = model.get(typeName);
-  if (!type) return { open: true };
+  if (!type) return viaProtocol ? null : { open: true };
   if (seen.has(typeName)) return null;
   seen.add(typeName);
   const table = statics ? type.statics : type.instance;
   if (table.has(member)) return table.get(member);
   if ((statics ? type.unavailableStatics : type.unavailable).has(member)) return null;
-  for (const parent of type.supers) {
-    const hit = lookup(model, parent, member, statics, seen);
+  for (const proto of type.supers) {
+    const hit = lookup(model, proto, member, statics, seen, true);
     if (hit) return hit;
   }
-  return null;
+  return type.superclass ? lookup(model, type.superclass, member, statics, seen, false) : null;
 }
 
 function requiredMethods(model, protocolName, out = new Map(), seen = new Set()) {
