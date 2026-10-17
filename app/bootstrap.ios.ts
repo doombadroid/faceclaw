@@ -5,6 +5,9 @@ declare const FaceclawConfigPort: any
 FaceclawConfigPort.processPendingRequest()
 require('./phone-ui/onboarding-register.ios')
 require('./phone-ui/ios/register')
+// After the transferred preferences, before anything reads the provider.
+const { migrateIosVoiceProvider } = require('./ui/dashboard-settings') as typeof import('./ui/dashboard-settings')
+migrateIosVoiceProvider()
 // Before Application.run: a notification action can cold-launch the app in the background.
 const { installPhoneAlarmDelegate } = require('./native/alarms.ios') as typeof import('./native/alarms.ios')
 // Alarm alerts must never stop the app from launching.
@@ -13,6 +16,8 @@ try { installPhoneAlarmDelegate() } catch (error) { console.error(`phone alarm d
 // oxlint-disable-next-line typescript/no-deprecated -- still fires once, with the first window's content
 Application.on(Application.launchEvent, () => {
   setTimeout(() => require('./analytics/analytics-sources').startAppAnalytics(), 0)
+  // Parakeet redoes its slow Neural Engine build after each app or iOS update (in Swift, off the main thread).
+  setTimeout(() => require('./native/asr-model').warmUpAsrModels(), 0)
 })
 const { hasCompletedOnboarding } = require('./phone-ui/onboarding-state') as typeof import('./phone-ui/onboarding-state')
 const { createShell } = require('./phone-ui/ios/shell') as typeof import('./phone-ui/ios/shell')

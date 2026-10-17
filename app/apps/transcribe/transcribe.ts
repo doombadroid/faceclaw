@@ -19,6 +19,8 @@ export class TranscribeLayer implements Layer {
   private readonly transcript = new TranscriptModel();
   private readonly scroll = new TranscriptScroll();
   private saveNotice = "";
+  /** Shown in place of the empty transcript (the Parakeet offer). */
+  notice = "";
   private unsubscribeTranscript: (() => void) | null = null;
   private unsubscribePause: (() => void) | null = null;
   private unsubscribeStatus: (() => void) | null = null;
@@ -42,7 +44,7 @@ export class TranscribeLayer implements Layer {
     const font = getDefaultSmallFont();
     const { width, height } = ctx.stack.getBaseSize();
     const image = new GrayImage(width, height, 0);
-    const text = this.transcript.text || (this.listening ? "Listening..." : this.detail);
+    const text = this.transcript.text || this.notice || (this.listening ? "Listening..." : this.detail);
     const wrapped = wrapTranscribeText((line) => font.measureText(line), text, width - 64);
 
     image.drawText(font, 24, 20, "Transcribe", 200);

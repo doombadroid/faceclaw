@@ -29,7 +29,8 @@ export type VoiceControlState = {
 // Whisper backend added alongside "onboard" (Moonshine). Kept as-is rather than
 // renamed, since it's a persisted settings value on real installs already.
 // "onboard-moonshine" is iOS-only (see dashboard-settings.ts); here it is Moonshine like "onboard".
-export type VoiceProviderKind = "onboard" | "onboard-moonshine" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
+// "onboard-parakeet" (FluidAudio's Parakeet) is iOS-only too, and never stored on Android.
+export type VoiceProviderKind = "onboard" | "onboard-parakeet" | "onboard-moonshine" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
 
 export type VoiceTranscriptEvent = CloudSttTranscriptEvent & {
   /**

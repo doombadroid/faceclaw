@@ -5,6 +5,7 @@ import {
   startModelDownload,
   type ModelDownload,
 } from "./model-downloader";
+import { fluidNative } from "./parakeet";
 
 /**
  * Download management for the on-device transcription models (sherpa-onnx
@@ -36,9 +37,14 @@ import {
  * Mirrors the on-phone assistant model flow in llama.ts, except each model
  * here is multiple files rather than one; they download sequentially through
  * model-downloader (resume + pinned sha256 per file).
+ *
+ * "parakeet-v3" (iOS only) is different: FluidAudio (FaceclawParakeet.swift,
+ * through parakeet.ios.ts) fetches its CoreML folder at a pinned revision
+ * itself, then warms it up, which can take minutes after each app update.
+ * Captures use it only once warm (isAsrModelWarm).
  */
 
-export type AsrModelId = "moonshine" | "whisper-base-en";
+export type AsrModelId = "moonshine" | "whisper-base-en" | "parakeet-v3";
 
 type AsrModelFile = {
   name: string;
@@ -52,6 +58,8 @@ type AsrModelDef = {
   baseUrl: string;
   files: AsrModelFile[];
   totalBytes: number;
+  /** FluidAudio downloads and checks the files itself (FaceclawParakeet.swift). */
+  kind?: "fluid";
 };
 
 export const ASR_MODELS: Record<AsrModelId, AsrModelDef> = {
@@ -109,6 +117,17 @@ export const ASR_MODELS: Record<AsrModelId, AsrModelDef> = {
     ],
     totalBytes: 160626066,
   },
+  "parakeet-v3": {
+    label: "Parakeet (25 languages)",
+    // FluidAudio's folder name for FluidInference/parakeet-tdt-0.6b-v3-coreml (cc-by-4.0); the
+    // Swift side routes this folder to FluidAudio.
+    dirName: "parakeet-tdt-0.6b-v3-coreml",
+    baseUrl: "",
+    files: [],
+    // Preprocessor, int8 encoder, decoder and joint as Hugging Face lists them (~483 MB).
+    totalBytes: 483_000_000,
+    kind: "fluid",
+  },
 };
 
 export type AsrModelState = {
@@ -133,6 +152,7 @@ function freshRuntime(): ModelRuntime {
 const runtimes: Record<AsrModelId, ModelRuntime> = {
   moonshine: freshRuntime(),
   "whisper-base-en": freshRuntime(),
+  "parakeet-v3": freshRuntime(),
 };
 
 /** The directory the recognizer loads the model's files from. */
@@ -149,7 +169,24 @@ function isFilePresent(id: AsrModelId, file: AsrModelFile): boolean {
 }
 
 export function isAsrModelReady(id: AsrModelId): boolean {
+  if (ASR_MODELS[id].kind === "fluid") return fluidNative()?.isDownloadedDir(asrModelDir(id)) ?? false;
   return ASR_MODELS[id].files.every((file) => isFilePresent(id, file));
+}
+
+/** Ready for a capture: downloaded and, for Parakeet, warmed up for this app build. */
+export function isAsrModelWarm(id: AsrModelId): boolean {
+  if (ASR_MODELS[id].kind === "fluid") return fluidNative()?.isWarmDir(asrModelDir(id)) ?? false;
+  return isAsrModelReady(id);
+}
+
+/** At launch: Parakeet redoes its slow Neural Engine build after each app or iOS update. Never downloads. */
+export function warmUpAsrModels(): void {
+  const native = fluidNative(), dir = asrModelDir("parakeet-v3");
+  if (!native?.isDownloadedDir(dir) || native.isWarmDir(dir)) return;
+  native.warmUpDirCompletion(dir, (error) => {
+    if (error) console.error(`Parakeet warm-up failed: ${error}`);
+    notifyStateChanged("parakeet-v3");
+  });
 }
 
 export function asrModelState(id: AsrModelId): AsrModelState {
@@ -183,10 +220,41 @@ function notifyStateChanged(id: AsrModelId): void {
 export function startAsrModelDownload(id: AsrModelId): void {
   const runtime = runtimes[id];
   if (runtime.downloader || isAsrModelReady(id)) return;
+  if (ASR_MODELS[id].kind === "fluid") {
+    startFluidDownload(id);
+    return;
+  }
   runtime.completedBytes = ASR_MODELS[id].files
     .filter((file) => isFilePresent(id, file))
     .reduce((sum, f) => sum + f.sizeBytes, 0);
   downloadNextFile(id);
+  notifyStateChanged(id);
+}
+
+/** The bytes reach totalBytes when the download ends; the row then reads Preparing until the warm-up is done. */
+function startFluidDownload(id: AsrModelId): void {
+  const native = fluidNative();
+  if (!native) return;
+  const runtime = runtimes[id];
+  const handle: ModelDownload = { cancel: () => native.cancelDownload() };
+  runtime.downloader = handle;
+  runtime.completedBytes = 0;
+  runtime.currentFileBytes = 0;
+  native.downloadDirProgressCompletion(
+    asrModelDir(id),
+    (fraction) => {
+      // FluidAudio's fraction restarts per file; show the highest.
+      runtime.currentFileBytes = Math.max(runtime.currentFileBytes, Math.round(fraction * ASR_MODELS[id].totalBytes));
+      notifyStateChanged(id);
+    },
+    (error) => {
+      if (error) console.error(`Voice model download failed (${id}): ${error}`);
+      // A cancelled or replaced download no longer owns the row.
+      if (runtime.downloader !== handle) return;
+      runtime.downloader = null;
+      notifyStateChanged(id);
+    },
+  );
   notifyStateChanged(id);
 }
 
@@ -230,7 +298,8 @@ export function cancelAsrModelDownload(id: AsrModelId): void {
 export function deleteAsrModel(id: AsrModelId): void {
   cancelAsrModelDownload(id);
   try {
-    deleteModelFiles(asrModelDir(id), ASR_MODELS[id].files.map((file) => file.name));
+    if (ASR_MODELS[id].kind === "fluid") fluidNative()?.deleteDir(asrModelDir(id));
+    else deleteModelFiles(asrModelDir(id), ASR_MODELS[id].files.map((file) => file.name));
   } catch (error) {
     console.error(`Voice model delete failed (${id}): ${String(error)}`);
   }

@@ -45,7 +45,8 @@ function harness() {
       Dialogs: { confirm: async options => { calls.push(['confirm', options.title]); messages.push(options.message); return true; } } },
     '../../graphics/ui-fonts': {}, '../../graphics/logo': {}, '../../graphics/textwrap': {}, '../../version': { FACECLAW_VERSION: 'test' },
     '../../native/llama': { LOCAL_MODEL: { sizeBytes: 1e9, label: 'local' } },
-    '../../native/asr-model': { ASR_MODELS: { moonshine: { totalBytes: 1e6, label: 'Moonshine' }, 'whisper-base-en': { totalBytes: 1e6, label: 'Whisper' } },
+    '../../native/asr-model': { ASR_MODELS: { moonshine: { totalBytes: 1e6, label: 'Moonshine' }, 'whisper-base-en': { totalBytes: 1e6, label: 'Whisper' },
+      'parakeet-v3': { totalBytes: 483e6, label: 'Parakeet (25 languages)' } },
       asrModelState: id => asr.states[id] || { status: 'absent', bytesDownloaded: 0, totalBytes: 1e6 },
       onAsrModelStateChanged: (_id, fn) => { asr.listeners.add(fn); return () => asr.listeners.delete(fn); },
       startAsrModelDownload: id => asr.calls.push(['start', id]), cancelAsrModelDownload: id => asr.calls.push(['cancel', id]),
@@ -276,7 +277,8 @@ test('category rows: bool → switch, enum → choice page, string → the contr
 test('iOS lists the on-device model downloads on the glasses and the phone, and the phone row follows the download', async () => {
   const { load, mocks, asr } = harness();
   const glasses = load('app/ui/dashboard/settings-menus.ts').createSettingsPanelLayer().sections.find(section => section.label === 'Voice');
-  assert.deepEqual([...glasses.items].map(item => item.label).slice(2), ['On-device model: Moonshine', 'On-device model: Whisper']);
+  assert.deepEqual([...glasses.items].map(item => item.label).slice(2),
+    ['On-device model: Parakeet (25 languages)', 'On-device model: Moonshine', 'On-device model: Whisper']);
   const actions = [];
   let pick = null;
   mocks['@nativescript/core'].Label = class {};
@@ -305,6 +307,12 @@ test('iOS lists the on-device model downloads on the glasses and the phone, and 
   pick = 'Close'; row().onTap(); await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(asr.calls, [['start', 'moonshine'], ['cancel', 'moonshine']]);
   assert.deepEqual(actions, [['Download (1 MB)'], ['Cancel Download'], ['Delete Model']]);
+  // Parakeet's row reads Preparing while its warm-up follows the download.
+  const parakeet = () => rows(page).find(r => r.title === 'Parakeet (25 languages) Model');
+  assert.equal(parakeet().value, '483 MB');
+  asr.states['parakeet-v3'] = { status: 'downloading', bytesDownloaded: 483e6, totalBytes: 483e6 };
+  for (const fn of asr.listeners) fn(asr.states['parakeet-v3']);
+  assert.equal(parakeet().value, 'Preparing…');
   page.emit('unloaded');
   assert.equal(asr.listeners.size, 0);
 });

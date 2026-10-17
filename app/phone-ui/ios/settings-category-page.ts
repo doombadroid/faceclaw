@@ -81,6 +81,8 @@ const asrModelMb = (id: AsrModelId) => `${Math.round(ASR_MODELS[id].totalBytes /
 function asrModelValue(id: AsrModelId): string {
   const state = asrModelState(id)
   if (state.status === 'ready') return 'Downloaded'
+  // Parakeet's warm-up after its download.
+  if (state.status === 'downloading' && state.totalBytes > 0 && state.bytesDownloaded >= state.totalBytes) return 'Preparing…'
   if (state.status === 'downloading') return `${state.totalBytes > 0 ? Math.floor(state.bytesDownloaded / state.totalBytes * 100) : 0}%`
   return asrModelMb(id)
 }

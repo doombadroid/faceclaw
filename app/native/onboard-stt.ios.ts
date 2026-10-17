@@ -1,6 +1,6 @@
 /**
- * The On-device (Moonshine) and On-device (Whisper) providers on iOS: the
- * downloaded sherpa-onnx model as a CloudSttClient, so the voice bridge feeds
+ * The On-device (Parakeet), (Moonshine) and (Whisper) providers on iOS: the
+ * downloaded model (FluidAudio's Parakeet, or sherpa-onnx) as a CloudSttClient, so the voice bridge feeds
  * it FaceclawSpeech's PCM exactly as it feeds a cloud provider (and wraps it in
  * the same ReconnectingSttClient for buffering until ready and pause commits).
  * Decoding is FaceclawKit's IosOnDeviceTranscriber (Android's segmented
@@ -8,7 +8,7 @@
  */
 import type { CloudSttClient, CloudSttOptions } from "./cloud-stt";
 import type { PushToTalkOptions, VoiceProviderKind } from "./voice-control";
-import { asrModelDir, isAsrModelReady, type AsrModelId } from "./asr-model";
+import { asrModelDir, isAsrModelReady, isAsrModelWarm, type AsrModelId } from "./asr-model";
 import { toData } from "./kotlin-data";
 import { kotlinListener } from "./kotlin-listener.ios";
 
@@ -20,7 +20,7 @@ declare const FaceclawKitIosSpeakerVerifiedListener: any;
 
 let loader: any = null;
 
-/** The app's one FaceclawSherpa model loader (FaceclawKitIosSherpaLoader). */
+/** The app's one FaceclawSherpa model loader (FaceclawKitIosSherpaLoader); it hands the Parakeet folder to FluidAudio. */
 export function sherpaLoader(): any {
   if (!loader) loader = FaceclawSherpa.new();
   return loader;
@@ -28,6 +28,8 @@ export function sherpaLoader(): any {
 
 /** The downloaded model an on-device provider uses, or null for Apple's recognizer and the cloud. */
 export function onboardModel(provider: VoiceProviderKind): AsrModelId | null {
+  // Until Parakeet is downloaded and warmed up for this build, its captures use Apple's recognizer.
+  if (provider === "onboard-parakeet") return isAsrModelWarm("parakeet-v3") ? "parakeet-v3" : null;
   if (provider === "onboard-moonshine") return "moonshine";
   if (provider === "onboard-whisper") return "whisper-base-en";
   return null;

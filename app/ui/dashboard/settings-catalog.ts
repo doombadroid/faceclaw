@@ -265,7 +265,9 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
       {
         header: "Voice",
         footer: "On-device models transcribe on the phone, with no API key; each On-device provider needs its model downloaded here. An interrupted download resumes.",
-        items: [item(wakeWordActionSetting), item(voiceProviderSetting), { kind: "asr-model", model: "moonshine" }, { kind: "asr-model", model: "whisper-base-en" }],
+        items: [item(wakeWordActionSetting), item(voiceProviderSetting),
+          ...(global.isIOS ? [{ kind: "asr-model", model: "parakeet-v3" } as const] : []),
+          { kind: "asr-model", model: "moonshine" }, { kind: "asr-model", model: "whisper-base-en" }],
       },
       { header: "Assistant", items: [item(assistantBackendSetting), item(assistantModelSetting), item(assistantSkipConfirmationSetting)] },
       {

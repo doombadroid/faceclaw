@@ -126,6 +126,7 @@ function settingsSections(): SettingsSection[] {
       items: [
         enumSettingMenuItem(wakeWordActionSetting),
         enumSettingMenuItem(voiceProviderSetting),
+        ...(global.isIOS ? [asrModelMenuItem("parakeet-v3")] : []),
         asrModelMenuItem("moonshine"),
         asrModelMenuItem("whisper-base-en"),
       ],
@@ -442,6 +443,8 @@ function watchAsrModelDownload(id: AsrModelId, ctx: LayerContext): void {
 function asrModelStatusText(id: AsrModelId): string {
   const state = asrModelState(id);
   if (state.status === "ready") return "downloaded";
+  // Parakeet's warm-up after its download.
+  if (state.status === "downloading" && state.totalBytes > 0 && state.bytesDownloaded >= state.totalBytes) return "preparing";
   if (state.status === "downloading") {
     const pct = state.totalBytes > 0 ? Math.floor((state.bytesDownloaded / state.totalBytes) * 100) : 0;
     return `${pct}% of ${asrModelMb(id)}`;
