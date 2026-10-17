@@ -174,7 +174,9 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
 function dismissIosNotification(key: string): ToolResult {
   const notification = readActiveNotifications(Number.MAX_SAFE_INTEGER).find((n) => n.key === key);
   if (!notification) return err("No notification with that key.");
-  const clears = notification.category !== "1" && notification.actions.some((a) => a.index === 1 && a.enabled);
+  // Only a negative action labelled "Clear" is a dismissal; others decline a call, delete mail, etc.
+  const clears = notification.category !== "1" &&
+    notification.actions.some((a) => a.index === 1 && a.enabled && a.title.trim().toLowerCase() === "clear");
   if (clears && invokeNotificationAction(key, 1)) return ok("Dismissed.");
   dismissNotification(key);
   return ok("Hidden on the glasses; it stays on the iPhone.");

@@ -272,8 +272,9 @@ test('iOS notifications list explains an empty relay, and dismiss clears through
   const negative = [{ index: 0, title: 'Accept', enabled: true }, { index: 1, title: 'Decline', enabled: true }];
   const rows = [
     { key: 'call', appName: 'Phone', title: 'Mum', text: '', category: '1', actions: negative },
-    { key: 'mail', appName: 'Mail', title: 'Hi', text: 'Lunch?', category: '6', actions: [{ index: 1, title: 'Clear', enabled: true }] },
+    { key: 'mail', appName: 'Mail', title: 'Hi', text: 'Lunch?', category: '6', actions: [{ index: 1, title: 'CLEAR', enabled: true }] },
     { key: 'news', appName: 'News', title: 'Story', text: '', category: '7', actions: [] },
+    { key: 'trash', appName: 'Mail', title: 'Spam', text: '', category: '6', actions: [{ index: 1, title: 'Delete', enabled: true }] },
   ];
   const tools = iosSystemTools(f, {}, { readActiveNotifications: max => rows.slice(0, max) });
   assert.match(tools.registered.get('notifications.list')({ max: 2 }).content, /\[Phone\] Mum \(key: call\)\n- \[Mail\] Hi: Lunch\? \(key: mail\)$/);
@@ -281,7 +282,8 @@ test('iOS notifications list explains an empty relay, and dismiss clears through
   assert.equal(dismiss({ key: 'mail' }).content, 'Dismissed.');
   assert.match(dismiss({ key: 'call' }).content, /stays on the iPhone/);
   assert.match(dismiss({ key: 'news' }).content, /stays on the iPhone/);
-  assert.deepEqual(tools.calls.slice(1), [['action', 'mail', 1], ['hide', 'call'], ['hide', 'news']]);
+  assert.match(dismiss({ key: 'trash' }).content, /stays on the iPhone/, 'a negative action other than Clear is never sent');
+  assert.deepEqual(tools.calls.slice(1), [['action', 'mail', 1], ['hide', 'call'], ['hide', 'news'], ['hide', 'trash']]);
   assert.equal(dismiss({ key: 'gone' }).ok, false);
 });
 
