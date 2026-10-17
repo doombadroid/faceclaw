@@ -208,11 +208,16 @@ function synthesizeUrlManifest(url: string): EvenHubManifest {
 }
 
 /** Launch an installed app as a launcher-addressable singleton. */
-export function launchInstalledPackage(ctx: AppContext, app: InstalledEvenHubApp): Promise<void> {
-  return launchPackage(ctx, installedEvenHubPackagePath(app.packageId), {
-    appId: installedEvenHubAppId(app.packageId),
-    singleton: true,
-  });
+export async function launchInstalledPackage(ctx: AppContext, app: InstalledEvenHubApp): Promise<void> {
+  try {
+    await launchPackage(ctx, installedEvenHubPackagePath(app.packageId), {
+      appId: installedEvenHubAppId(app.packageId),
+      singleton: true,
+    });
+  } catch (error) {
+    // Builds up to 41 could store a damaged package; only a reinstall replaces it.
+    throw new Error(`${(error as Error)?.message ?? error} (reinstall ${app.name} if this keeps happening)`, { cause: error });
+  }
 }
 
 /** Close every running instance before an installed package is removed. */

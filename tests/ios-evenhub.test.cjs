@@ -112,6 +112,9 @@ test("a stored package that will not parse fails its launch with the parser's re
   await assert.rejects(manager.launchPackage(ctx, '/bad.ehpk'),
     new RegExp(`^Error: Could not read the EHPK manifest \\(${bad.length} bytes, starts 45 48 50 4b 00 00 00 00 14 00 00 00 00 00 00 00\\): ehpk: bad record magic at 20$`));
   await assert.rejects(manager.launchPackage(ctx, '/gone.ehpk'), /^Error: Could not read the EHPK file\.$/);
+  // Builds up to 41 could store a damaged package: an installed one's failure points at the reinstall.
+  await assert.rejects(manager.launchInstalledPackage(ctx, { packageId: 'test.app', name: 'Demo' }),
+    /^Error: Could not read the EHPK file\. \(reinstall Demo if this keeps happening\)$/);
 });
 
 function sessionHarness(overrides = {}, playBuzzer = () => {}, permissions = []) {
