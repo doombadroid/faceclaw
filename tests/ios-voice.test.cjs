@@ -276,3 +276,20 @@ test('continuous capture delivers one final per rolled utterance and keeps liste
   assert.equal(h.text.at(-1).text, 'square root of nine'); assert.deepEqual(h.commands, [true]);
   h.bridge.stopContinuousCapture(); assert.deepEqual(h.commands, [true, false]);
 });
+
+test('partials keep flowing across a roll, and the script tracker keeps its place (Teleprompter)', async () => {
+  const { loader } = require('./helpers/load-typescript.cjs');
+  const { ScriptTracker, tokenizeScript } = loader({}, {})('app/apps/teleprompter/script-tracker.ts');
+  const tracker = new ScriptTracker(tokenizeScript('four score and seven years ago our fathers brought forth a new nation').words);
+  const h = harness(); h.bridge.onTranscript(event => tracker.feed(event.text));
+  const start = h.bridge.startContinuousCapture(h.session, h.onboard, () => {}); h.release(); await start;
+  for (const partial of ['four score', 'four score and seven years ago']) h.event({ kind: 'transcript', text: partial, final: false });
+  h.event({ kind: 'transcript', text: 'Four score and seven years ago.', final: true });
+  h.event({ kind: 'pause' });
+  const atRoll = tracker.position;
+  // REPLACE semantics: the next utterance's partials start from empty text.
+  for (const partial of ['our fathers', 'our fathers brought forth']) h.event({ kind: 'transcript', text: partial, final: false });
+  assert.deepEqual(h.text.slice(-2).map(event => event.text), ['our fathers', 'our fathers brought forth']);
+  assert.equal(atRoll, 6); assert.equal(tracker.position, 10);
+  h.bridge.stopContinuousCapture();
+});
