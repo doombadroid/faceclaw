@@ -3960,13 +3960,16 @@ __attribute__((swift_name("IosDeviceInfoProbe")))
 __attribute__((swift_name("IosErrorReportListener")))
 @protocol FaceclawKitIosErrorReportListener
 @required
-- (void)onCaughtErrorSource:(NSString *)source message:(NSString *)message stack:(NSString *)stack __attribute__((swift_name("onCaughtError(source:message:stack:)")));
+
+/** [occurrences]: how many times it happened since the last call for this source and message. */
+- (void)onCaughtErrorSource:(NSString *)source message:(NSString *)message stack:(NSString *)stack occurrences:(int32_t)occurrences __attribute__((swift_name("onCaughtError(source:message:stack:occurrences:)")));
 @end
 
 
 /**
  * Errors the iOS facades caught instead of crashing, handed to JS so each leaves a report
- * the owner sees. Buffer and listener are touched on the main queue only, so no lock.
+ * the owner sees. Buffer and listener are touched on the main queue only, so no lock; the
+ * repeat filter runs on the caller's thread, under [repeatsLock].
  */
 __attribute__((objc_subclassing_restricted))
 __attribute__((swift_name("IosErrorReports")))
@@ -3975,7 +3978,8 @@ __attribute__((swift_name("IosErrorReports")))
 
 /**
  * Errors the iOS facades caught instead of crashing, handed to JS so each leaves a report
- * the owner sees. Buffer and listener are touched on the main queue only, so no lock.
+ * the owner sees. Buffer and listener are touched on the main queue only, so no lock; the
+ * repeat filter runs on the caller's thread, under [repeatsLock].
  */
 + (instancetype)allocWithZone:(struct _NSZone *)zone __attribute__((unavailable));
 + (instancetype)iosErrorReports __attribute__((swift_name("init()")));

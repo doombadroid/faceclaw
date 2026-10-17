@@ -398,3 +398,20 @@ test('An error Kotlin already filed (thrown by throwIfError) is not filed twice'
   h.module.reportError('iOS preview', new Error('a JS failure'));
   assert.deepEqual(h.module.listErrorReports().map(r => r.message), ['a JS failure']);
 });
+
+test('Kotlin forwards a repeat with the occurrences it skipped, and the count stays true', () => {
+  const h = harness();
+  const kit = { shared: {} };
+  loader({ FaceclawKitIosErrorReports: kit, FaceclawKitIosErrorReportListener: {} }, {
+    './kotlin-listener.ios': { kotlinListener: (_protocol, impl) => impl }, './error-reports': { reportError: h.module.reportError },
+  })('app/native/kotlin-error-reports.ios.ts').installKotlinErrorReports();
+  const listener = kit.shared.listener;
+  // IosErrorReports.record forwards the 1st, 2nd, 4th, 8th occurrence: 1, 1, 2, 4 at a time.
+  for (const occurrences of [1, 1, 2, 4]) listener.onCaughtErrorSourceMessageStackOccurrences('IosGlassesSession.submitSurfaceFrame', 'kotlin.IllegalStateException: surface gone', 'at frame', occurrences);
+  const [report] = h.module.listErrorReports();
+  assert.equal(report.count, 8);
+  assert.equal(report.stack, 'at frame');
+  assert.equal(h.stored()[0].count, 1, 'the first is on disk at once; the timer writes the rest');
+  h.flushTimers();
+  assert.equal(h.stored()[0].count, 8, 'count 2, 4 and 8 are each a write');
+});

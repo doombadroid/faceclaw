@@ -1,21 +1,30 @@
 package com.faceclaw.app
 
+import platform.Foundation.NSLock
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
 /** Implemented in app/native/kotlin-error-reports.ios.ts, which hands each to the JS error reports. */
 interface IosErrorReportListener {
-    fun onCaughtError(source: String, message: String, stack: String)
+    /** [occurrences]: how many times it happened since the last call for this source and message. */
+    fun onCaughtError(source: String, message: String, stack: String, occurrences: Int)
 }
 
 /**
  * Errors the iOS facades caught instead of crashing, handed to JS so each leaves a report
- * the owner sees. Buffer and listener are touched on the main queue only, so no lock.
+ * the owner sees. Buffer and listener are touched on the main queue only, so no lock; the
+ * repeat filter runs on the caller's thread, under [repeatsLock].
  */
 object IosErrorReports {
     private const val MAX_PENDING = 50
-    private val pending = ArrayDeque<Triple<String, String, String>>()
+    private const val MAX_KEYS = 64
+
+    private class Report(val source: String, val message: String, val stack: String, val occurrences: Int)
+
+    private val pending = ArrayDeque<Report>()
     private var overflowLogged = false
+    private val repeats = ErrorRepeats(MAX_KEYS)
+    private val repeatsLock = NSLock()
 
     /** Set from JS on the main thread; reports caught before then are delivered on registration. */
     var listener: IosErrorReportListener? = null
@@ -27,7 +36,16 @@ object IosErrorReports {
     /** Never throws: it is called from inside catch blocks. */
     fun record(source: String, error: Throwable) {
         try {
-            val report = Triple(source, error.toString(), error.stackTraceToString())
+            val message = error.toString()
+            // A repeat skipped here costs one lock and a map hit: no stack trace, no dispatch.
+            repeatsLock.lock()
+            val forward = try {
+                repeats.next("$source\n$message") { error.stackTraceToString() }
+            } finally {
+                repeatsLock.unlock()
+            }
+            if (forward == null) return
+            val report = Report(source, message, forward.second, forward.first)
             dispatch_async(dispatch_get_main_queue()) {
                 val target = listener
                 if (target != null) deliver(target, report)
@@ -47,9 +65,9 @@ object IosErrorReports {
         }
     }
 
-    private fun deliver(target: IosErrorReportListener, report: Triple<String, String, String>) {
+    private fun deliver(target: IosErrorReportListener, report: Report) {
         try {
-            target.onCaughtError(report.first, report.second, report.third)
+            target.onCaughtError(report.source, report.message, report.stack, report.occurrences)
         } catch (t: Throwable) {
             // Inside a main-queue block: an escaping throw would end the app.
             runCatching { PlatformLog.e(TAG, "error report listener failed", t) }

@@ -49,8 +49,11 @@ let saveWindowStart = 0, immediateSaves = 0
 let readOnly = false
 let build: string | null = null
 
-/** Record a caught error. Never throws: it is called from inside catch blocks. */
-export function reportError(source: string, error: unknown, context?: Record<string, string>): void {
+/**
+ * Record a caught error. Never throws: it is called from inside catch blocks. [occurrences]: how
+ * many times it happened, for a caller that only forwards some repeats (IosErrorReports.record).
+ */
+export function reportError(source: string, error: unknown, context?: Record<string, string>, occurrences = 1): void {
   try {
     // Thrown by throwIfError (kotlin-data.ts): Kotlin's boundaryError already filed it.
     if ((error as { reportedByKotlin?: unknown } | null)?.reportedByKotlin === true) return
@@ -69,14 +72,16 @@ export function reportError(source: string, error: unknown, context?: Record<str
     }
     let report = thisSession.get(key)
     const isNew = !report
+    const times = Number.isInteger(occurrences) && occurrences > 0 ? occurrences : 1
+    const before = report?.count ?? 0
     if (report) {
-      report.count++
+      report.count += times
       report.at = new Date().toISOString()
       if (overflow) { report.context = { ...context }; report.stack = stack }
       if (!list.includes(report)) list.push(report)
     } else {
       report = { at: new Date().toISOString(), build: appBuild(), platform: global.isIOS ? 'ios' : 'android',
-        source: String(source), message, stack, context: context ? { ...context } : undefined, count: 1 }
+        source: String(source), message, stack, context: context ? { ...context } : undefined, count: times }
       thisSession.set(key, report)
       list.push(report)
     }
@@ -88,7 +93,8 @@ export function reportError(source: string, error: unknown, context?: Record<str
     const now = new Date().getTime()
     if (now - saveWindowStart >= SAVE_INTERVAL_MS) { saveWindowStart = now; immediateSaves = 0 }
     if (isNew && immediateSaves < MAX_IMMEDIATE_SAVES) { immediateSaves++; save() }
-    else if (isNew || !(report.count & (report.count - 1))) scheduleSave()
+    // Passed a power of two: a jump of several occurrences may step over it.
+    else if (isNew || Math.clz32(before) !== Math.clz32(report.count)) scheduleSave()
     else unsaved = true
     for (const listener of [...listeners]) {
       try { listener({ ...report }, isNew) } catch (listenerError) {

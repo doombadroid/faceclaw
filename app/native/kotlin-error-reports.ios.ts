@@ -15,8 +15,9 @@ export function installKotlinErrorReports(): void {
   if (listener) return
   // Kept referenced: Kotlin holds the proxy, but the JS side must stay alive too.
   listener = kotlinListener(FaceclawKitIosErrorReportListener, {
-    onCaughtErrorSourceMessageStack: (source: string, message: string, stack: string) =>
-      reportError(String(source), { message: String(message), stack: String(stack) }),
+    // Kotlin forwards a repeat only at counts 2, 4, 8..., with the occurrences in between.
+    onCaughtErrorSourceMessageStackOccurrences: (source: string, message: string, stack: string, occurrences: number) =>
+      reportError(String(source), { message: String(message), stack: String(stack) }, undefined, Number(occurrences)),
   })
   FaceclawKitIosErrorReports.shared.listener = listener
 }
