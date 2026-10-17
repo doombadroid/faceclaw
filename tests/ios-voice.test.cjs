@@ -11,9 +11,9 @@ function harness() {
   // Stands in for cloud-stt-provider: any provider but "onboard" is a keyed cloud one.
   const provider = {
     usesCloudStt: voice => voice.provider !== 'onboard',
-    createCloudSttClient(voice, options) {
+    createCloudSttClient(voice, options, continuous) {
       if (voice.provider === 'onboard') return null;
-      const client = { options, pcm: [], started: false, finished: 0, stopped: false,
+      const client = { options, continuous, pcm: [], started: false, finished: 0, stopped: false,
         start() { this.started = true; }, acceptPcm(bytes) { this.pcm.push([...bytes]); },
         finish() { this.finished++; }, stop() { this.stopped = true; } };
       clouds.push(client); return client;
@@ -212,4 +212,93 @@ test('cloud capture times out a missing final, keeps native errors, and ends on 
   await h.bridge.startPhoneCapture(h.cloud, () => {});
   assert.equal(h.clouds[2].started, false, 'no connection without audio');
   assert.match(h.bridge.statusText, /No phone microphone/);
+});
+
+test('continuous capture shares one stream with push-to-talk and stops only with its own release', async () => {
+  const h = harness(); let ends = 0; h.bridge.onSpeechEnd(() => ends++);
+  const start = h.bridge.startContinuousCapture(h.session, h.onboard, () => {}); h.release(); await start;
+  assert.equal(h.native.continuous, true); assert.equal(h.native.endpointing, false);
+  const cancels = h.native.cancels;
+  await h.bridge.startGlassesCapture(h.session, h.onboard, () => {}, true);
+  assert.deepEqual(h.commands, [true], 'push-to-talk joins the live stream'); assert.equal(h.native.cancels, cancels);
+  h.event({ kind: 'transcript', text: 'joined', final: false });
+  await h.bridge.stopPushToTalk(); h.bridge.stop();
+  assert.deepEqual(h.commands, [true]); assert.equal(h.native.finished, undefined);
+  h.event({ kind: 'finishing' }); assert.equal(ends, 0, 'continuous capture never finishes on an endpoint');
+  h.event({ kind: 'transcript', text: 'Still here.', final: true });
+  assert.deepEqual(h.text.map(event => event.text), ['joined', 'Still here.']);
+  h.bridge.stopContinuousCapture();
+  assert.deepEqual(h.commands, [true, false]); assert.equal(h.native.cancels, cancels + 1);
+  h.event({ kind: 'transcript', text: 'stale', final: true }); assert.equal(h.text.length, 2);
+  assert.equal(h.timers.size, 0);
+});
+
+test('continuous capture parks on a session end or lock and resumes on the next session', async () => {
+  const h = harness(); let ends = 0; h.bridge.onSpeechEnd(() => ends++);
+  const start = h.bridge.startContinuousCapture(h.session, h.onboard, () => {}); h.release(); await start;
+  h.bridge.handleSessionEnded('Glasses locked.');
+  assert.deepEqual(h.commands, [true, false]); assert.equal(h.bridge.hasSuspendedCapture(), true);
+  assert.equal(h.bridge.statusText, 'Waiting for the glasses...');
+  h.bridge.stop(); assert.equal(h.bridge.hasSuspendedCapture(), true, 'closing a voice dialog does not drop the parked capture');
+  const resumed = h.bridge.resumeCapture(h.session, h.onboard, () => {});
+  assert.equal(h.bridge.hasSuspendedCapture(), false); h.release(); await resumed;
+  assert.deepEqual(h.commands, [true, false, true]); assert.equal(h.native.continuous, true);
+  h.bridge.handleSessionEnded(); h.bridge.stopContinuousCapture();
+  assert.equal(h.bridge.hasSuspendedCapture(), false, 'a capture released while parked is not resumed');
+  await h.bridge.resumeCapture(h.session, h.onboard, () => {}); assert.deepEqual(h.commands, [true, false, true, false]);
+  for (const fn of [...h.timers.values()]) fn();
+});
+
+test('continuous cloud capture tells the provider it is open-ended and pauses reach onSpeechPause', async () => {
+  const h = harness(); let pauses = 0; h.bridge.onSpeechPause(() => pauses++);
+  await h.bridge.startContinuousCapture(null, h.cloud, () => {});
+  assert.deepEqual({ ...h.native.pcmCapture }, { endpointing: false, phone: true });
+  assert.equal(h.clouds[0].continuous(), true);
+  h.event({ kind: 'pause' }); assert.equal(pauses, 1);
+  h.bridge.stopContinuousCapture(); assert.equal(h.clouds[0].stopped, true);
+  assert.equal(h.clouds[0].continuous(), false);
+});
+
+test('continuous capture delivers one final per rolled utterance and keeps listening (Calculator)', async () => {
+  const h = harness(); let ends = 0; h.bridge.onSpeechEnd(() => ends++);
+  const start = h.bridge.startContinuousCapture(h.session, h.onboard, () => {}); h.release(); await start;
+  for (const text of ['two plus two', 'five times six']) {
+    h.event({ kind: 'transcript', text, final: false });
+    h.event({ kind: 'transcript', text, final: true });
+    h.event({ kind: 'pause' });
+  }
+  assert.deepEqual(h.text.filter(event => event.isFinal).map(event => event.text), ['two plus two', 'five times six']);
+  assert.equal(ends, 0); assert.deepEqual(h.commands, [true]);
+  // The Calculator's tap-to-talk joins and leaves without ending the stream.
+  await h.bridge.startGlassesCapture(h.session, h.onboard, () => {});
+  h.event({ kind: 'transcript', text: 'square root of nine', final: true });
+  await h.bridge.stopPushToTalk();
+  assert.equal(h.text.at(-1).text, 'square root of nine'); assert.deepEqual(h.commands, [true]);
+  h.bridge.stopContinuousCapture(); assert.deepEqual(h.commands, [true, false]);
+});
+
+test('partials keep flowing across a roll, and the script tracker keeps its place (Teleprompter)', async () => {
+  const { loader } = require('./helpers/load-typescript.cjs');
+  const { ScriptTracker, tokenizeScript } = loader({}, {})('app/apps/teleprompter/script-tracker.ts');
+  const tracker = new ScriptTracker(tokenizeScript('four score and seven years ago our fathers brought forth a new nation').words);
+  const h = harness(); h.bridge.onTranscript(event => tracker.feed(event.text));
+  const start = h.bridge.startContinuousCapture(h.session, h.onboard, () => {}); h.release(); await start;
+  for (const partial of ['four score', 'four score and seven years ago']) h.event({ kind: 'transcript', text: partial, final: false });
+  h.event({ kind: 'transcript', text: 'Four score and seven years ago.', final: true });
+  h.event({ kind: 'pause' });
+  const atRoll = tracker.position;
+  // REPLACE semantics: the next utterance's partials start from empty text.
+  for (const partial of ['our fathers', 'our fathers brought forth']) h.event({ kind: 'transcript', text: partial, final: false });
+  assert.deepEqual(h.text.slice(-2).map(event => event.text), ['our fathers', 'our fathers brought forth']);
+  assert.equal(atRoll, 6); assert.equal(tracker.position, 10);
+  h.bridge.stopContinuousCapture();
+});
+
+test('saved voice recordings follow the provider selection into the native capture', async () => {
+  const h = harness();
+  await h.bridge.startPhoneCapture({ ...h.onboard, saveRecording: true }, () => {});
+  assert.equal(h.native.saveRecording, true);
+  h.bridge.stop(); await h.bridge.startContinuousCapture(null, h.cloud, () => {});
+  assert.equal(h.native.saveRecording, false);
+  h.bridge.stopContinuousCapture();
 });

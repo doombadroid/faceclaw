@@ -43,6 +43,7 @@ import { prepareFrameDraws } from '../graphics/glyph-wire'
 import { G2_LENS_WIDTH, G2_LENS_HEIGHT } from '../graphics/image'
 import { makeInputEvent, type InputEvent, type InputEventPayload } from '../ui/gestures'
 import { noopLayerActions, type LayerActions } from '../ui/layers'
+import { voiceActivity } from '../ui/shell/voice-activity'
 import { TextViewerLayer } from '../apps/files/text-viewer'
 import { shell, rawInputEventToInputEvent, type ShellWindow } from '../ui/shell/shell'
 import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type ScreenRect } from '../ui/shell/geometry'
@@ -51,7 +52,7 @@ import { onAnySettingChanged,
   previewColorSetting, lockScreenEnabledSetting, getBrightnessPreferences, getStringSettingById,
   nightscoutSiteUrlSetting, nightscoutApiTokenSetting, voiceProviderSetting, elevenLabsApiKeySetting,
   openAiApiKeySetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs,
-  ringConnectionModeSetting, firmwareDebugFlagsSetting } from '../ui/dashboard-settings'
+  ringConnectionModeSetting, firmwareDebugFlagsSetting, saveVoiceRecordingsSetting } from '../ui/dashboard-settings'
 import type { VoiceProviderSelection } from '../native/cloud-stt-provider'
 import type { PhoneGesture } from '../phone-ui/phone-gestures'
 import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from '../apps/onboarding/onboarding-progress'
@@ -61,6 +62,8 @@ declare const FaceclawLog: { log(message: string): void }
 const SHELL_SURFACE_ID = 'shell'
 const SHELL_SURFACE_Z_ORDER = 1
 const LOCK_SURFACE_Z_ORDER = 1000
+// voiceActivity holder for continuous capture (Android's name).
+const CONTINUOUS_CAPTURE_HOLDER = 'continuous-capture'
 /** The shell render loop waits this long for the glasses to take a frame before moving on. */
 const FRAME_TRANSMIT_BACKPRESSURE_TIMEOUT_MS = 2000
 /** Screen recording capture cadence (Android's RECORDING_MIN_CAPTURE_MS); the encoder drops repeated frames. */
@@ -156,6 +159,8 @@ export class IosPreviewController {
   private phoneLocked = false
   private glassesWorn: boolean | null = null
   private glassesLocked = false
+  // Set while an app (Transcribe, Calculator, Teleprompter) wants continuous capture.
+  private continuousWanted = false
   private lockEnabled = lockScreenEnabledSetting.get()
   private acknowledgedFrames = 0
   private logLines: string[] = []
@@ -168,7 +173,15 @@ export class IosPreviewController {
     disconnect: () => this.disconnect(),
     startVoiceCapture: endpointing => this.startVoiceCapture(endpointing),
     stopVoiceCapture: () => iosVoiceInput.stopPushToTalk(),
-    startContinuousVoiceCapture: () => this.onError("Voice capture is not available on iOS yet."),
+    startContinuousVoiceCapture: () => {
+      // Claimed first so the Microphones app and EvenHub mic apps stand down, as on Android.
+      this.continuousWanted = true; voiceActivity.setActive(true, CONTINUOUS_CAPTURE_HOLDER)
+      return this.startVoiceCapture(false, true)
+    },
+    stopContinuousVoiceCapture: () => {
+      this.continuousWanted = false; iosVoiceInput.stopContinuousCapture()
+      voiceActivity.setActive(false, CONTINUOUS_CAPTURE_HOLDER)
+    },
     startTextSettingEdit: async setting => { await this.editSetting(setting) },
     startTextSettingsEdit: async (settings, title, finished, toggle, cancelled) => {
       for (const setting of settings) if (!await this.editSetting(setting)) { cancelled?.(); return }
@@ -465,7 +478,7 @@ export class IosPreviewController {
     if (locked) {
       this.glance.dismiss()
       iosVoiceInput.handleSessionEnded('Glasses locked. Unlock your phone to start voice input again.')
-    }
+    } else this.resumeVoiceCapture()
     void (async () => {
       await this.displayReady
       const display = this.display
@@ -898,6 +911,8 @@ export class IosPreviewController {
         this.state = { ...this.state, frames: this.state.frames + 1 }
         this.onActivity()
         this.maybeLaunchOnboarding(this.state)
+        // A rendered frame means the display path is warm enough to accept a mic enable.
+        this.resumeVoiceCapture()
         if (this.active) this.onConnectionState({ ...this.state })
         this.schedulePreviewUpdate()
       }),
@@ -1029,23 +1044,33 @@ export class IosPreviewController {
     if (!ready && this.active) this.onError(iosVoiceInput.statusText)
     return ready && !this.glassesLocked && (this.state.phase === 'connected' || this.active)
   }
-  private async startVoiceCapture(endpointing = false): Promise<void> {
+  private async startVoiceCapture(endpointing = false, continuous = false): Promise<void> {
     if (this.glassesLocked) return
+    // Push-to-talk was prepared by the shell before its dialog opened.
+    if (continuous && (!await this.prepareVoiceCapture() || !this.continuousWanted)) return
     const log = (message: string) => this.logBluetooth(message)
     const communicator = this.communicator
     const voice = this.voiceProvider()
     if (communicator && this.state.phase === 'connected') {
-      await iosVoiceInput.startGlassesCapture(communicator, voice, log, endpointing)
+      await (continuous ? iosVoiceInput.startContinuousCapture(communicator, voice, log) : iosVoiceInput.startGlassesCapture(communicator, voice, log, endpointing))
     } else if (this.active) {
       // Recheck microphone permission if the glasses disconnected after prepare.
       if (!await iosVoiceInput.prepare(this.active, true, voice) || !this.active || this.glassesLocked) return
-      await iosVoiceInput.startPhoneCapture(voice, log, endpointing)
+      if (continuous && !this.continuousWanted) return
+      await (continuous ? iosVoiceInput.startContinuousCapture(null, voice, log) : iosVoiceInput.startPhoneCapture(voice, log, endpointing))
     }
+  }
+  /** Restart a continuous capture parked by the last session or a glasses lock; cheap per frame. */
+  private resumeVoiceCapture(): void {
+    const communicator = this.communicator
+    if (!iosVoiceInput.hasSuspendedCapture() || !communicator || this.state.phase !== 'connected' || this.glassesLocked) return
+    this.logBluetooth('Voice: resuming continuous capture')
+    void iosVoiceInput.resumeCapture(communicator, this.voiceProvider(), message => this.logBluetooth(message))
   }
   /** The transcription provider setting and the keys the cloud ones need. */
   private voiceProvider(): VoiceProviderSelection {
     return { provider: voiceProviderSetting.get(), elevenLabsApiKey: elevenLabsApiKeySetting.get(),
-      openAiApiKey: openAiApiKeySetting.get(), sonioxApiKey: sonioxApiKeySetting.get() }
+      openAiApiKey: openAiApiKeySetting.get(), sonioxApiKey: sonioxApiKeySetting.get(), saveRecording: saveVoiceRecordingsSetting.get() }
   }
   /** Append to the app log (Connection Details, bluetooth.log and the system log). */
   log(message: string): void { this.logBluetooth(message) }

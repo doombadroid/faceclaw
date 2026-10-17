@@ -232,9 +232,9 @@ function settingsSections(): SettingsSection[] {
   if (!global.isIOS) return sections;
   const deferred = new Set(["Watch"]);
   return sections.map(section => {
-    // Voice recordings, EvenHub suspend and mic control have no iOS runtime yet.
+    // EvenHub suspend and mic control have no iOS runtime yet.
     if (section.label === "Developer") return { ...section, items: [enumSettingMenuItem(ringConnectionModeSetting),
-      toggleSettingMenuItem(firmwareDebugFlagsSetting), toggleSettingMenuItem(showBleBandwidthSetting)] };
+      toggleSettingMenuItem(saveVoiceRecordingsSetting), toggleSettingMenuItem(firmwareDebugFlagsSetting), toggleSettingMenuItem(showBleBandwidthSetting)] };
     // No downloadable on-device models: iOS's on-device option is Apple's recognizer.
     if (section.label === "Voice") return { label: "Voice", items: [enumSettingMenuItem(wakeWordActionSetting),
       enumSettingMenuItem(voiceProviderSetting)] };

@@ -91,10 +91,11 @@ test('the phone catalog lists exactly the settings the glasses offer on iOS, min
     const glasses = glassesSettings(load);
     for (const name of IOS_INERT) assert.ok(glasses.has(settings[name]), `${name} is still listed on the glasses (else drop it from IOS_INERT)`);
     // The iOS filter in settings-menus.ts already removed these; the catalog must not bring them back.
-    for (const name of ['watchRemoteEnabledSetting', 'saveVoiceRecordingsSetting', 'suspendEvenHubWhenScreenOffSetting', 'useMicControlSetting'])
+    for (const name of ['watchRemoteEnabledSetting', 'suspendEvenHubWhenScreenOffSetting', 'useMicControlSetting'])
       assert.ok(!glasses.has(settings[name]), name);
-    for (const name of ['screenTimeoutSetting', 'ringConnectionModeSetting', 'firmwareDebugFlagsSetting'])
+    for (const name of ['screenTimeoutSetting', 'ringConnectionModeSetting', 'firmwareDebugFlagsSetting', 'saveVoiceRecordingsSetting'])
       assert.ok(glasses.has(settings[name]), name);
+    assert.match(settings.saveVoiceRecordingsSetting.description, /Files app/);
     const expected = new Set([...glasses].filter(setting => !IOS_INERT.some(name => settings[name] === setting)));
     // Glanceboard's settings live in its app, not in the glasses Settings app.
     const phone = catalogSettings(catalog, new Set(['glanceboard']));

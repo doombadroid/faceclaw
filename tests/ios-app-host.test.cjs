@@ -6,7 +6,7 @@ const ts = require('typescript');
 const path = require('node:path');
 // The provider settings ios-preview-controller hands the voice bridge.
 const voiceSettings = { voiceProviderSetting: { get: () => 'onboard' }, elevenLabsApiKeySetting: { get: () => '' },
-  openAiApiKeySetting: { get: () => '' }, sonioxApiKeySetting: { get: () => '' } };
+  openAiApiKeySetting: { get: () => '' }, sonioxApiKeySetting: { get: () => '' }, saveVoiceRecordingsSetting: { get: () => false } };
 function load(file, context) {
   const sandbox = { exports: {}, ...context };
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
@@ -92,6 +92,25 @@ test('iOS host forwards hands-free capture mode to the voice bridge', async () =
   assert.deepEqual(captures, [true, false]);
 });
 
+test('iOS host runs continuous capture on the glasses or phone and resumes a parked one only when unlocked and connected', async () => {
+  const calls = []; let suspended = false;
+  const iosVoiceInput = { prepare: async () => true, statusText: '',
+    startContinuousCapture: session => calls.push(['start', session]),
+    hasSuspendedCapture: () => suspended, resumeCapture: session => { suspended = false; calls.push(['resume', session]); } };
+  const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', { require: id => id === '../native/ios-voice-input'
+    ? { iosVoiceInput } : id === '../ui/dashboard-settings' ? voiceSettings : {} });
+  const host = Object.create(IosPreviewController.prototype), glasses = {};
+  host.communicator = glasses; host.state = { phase: 'connected' }; host.logBluetooth = () => {}; host.continuousWanted = true;
+  await host.startVoiceCapture(false, true);
+  host.state = { phase: 'disconnected' }; host.active = true;
+  await host.startVoiceCapture(false, true);
+  host.continuousWanted = false; await host.startVoiceCapture(false, true);
+  assert.deepEqual(calls, [['start', glasses], ['start', null]], 'a stop during prepare wins');
+  suspended = true; host.glassesLocked = true; host.state = { phase: 'connected' };
+  host.resumeVoiceCapture(); assert.equal(calls.length, 2);
+  host.glassesLocked = false; host.resumeVoiceCapture(); host.resumeVoiceCapture();
+  assert.deepEqual(calls.slice(2), [['resume', glasses]]);
+});
 test('iOS phone battery distinguishes unknown, charging, full and unplugged readings', () => {
   const device = { batteryLevel: -1, batteryState: 0 };
   const api = load('app/native/phone-battery.ts', { require: () => ({}), global: { isIOS: true },
