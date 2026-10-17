@@ -3,7 +3,7 @@ import { SurfaceCompositor } from "../graphics/surface-compositor.ios";
 import { G2_LENS_WIDTH, G2_LENS_HEIGHT } from "../graphics/image";
 import { previewPixels } from "./ios-graphics";
 import { toData } from "./kotlin-data";
-import type { FaceclawCommunicatorBridge, SurfaceOptions } from "./faceclaw-communicator.ios";
+import { newGifRecorder, saveGifRecording, type FaceclawCommunicatorBridge, type SurfaceOptions } from "./faceclaw-communicator.ios";
 
 declare const FaceclawKitIosProtocol: any;
 
@@ -152,9 +152,19 @@ export class PreviewDisplayTarget implements DisplayTarget {
     return target;
   }
 
-  startScreenRecording(): void {}
+  private recorder: any = null;
 
-  recordScreenFrame(): void {}
+  startScreenRecording(): void {
+    this.recorder = newGifRecorder();
+  }
 
-  stopScreenRecording(): string { return ""; }
+  recordScreenFrame(): void {
+    this.recorder?.addGrayWidthHeightTimestampMs(toData(this.compositor.composite()), this.compositor.width, this.compositor.height, Date.now());
+  }
+
+  stopScreenRecording(): string {
+    const recorder = this.recorder;
+    this.recorder = null;
+    return saveGifRecording(recorder);
+  }
 }

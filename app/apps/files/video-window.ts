@@ -182,6 +182,7 @@ class VideoSession {
           this.error = message;
           this.returnToPanel(this.positionMs());
         },
+        onFrame: () => this.window?.requestRender(),
       });
     }
     return this.player;
@@ -330,8 +331,8 @@ function sameRow(a: PanelRow, b: PanelRow): boolean {
 
 /**
  * The playing video. The native player draws frames into the video rect on
- * its own; this layer paints only when the window renders (input, pause,
- * focus): black around the latest frame, plus a status box while paused.
+ * its own (on iOS it asks for a render per frame instead); this layer paints
+ * when the window renders: black around the latest frame, plus a status box while paused.
  * Click pauses/resumes, scroll seeks 10s, double-click returns to the panel.
  */
 class VideoPlaybackLayer implements Layer {

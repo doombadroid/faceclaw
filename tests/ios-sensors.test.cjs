@@ -105,7 +105,7 @@ test('iOS bandwidth benchmark calls the Kotlin session and parses its status', (
   offline.cancelBandwidthBenchmark();
 });
 
-test('iOS Developer debug tests enable the buzzer, accelerometer and light sensor demos', () => {
+test('iOS Developer debug tests enable the buzzer, accelerometer, light sensor and microphones demos', () => {
   let debugMenu;
   const MenuLayer = class { constructor(title, items) { this.title = title; this.items = items; } };
   const load = loader({ global: { isIOS: true } }, {
@@ -119,7 +119,95 @@ test('iOS Developer debug tests enable the buzzer, accelerometer and light senso
   const root = load('app/apps/developer/developer-app.ts').createDeveloperAppWindow({}, {});
   root.items.find(i => i.label === 'Debug tests').onSelect({ stack: { push: layer => { debugMenu = layer; } } });
   const byLabel = Object.fromEntries(debugMenu.items.map(i => [i.label, i]));
-  for (const label of ['Buzzer demo', 'Accelerometer demo', 'Light sensor', 'BLE bandwidth']) {
+  for (const label of ['Buzzer demo', 'Accelerometer demo', 'Light sensor', 'Microphones', 'BLE bandwidth']) {
     assert.ok(!byLabel[label].disabled, label); assert.equal(byLabel[label].description, undefined, label);
   }
+});
+
+test('iOS bridge exposes NSData audio forwarding, the passive audio monitor and mic status records', () => {
+  const { calls, native } = nativeSession({ startG2AudioForwardingNsDataListener: true });
+  const { FaceclawCommunicatorBridge: Bridge } = loader({
+    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } },
+    interop: { bufferFromData: d => d.buffer },
+    FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
+    FaceclawKitFaceclawCompassListener: {}, FaceclawKitFaceclawImuListener: 'imu', FaceclawKitFaceclawMicStatusListener: 'mic',
+    FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
+  }, { '@nativescript/core': {}, './ios-graphics': {}, './ios-bluetooth': {}, './kotlin-listener.ios': { kotlinListener } })(
+    'app/native/faceclaw-communicator.ios.ts');
+  const bridge = new Bridge({ right: 'r', left: 'l' });
+  const packets = [];
+  const data = { buffer: new Uint8Array([1, 2]).buffer };
+  assert.equal(bridge.startAudioForwarding((p, arm, ms) => packets.push([...p, arm, ms])), true);
+  const [startName, forwarder] = calls.at(-1);
+  assert.equal(startName, 'startG2AudioForwardingNsDataListener');
+  forwarder.onAudioPacketDataArmArrivalMs(data, 'R', 7);
+  bridge.stopAudioForwarding();
+  assert.deepEqual(calls.at(-1), ['stopG2AudioForwarding']);
+  const off = bridge.addAudioMonitorListener((p, arm, ms) => packets.push([...p, arm, ms]));
+  const [addName, monitor] = calls.at(-1);
+  assert.equal(addName, 'addAudioMonitorListenerNsDataListener');
+  monitor.onAudioPacketDataArmArrivalMs(data, 'L', 9);
+  off();
+  assert.deepEqual(calls.at(-1), ['removeAudioMonitorListenerNsDataListener', monitor]);
+  assert.deepEqual(packets, [[1, 2, 'R', 7], [1, 2, 'L', 9]]);
+  const records = [];
+  const offStatus = bridge.addMicStatusListener((body, arm) => records.push([...body, arm]));
+  const [statusName, status] = calls.at(-1);
+  assert.equal(statusName, 'addMicStatusListenerListener'); assert.equal(status.protocol, 'mic');
+  status.onMicStatusBodyArm({ size: 2, getIndex: i => [77, 67][i] }, 'L');
+  offStatus();
+  assert.deepEqual(calls.at(-1), ['removeMicStatusListenerListener', status]);
+  assert.deepEqual(records, [[77, 67, 'L']]);
+});
+
+test('iOS audio monitor follows the active bridge and maps arms', () => {
+  let active = null;
+  const calls = [];
+  const fake = {
+    getNativeCommunicator: () => ({ isAudioCaptureActive: () => true }),
+    addAudioMonitorListener: l => { calls.push(['packet', l]); return () => calls.push(['offPacket']); },
+    addMicStatusListener: l => { calls.push(['status', l]); return () => { throw new Error('torn down'); }; },
+  };
+  const api = loader({}, { './faceclaw-communicator.ios': { FaceclawCommunicatorBridge: { getActive: () => active } } })(
+    'app/native/audio-monitor.ios.ts');
+  assert.equal(api.audioMonitorCommunicator(), null);
+  assert.equal(api.isFaceclawAudioCaptureActive(), false);
+  api.addAudioMonitorListeners(null, () => {}, () => {})();
+  active = fake;
+  assert.equal(api.audioMonitorCommunicator(), fake);
+  assert.equal(api.isFaceclawAudioCaptureActive(), true);
+  const got = [];
+  const off = api.addAudioMonitorListeners(fake, (d, arm, ms) => got.push([d, arm, ms]), (b, arm) => got.push([b, arm]));
+  calls[0][1]('pcm', 'R', 5); calls[0][1]('pcm', 'x', 6); calls[1][1]('st', 'L');
+  assert.deepEqual(got, [['pcm', 'R', 5], ['pcm', '?', 6], ['st', 'L']]);
+  off();
+  assert.deepEqual(calls.at(-1), ['offPacket'], 'a torn-down session does not throw out of unsubscribe');
+});
+
+test('iOS screen recording feeds composites to the Kotlin GIF recorder and saves under Documents', () => {
+  const { calls, native } = nativeSession({ previewComposite: { pixels: 'gray', width: 640, height: 480 } });
+  const added = [], written = [];
+  let gif = 'gif-bytes';
+  const recorder = { addGrayWidthHeightTimestampMs: (...args) => added.push(args), encode: () => gif };
+  const core = { knownFolders: { documents: () => ({ path: '/docs' }) }, path: { join: (...parts) => parts.join('/') },
+    File: { fromPath: p => ({ writeSync: data => written.push([p, data]) }) } };
+  const { FaceclawCommunicatorBridge: Bridge } = loader({
+    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } },
+    FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
+    FaceclawKitFaceclawCompassListener: {}, FaceclawKitFaceclawImuListener: 'imu', FaceclawKitIosGifRecorder: { new: () => recorder },
+    FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
+  }, { '@nativescript/core': core, './ios-graphics': {}, './ios-bluetooth': {}, './kotlin-listener.ios': { kotlinListener } })(
+    'app/native/faceclaw-communicator.ios.ts');
+  const bridge = new Bridge({ right: 'r', left: 'l' });
+  bridge.recordScreenFrame();
+  assert.equal(calls.filter(c => c[0] === 'previewComposite').length, 0, 'idle: nothing composites');
+  assert.equal(bridge.stopScreenRecording(), '');
+  bridge.startScreenRecording(); bridge.recordScreenFrame();
+  assert.deepEqual(added.map(a => a.slice(0, 3)), [['gray', 640, 480]]);
+  const saved = bridge.stopScreenRecording();
+  assert.match(saved, /^\/docs\/recording-\d{8}-\d{6}-\d{3}\.gif$/);
+  assert.deepEqual(written, [[saved, 'gif-bytes']]);
+  bridge.startScreenRecording(); gif = null;
+  assert.equal(bridge.stopScreenRecording(), '', 'no frames: no file');
+  assert.equal(written.length, 1);
 });

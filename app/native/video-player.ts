@@ -49,6 +49,8 @@ export type VideoPlayerCallbacks = {
   /** State change, or a paused seek that landed on a new frame (state "paused"). */
   onState: (state: VideoPlaybackState, positionMs: number) => void;
   onError: (message: string) => void;
+  /** iOS only: a new frame is ready in lastFrame() (Android draws frames into the surface itself). */
+  onFrame?: () => void;
 };
 
 export type VideoStartOptions = {

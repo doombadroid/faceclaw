@@ -4,7 +4,7 @@ import { REQUIRED_FACECLAW_FIRMWARE_VERSION, type FirmwareInfo } from "../g2/fir
 import { type CompassEvent } from "./compass-types";
 import { type ImuReading } from "./imu-types";
 import { kotlinListener } from "./kotlin-listener.ios";
-import { fromData, toData } from "./kotlin-data";
+import { fromData, fromKotlinBytes, toData } from "./kotlin-data";
 import { previewPixels } from "./ios-graphics";
 import { iosBluetooth } from "./ios-bluetooth";
 
@@ -17,6 +17,8 @@ declare const FaceclawKitIosAncsListener: any;
 declare const FaceclawKitIosAudioPacketListener: any;
 declare const FaceclawKitFaceclawCompassListener: any;
 declare const FaceclawKitFaceclawImuListener: any;
+declare const FaceclawKitFaceclawMicStatusListener: any;
+declare const FaceclawKitIosGifRecorder: any;
 
 
 export type CommunicatorPhase =
@@ -80,6 +82,20 @@ function timestamp(): string {
   const now = new Date();
   const pad = (value: number, width = 2) => String(value).padStart(width, "0");
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${pad(now.getMilliseconds(), 3)}`;
+}
+
+/** Start an animated-GIF screen recording (FaceclawKitIosGifRecorder; add frames with addGrayWidthHeightTimestampMs). */
+export function newGifRecorder(): any {
+  return FaceclawKitIosGifRecorder.new();
+}
+
+/** Encode `recorder` and save it under Documents; returns the path, or "" when it holds no frames. */
+export function saveGifRecording(recorder: any): string {
+  const gif = recorder?.encode();
+  if (!gif) return "";
+  const target = path.join(knownFolders.documents().path, `recording-${timestamp()}.gif`);
+  File.fromPath(target).writeSync(gif);
+  return target;
 }
 
 export type PeripheralIdentifiers = { right: string; left: string; ring: string };
@@ -202,6 +218,7 @@ export class FaceclawCommunicatorBridge {
   private readonly ancsAuthorizationListeners = new Set<(authorized: boolean) => void>();
   private readonly ancsRelayListeners = new Set<(frame: Uint8Array) => void>();
   private audioListener: AudioPacketListener | null = null;
+  private recorder: any = null;
   private microphoneWork: Promise<void> = Promise.resolve();
   private microphoneToken = 0;
 
@@ -515,12 +532,23 @@ export class FaceclawCommunicatorBridge {
     return target;
   }
 
-  /** Screen recording is not available on iOS yet. */
-  startScreenRecording(): void {}
+  /** Begin collecting composite frames for an animated-GIF screen recording. */
+  startScreenRecording(): void {
+    this.recorder = newGifRecorder();
+  }
 
-  recordScreenFrame(): void {}
+  /** Capture the current composite into the active recording; no-op when idle. */
+  recordScreenFrame(): void {
+    const frame = this.recorder && this.communicator.previewComposite();
+    if (frame) this.recorder.addGrayWidthHeightTimestampMs(frame.pixels, frame.width, frame.height, Date.now());
+  }
 
-  stopScreenRecording(): string { return ""; }
+  /** Finish the recording and save the GIF under Documents; returns the path (empty if no frames). */
+  stopScreenRecording(): string {
+    const recorder = this.recorder;
+    this.recorder = null;
+    return saveGifRecording(recorder);
+  }
 
   async configureSurface(id: string, options: SurfaceOptions): Promise<void> {
     const transparency = options.transparency === "color-key" ? 1 : 0;
@@ -687,6 +715,41 @@ export class FaceclawCommunicatorBridge {
     });
     this.microphoneWork = work;
     return work;
+  }
+
+  /**
+   * CFW mic_control forwarding: every glasses audio packet to `listener` (main queue)
+   * until stopAudioForwarding. Shares the capture slot with setMicrophone; false before Connect.
+   */
+  startAudioForwarding(listener: (packet: Uint8Array, arm: string, arrivalMs: number) => void): boolean {
+    const proxy = AudioPacketListener.new() as AudioPacketListener;
+    proxy.handler = listener;
+    this.audioListener = proxy;
+    if (this.communicator.startG2AudioForwardingNsDataListener(proxy)) return true;
+    this.audioListener = null;
+    return false;
+  }
+
+  stopAudioForwarding(): void {
+    this.audioListener = null;
+    this.communicator.stopG2AudioForwarding();
+  }
+
+  /** Passive view of every audio-characteristic packet (diagnostics), on the main queue. */
+  addAudioMonitorListener(listener: (packet: Uint8Array, arm: string, arrivalMs: number) => void): () => void {
+    const proxy = AudioPacketListener.new() as AudioPacketListener;
+    proxy.handler = listener;
+    this.communicator.addAudioMonitorListenerNsDataListener(proxy);
+    return () => { this.communicator.removeAudioMonitorListenerNsDataListener(proxy); };
+  }
+
+  /** CFW mic_control field-104 status records (raw 21-byte bodies) per temple. */
+  addMicStatusListener(listener: (body: Uint8Array, arm: string) => void): () => void {
+    const proxy = kotlinListener(FaceclawKitFaceclawMicStatusListener, {
+      onMicStatusBodyArm: (body: any, arm: string) => listener(fromKotlinBytes(body), String(arm ?? "")),
+    });
+    this.communicator.addMicStatusListenerListener(proxy);
+    return () => { this.communicator.removeMicStatusListenerListener(proxy); };
   }
 
   /** Ask CoreBluetooth for ANCS on the right arm's next connection (call before start()). */

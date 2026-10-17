@@ -189,6 +189,20 @@ class IosGlassesSession internal constructor(
 
     fun stopG2AudioForwarding() = core.stopG2AudioForwarding()
 
+    /** As [startG2AudioForwarding], with packets delivered as NSData on the main queue. */
+    fun startG2AudioForwardingNsData(listener: IosAudioPacketListener): Boolean =
+        core.startG2AudioForwarding(NsDataAudioListener(listener))
+
+    private val monitorWrappers = HashMap<IosAudioPacketListener, FaceclawAudioPacketListener>()
+
+    /** Every audio-characteristic packet (passive), as NSData on the main queue. Call from main. */
+    fun addAudioMonitorListenerNsData(listener: IosAudioPacketListener) {
+        if (listener !in monitorWrappers) core.addAudioMonitorListener(NsDataAudioListener(listener).also { monitorWrappers[listener] = it })
+    }
+
+    fun removeAudioMonitorListenerNsData(listener: IosAudioPacketListener) =
+        core.removeAudioMonitorListener(monitorWrappers.remove(listener))
+
     /** Compass events are delivered on the queue of the thread that adds the listener (main for TypeScript). */
     fun addCompassListener(listener: FaceclawCompassListener?) = core.addCompassListener(listener)
 

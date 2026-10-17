@@ -43,4 +43,44 @@ class IosNativeApiTest {
         compositor.blank(false)
         assertEquals(99, compositor.composite().byteArray().last().toInt())
     }
+
+    @Test
+    fun gifRecorderEncodesCompositeFramesWithTheirSize() {
+        val recorder = IosGifRecorder()
+        assertNull(recorder.encode(), "no frames, no file")
+        val compositor = IosSurfaceCompositor(4, 2)
+        compositor.configure("app", 0, 0, 4, 2, 0, false)
+        compositor.submit("app", ByteArray(8) { -1 }.data(), 0, 0, 4, 2)
+        val frame = compositor.compositeFrame()
+        assertEquals(4 to 2, frame.width to frame.height)
+        recorder.add(frame.pixels, frame.width, frame.height, 0)
+        recorder.add(ByteArray(8).data(), 4, 2, 1_000)
+        val gif = assertNotNull(recorder.encode()).byteArray()
+        assertEquals("GIF89a", gif.copyOf(6).decodeToString())
+        assertEquals(0x3b, gif.last().toInt())
+    }
+
+    @Test
+    fun photoToneMatchesTheSharedCurveAndDither() {
+        val protocol = IosProtocol()
+        val packet = byteArrayOf(2, 0, 1, 0, -128, -1)
+        val curve = GrayPacket.toneCurve(2.2f)
+        assertContentEquals(byteArrayOf(2, 0, 1, 0, curve[128].toByte(), -1), protocol.tone(packet.data(), 2.2f, false).byteArray())
+        val dithered = protocol.tone(byteArrayOf(2, 0, 2, 0, 0, 40, 90, -56).data(), 1f, true).byteArray()
+        assertContentEquals(byteArrayOf(2, 0, 2, 0), dithered.copyOf(4))
+        assertTrue(dithered.drop(4).all { it.toInt() != 0 && (it.toInt() and 255) % 16 <= 1 }, dithered.toList().toString())
+        val short = byteArrayOf(9, 0, 9, 0, 1).data()
+        assertContentEquals(short.byteArray(), protocol.tone(short, 2.2f, true).byteArray(), "a malformed packet passes through")
+    }
+
+    @Test
+    fun videoPlayerReportsUnplayableFilesAndHasNoFrameBeforeStart() {
+        val player = IosVideoPlayer()
+        assertTrue(player.probe("/nonexistent.mp4").contains("\"error\""))
+        assertNull(player.lastFrame(4, 2))
+        player.start("/nonexistent.mp4", 0, 0, false, 2.2f, false, 0.0)
+        assertFalse(player.isPlaying(), "a zero-size rect never starts")
+        assertEquals(0.0, player.positionMs())
+        player.stop()
+    }
 }
