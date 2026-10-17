@@ -100,7 +100,7 @@ export class ConversationsViewModel extends Observable {
   }
 
   private refreshSpeakerChips(): void {
-    const profiles = global.isAndroid ? speakerRegistry.all() : [];
+    const profiles = speakerRegistry.all();
     this._speakerChips = profiles.map((profile) => ({
       name: profile.name,
       chipBackground: profile.color || "#90A4AE",
@@ -116,10 +116,6 @@ export class ConversationsViewModel extends Observable {
   }
 
   private refreshSessions(): void {
-    if (!global.isAndroid) {
-      this.setSessions([], "Conversation review is only available on Android.");
-      return;
-    }
     const parsed = parseConversationQuery(this._searchText);
     const filter: Record<string, unknown> = {};
     if (parsed.sinceMs !== null) filter.sinceMs = parsed.sinceMs;

@@ -28,6 +28,7 @@ import { micChannelLabel, type MicChannelKey, type MicConfig } from "./mic-proto
 import { micSession } from "./mic-session";
 import { speakerRegistry, type SpeakerProfile } from "./speakers";
 import { formatRelativeTime } from "../../util/date-util";
+import { APP_NAME } from "../../branding";
 import {
   ancEnabledSetting,
   beamFilterSetting,
@@ -412,13 +413,16 @@ function storageMenu(): MenuLayer {
       enumSettingMenuItem(recordingsRetentionSetting),
       {
         label: "Review on phone",
-        description:
-          "Saved conversations, transcripts, speakers, and recordings are reviewed in the Faceclaw phone app: Conversations in the top-right menu.",
+        description: global.isIOS
+          ? `Saved conversations, transcripts, and recordings are reviewed in the ${APP_NAME} phone app: My Glasses > Conversations.`
+          : "Saved conversations, transcripts, speakers, and recordings are reviewed in the Faceclaw phone app: Conversations in the top-right menu.",
         onSelect: (ctx) => {
           ctx.stack.push(
             new TextPageLayer(
               "Review on phone",
-              "Open the Faceclaw app on your phone and choose Conversations from the top-right menu to search captions, filter by speaker, play linked recordings, rename/merge speakers, re-diarize sessions, and see the tone/sentiment graph of each conversation.",
+              global.isIOS
+                ? `Open the ${APP_NAME} app on your phone and choose My Glasses > Conversations to search captions, play linked recordings, and delete conversations.`
+                : "Open the Faceclaw app on your phone and choose Conversations from the top-right menu to search captions, filter by speaker, play linked recordings, rename/merge speakers, re-diarize sessions, and see the tone/sentiment graph of each conversation.",
             ),
           );
         },
@@ -447,10 +451,11 @@ export function createMicrophonesAppWindow(options: InProcessAppOptions): InProc
         ctx.stack.push(layer);
         layer.start(ctx.actions.requestRender);
       }),
-      submenuItem("People", (ctx) => {
+      // iOS has no voice-print model or translator yet: no People, translation or Voice & speakers.
+      ...(global.isIOS ? [] : [submenuItem("People", (ctx) => {
         speakerRegistry.reload();
         ctx.stack.push(peopleMenu());
-      }),
+      })]),
       configToggleItem(
         "Captions",
         // Shows off after repeated engine failures, so turning it on retries.
@@ -459,15 +464,15 @@ export function createMicrophonesAppWindow(options: InProcessAppOptions): InProc
         undefined,
         captionsEnabledSetting.description,
       ),
-      toggleSettingMenuItem(translateEnabledSetting),
+      ...(global.isIOS ? [] : [toggleSettingMenuItem(translateEnabledSetting)]),
       toggleSettingMenuItem(beamFilterSetting),
       toggleSettingMenuItem(ancEnabledSetting),
       submenuItem("Microphone setup", (ctx) => {
         ctx.stack.push(micSetupMenu());
       }),
-      submenuItem("Voice & speakers", (ctx) => {
+      ...(global.isIOS ? [] : [submenuItem("Voice & speakers", (ctx) => {
         ctx.stack.push(voiceSpeakersMenu());
-      }),
+      })]),
       submenuItem("Storage", (ctx) => {
         ctx.stack.push(storageMenu());
       }),

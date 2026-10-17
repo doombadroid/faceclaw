@@ -100,7 +100,7 @@ test('local package runtimes unpack independently and clean up after closing or 
   assert.equal(files.size, 0);
 });
 
-function sessionHarness(overrides = {}, playBuzzer = () => {}) {
+function sessionHarness(overrides = {}, playBuzzer = () => {}, permissions = []) {
   const settings = new Map(), logs = [], renders = [], imu = [];
   const load = loader({ global: { isIOS: true }, setTimeout, clearTimeout, Promise }, {
     '@nativescript/core': { ApplicationSettings: { getString: (k, d) => settings.get(k) ?? d, setString: (k, v) => settings.set(k, v) } },
@@ -112,7 +112,7 @@ function sessionHarness(overrides = {}, playBuzzer = () => {}) {
     '../../native/location': {}, '../../native/location-tracker': {}, '../../native/location-permissions': {}, ...overrides,
   });
   const api = load('app/apps/evenhub/session.ts');
-  const session = new api.EvenHubSession({ name: 'Probe', packageId: 'test.probe', permissions: [] }, '/test/dist', line => logs.push(line), '', playBuzzer);
+  const session = new api.EvenHubSession({ name: 'Probe', packageId: 'test.probe', permissions }, '/test/dist', line => logs.push(line), '', playBuzzer);
   session.attachWindow({ requestRender: () => renders.push(1), windowId: 'probe', closeWindow() {} });
   const web = vm.createContext({ Promise, Map, Date, console });
   web.window = web;
@@ -137,12 +137,27 @@ test('injected EvenHub RPC creates, updates and composites an image page with no
   h.web._listenEvenAppMessage = value => events.push(typeof value === 'string' ? JSON.parse(value) : value);
   h.session.handleGesture({ type: 'click', source: 'ring' });
   assert.ok(events.some(e => e.method === 'evenHubEvent'));
-  assert.equal(await h.call('audioControl', { isOpen: true }), false);
+  assert.equal(await h.call('audioControl', { isOpen: true }), false, 'no microphone permission declared');
   assert.equal(await h.call('imuControl', { isOpen: true, reportFrq: 240 }), true);
   assert.equal(await h.call('imuControl', { isOpen: false }), true);
   assert.deepEqual(h.imu, [200, 'off']);
   assert.equal(await h.call('getAppLocation'), null);
   h.session.close(); await new Promise(resolve => setTimeout(resolve, 120)); assert.equal(h.destroyed(), true);
+});
+
+test('iOS EvenHub audioControl registers with the mic router and PCM reaches the app as audioEvent', async () => {
+  const mic = [];
+  const router = { requestMic: client => mic.push(['request', client.windowId]), releaseMic: client => mic.push(['release', client.windowId]) };
+  const h = sessionHarness({ './mic-router': { evenHubMicRouter: router } }, () => {}, [{ name: 'g2-microphone' }]);
+  const events = [];
+  h.web._listenEvenAppMessage = value => events.push(typeof value === 'string' ? JSON.parse(value) : value);
+  assert.equal(await h.call('audioControl', { isOpen: true }), true);
+  assert.equal(await h.call('audioControl', { isOpen: true }), true);
+  h.session.deliverAudioPcm(new Uint8Array([1, 255]));
+  assert.equal(await h.call('audioControl', { isOpen: false }), true);
+  assert.deepEqual(mic, [['request', 'probe'], ['release', 'probe']]);
+  const audio = events.filter(e => e.method === 'evenHubEvent').map(e => e.data ?? e.args ?? e).find(e => JSON.stringify(e).includes('audioEvent'));
+  assert.match(JSON.stringify(audio), /"audioPcm":\[1,255\]/);
 });
 
 test('iOS webview adapter defers loading until handles attach and destroys a not-yet-loaded app', () => {

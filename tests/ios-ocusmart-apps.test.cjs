@@ -185,8 +185,7 @@ test('iOS controller fans window changes out to phone pages and focuses only ope
   assert.equal(renders, 3);
 });
 
-test('voice apps are available on iOS now that continuous capture exists', () => {
+test('voice apps and Microphones are available on iOS', () => {
   const { iosAppUnavailableReason } = loader({}, {})('app/apps/ios-availability.ts');
-  for (const id of ['transcribe', 'calculator', 'teleprompter']) assert.equal(iosAppUnavailableReason(id), null, id);
-  assert.match(iosAppUnavailableReason('microphones'), /not available/);
+  for (const id of ['transcribe', 'calculator', 'teleprompter', 'microphones']) assert.equal(iosAppUnavailableReason(id), null, id);
 });

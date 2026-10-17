@@ -31,6 +31,8 @@ import {
   screenFadeSetting,
   screenTimeoutSetting,
   showBleBandwidthSetting,
+  suspendEvenHubWhenScreenOffSetting,
+  useMicControlSetting,
   sonioxApiKeySetting,
   statusBarPositionSetting,
   statusBarVisibilitySetting,
@@ -44,6 +46,7 @@ import {
   type ConfigSettingString,
 } from "../dashboard-settings";
 import { shell } from "../shell/shell";
+import { iosAppUnavailableReason } from "../../apps/ios-availability";
 import {
   clearConflictingSlots,
   glanceboardEnabledSetting,
@@ -147,6 +150,7 @@ const PHONE_TITLES: Record<string, string> = {
   "ring-connection-mode": "Ring Connection",
   "save-voice-recordings": "Save Voice Recordings",
   "firmware-debug-flags": "Firmware Debug Flags",
+  "suspend-evenhub-screen-off": "Suspend EvenHub When Screen Off",
 };
 
 export const phoneTitle = (setting: CatalogSetting): string => PHONE_TITLES[setting.id] ?? setting.label;
@@ -300,6 +304,9 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
       { footer: ringConnectionModeSetting.description, items: [item(ringConnectionModeSetting)] },
       { footer: saveVoiceRecordingsSetting.description, items: [item(saveVoiceRecordingsSetting)] },
       { footer: firmwareDebugFlagsSetting.description, items: [item(firmwareDebugFlagsSetting)] },
+      { footer: suspendEvenHubWhenScreenOffSetting.description, items: [item(suspendEvenHubWhenScreenOffSetting)] },
+      // Shown with the Microphones app, the only thing it drives.
+      ...(iosAppUnavailableReason("microphones") ? [] : [{ footer: useMicControlSetting.description, items: [item(useMicControlSetting)] }]),
       { footer: showBleBandwidthSetting.description, items: [item(showBleBandwidthSetting)] },
     ],
   },

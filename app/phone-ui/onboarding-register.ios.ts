@@ -14,6 +14,11 @@ global.registerModule('phone-ui/onboarding-firmware-check-page', () => require('
 global.registerModule('phone-ui/onboarding-firmware-check-page.xml', () => require('./onboarding-firmware-check-page.xml'));
 global.registerModule('phone-ui/onboarding-flash-page', () => require('./onboarding-flash-page'));
 global.registerModule('phone-ui/onboarding-flash-page.xml', () => require('./onboarding-flash-page.xml'));
+// Microphones conversation review. Speakers and Ask stay Android-only (voice-prints, local LLM).
+global.registerModule('phone-ui/conversations-page', () => require('./conversations-page'));
+global.registerModule('phone-ui/conversations-page.xml', () => require('./conversations-page.xml'));
+global.registerModule('phone-ui/conversation-page', () => require('./conversation-page'));
+global.registerModule('phone-ui/conversation-page.xml', () => require('./conversation-page.xml'));
 global.registerModule('phone-ui/document-page', () => require('./document-page'));
 global.registerModule('phone-ui/document-page.xml', () => require('./document-page.xml'));
 global.registerModule('phone-ui/remote-controls.xml', () => require('./remote-controls.xml'));

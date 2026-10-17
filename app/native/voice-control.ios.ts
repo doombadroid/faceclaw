@@ -1,9 +1,12 @@
-import type { VoiceControlState, VoiceTranscriptEvent } from './voice-control'
+import type { FrameMetaListener, RawPcmListener, VoiceControlState, VoiceTranscriptEvent } from './voice-control'
 import type { CloudSttClient, CloudSttTranscriptEvent } from './cloud-stt'
 import { createCloudSttClient, usesCloudStt, type VoiceProviderSelection } from './cloud-stt-provider'
 import { APP_NAME } from '../branding'
+import { FaceclawCommunicatorBridge } from './faceclaw-communicator.ios'
+import { fromData, toData } from './kotlin-data'
 
 declare const FaceclawSpeech: any
+declare const FaceclawLc3Decoder: any
 export type IosMicrophoneSession = {
   setMicrophone(enabled: boolean, listener?: (packet: Uint8Array) => void): Promise<void>
 }
@@ -43,6 +46,17 @@ export class IosVoiceControlBridge {
   private cloud: CloudSttClient | null = null
   private cloudEndStatus: string | null = null
   private cloudTimer: ReturnType<typeof setTimeout> | null = null
+  // Android's decode-only raw tap (Microphones, EvenHub mic apps): it runs while
+  // any owner wants it and no STT holder does. STT preempts it; owners stay, and
+  // resumeRawCapture (every acked frame) brings it back. One enable at a time:
+  // setMicrophone blocks the main thread on its ACK.
+  private readonly rawOwners = new Set<string>()
+  private readonly rawPcm = new Set<RawPcmListener>()
+  private readonly frameMeta = new Set<FrameMetaListener>()
+  private rawSession: FaceclawCommunicatorBridge | null = null
+  private rawGeneration = 0
+  private rawStarting = false
+  private rawLive = false
 
   onStatus(listener: (state: VoiceControlState) => void): () => void {
     this.statuses.add(listener); listener({ status: this.status, listening: this.capturing, detail: '' }); return () => { this.statuses.delete(listener) }
@@ -83,6 +97,53 @@ export class IosVoiceControlBridge {
     return true
   }
   get statusText(): string { return this.status }
+  /** Decoded glasses mic PCM (16 kHz mono S16LE) while the raw tap runs. */
+  onRawPcm(listener: RawPcmListener): () => void { this.rawPcm.add(listener); return () => { this.rawPcm.delete(listener) } }
+  /** The firmware's per-packet DSP trailer (direction-of-arrival, SSR). */
+  onFrameMeta(listener: FrameMetaListener): () => void { this.frameMeta.add(listener); return () => { this.frameMeta.delete(listener) } }
+  /** Android's contract; the tap always uses the active session, so `communicator` is unused. */
+  startRawCapture(options: { communicator?: unknown; owner: string }): boolean {
+    this.rawOwners.add(options.owner); return this.startRawTap()
+  }
+  stopRawCapture(owner: string): void { this.rawOwners.delete(owner); if (!this.rawOwners.size) this.endRawTap(true) }
+  /** Starting, or enabled and still enabled in the session (a reconnect or suspend drops it silently). */
+  isRawCaptureLive(): boolean { return this.rawStarting || this.rawLive && !!this.rawSession?.isAudioCaptureActive() }
+  /** Restart a tap STT or the last session ended; cheap, called per acked frame. */
+  resumeRawCapture(): void { if (this.rawOwners.size) this.startRawTap() }
+  private startRawTap(): boolean {
+    if (this.isRawCaptureLive()) return true
+    // An STT holder owns the mic, even while it waits for a new session.
+    if (this.holders.size || this.suspended.size) return false
+    const session = FaceclawCommunicatorBridge.getActive()
+    if (!session?.isSessionReady()) return false
+    const generation = ++this.rawGeneration, decoder = FaceclawLc3Decoder.new()
+    this.rawSession = session; this.rawStarting = true; this.rawLive = false
+    const current = () => generation === this.rawGeneration
+    session.setMicrophone(true, packet => { if (current()) this.receiveRaw(decoder, packet) })
+      // A refused enable (display path not ready yet) retries on the next frame.
+      .then(() => { if (current()) this.rawLive = true }, () => {})
+      .finally(() => { if (current()) this.rawStarting = false })
+    return true
+  }
+  /** Stops delivery; `release` also disables the mic (not when STT takes it over). */
+  private endRawTap(release: boolean): void {
+    if (!this.rawStarting && !this.rawLive) return
+    ++this.rawGeneration; this.rawStarting = this.rawLive = false
+    const session = this.rawSession; this.rawSession = null
+    if (release) void session?.setMicrophone(false).catch(() => {})
+  }
+  private receiveRaw(decoder: any, packet: Uint8Array): void {
+    const pcm = decoder.decodePacket(toData(packet))
+    // Wrong length, duplicate from the other arm, or a decode error.
+    if (!pcm?.length) return
+    const bytes = fromData(pcm)
+    for (const fn of [...this.rawPcm]) fn(bytes)
+    if (!this.frameMeta.size) return
+    // Lc3PacketFramer's trailer: SSR at 200, angle at 202, both s16 LE.
+    const view = new DataView(packet.buffer, packet.byteOffset, packet.byteLength)
+    const meta = { angleDegrees: view.getInt16(202, true), ssr: view.getInt16(200, true) }
+    for (const fn of [...this.frameMeta]) fn(meta)
+  }
   startGlassesCapture(session: IosMicrophoneSession, voice: VoiceProviderSelection, log: (message: string) => void, endpointing = false): Promise<void> {
     return this.acquire('ptt', session, voice, log, endpointing)
   }
@@ -101,6 +162,8 @@ export class IosVoiceControlBridge {
     this.teardown()
   }
   hasSuspendedCapture(): boolean { return this.suspended.size > 0 }
+  /** Whether anyone holds the mic, including across a session outage (Android's contract). */
+  isCaptureHeld(): boolean { return this.holders.size > 0 || this.suspended.size > 0 }
   /** A new glasses session is up (or the glasses unlocked): restart a parked continuous capture. */
   resumeCapture(session: IosMicrophoneSession, voice: VoiceProviderSelection, log: (message: string) => void): Promise<void> {
     if (!this.suspended.delete('continuous')) return Promise.resolve()
@@ -108,6 +171,8 @@ export class IosVoiceControlBridge {
   }
   private async acquire(holder: CaptureHolder, session: IosMicrophoneSession | null, voice: VoiceProviderSelection, log: (message: string) => void, endpointing: boolean): Promise<void> {
     this.suspended.delete(holder)
+    // STT preempts the raw tap; a glasses capture's own enable takes the mic over.
+    this.endRawTap(!session)
     // Transcripts already reach every listener, so a second holder just joins.
     if (this.capturing && this.holders.size) { this.holders.add(holder); this.native.continuous = this.holders.has('continuous'); return }
     this.teardown()
@@ -186,6 +251,7 @@ export class IosVoiceControlBridge {
     this.finishCompletion()
   }
   handleSessionEnded(message = 'Glasses disconnected. Start voice input again after reconnecting.'): void {
+    this.endRawTap(true)
     if (this.source !== 'glasses' || !this.capturing && !this.finalizing) return
     const park = this.holders.has('continuous')
     this.teardown()

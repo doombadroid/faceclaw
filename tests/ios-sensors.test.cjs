@@ -125,10 +125,10 @@ test('iOS Developer debug tests enable the buzzer, accelerometer, light sensor a
 });
 
 test('iOS bridge exposes NSData audio forwarding, the passive audio monitor and mic status records', () => {
-  const { calls, native } = nativeSession({ startG2AudioForwardingNsDataListener: true });
+  const { calls, native } = nativeSession({ startG2AudioForwardingNsDataListener: true, sendFaceclawMicControlRecordLabelRightTempleLeftTemple: true });
   const { FaceclawCommunicatorBridge: Bridge } = loader({
     setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } },
-    interop: { bufferFromData: d => d.buffer },
+    interop: { bufferFromData: d => d.buffer, handleof: b => b }, NSData: { dataWithBytesLength: (b, n) => new Uint8Array(b, 0, n) },
     FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
     FaceclawKitFaceclawCompassListener: {}, FaceclawKitFaceclawImuListener: 'imu', FaceclawKitFaceclawMicStatusListener: 'mic',
     FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
@@ -158,6 +158,36 @@ test('iOS bridge exposes NSData audio forwarding, the passive audio monitor and 
   offStatus();
   assert.deepEqual(calls.at(-1), ['removeMicStatusListenerListener', status]);
   assert.deepEqual(records, [[77, 67, 'L']]);
+  assert.equal(bridge.sendFaceclawMicControl(new Uint8Array([1, 2, 3]).subarray(1), 'query', true, false), true);
+  const [sendName, record, ...sendArgs] = calls.at(-1);
+  assert.equal(sendName, 'sendFaceclawMicControlRecordLabelRightTempleLeftTemple');
+  assert.deepEqual([[...record], ...sendArgs], [[2, 3], 'query', true, false]);
+});
+
+test('iOS forwarding and the voice mic share one capture slot: STT wins and neither release stops the other', async () => {
+  const { calls, native } = nativeSession({ startG2AudioForwardingNsDataListener: true, isSessionReady: true,
+    startG2AudioCaptureNsDataListener: true, isAudioCaptureActive: true });
+  const { FaceclawCommunicatorBridge: Bridge } = loader({
+    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } },
+    FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
+    FaceclawKitFaceclawCompassListener: {},
+    FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
+  }, { '@nativescript/core': {}, './ios-graphics': {}, './ios-bluetooth': {}, './kotlin-listener.ios': { kotlinListener } })(
+    'app/native/faceclaw-communicator.ios.ts');
+  const bridge = new Bridge({ right: 'r', left: 'l' });
+  const names = () => calls.map(([name]) => name).filter(name => /Audio(Capture|Forwarding)/.test(name));
+  assert.equal(bridge.isAudioCaptureActive(), true);
+  assert.equal(bridge.startAudioForwarding(() => {}), true);
+  await bridge.setMicrophone(false);
+  assert.deepEqual(names(), ['isAudioCaptureActive', 'startG2AudioForwardingNsDataListener'], 'a stale voice release leaves forwarding alone');
+  await bridge.setMicrophone(true, () => {});
+  assert.equal(bridge.startAudioForwarding(() => {}), false, 'refused while STT or the raw tap holds the mic');
+  bridge.stopAudioForwarding();
+  assert.deepEqual(names().slice(2), ['startG2AudioCaptureNsDataListener'], 'the preempted forwarder cannot stop the voice capture');
+  await bridge.setMicrophone(false);
+  assert.equal(bridge.startAudioForwarding(() => {}), true);
+  bridge.stopAudioForwarding();
+  assert.deepEqual(names().slice(3), ['stopG2AudioCapture', 'startG2AudioForwardingNsDataListener', 'stopG2AudioForwarding']);
 });
 
 test('iOS audio monitor follows the active bridge and maps arms', () => {
@@ -210,4 +240,30 @@ test('iOS screen recording feeds composites to the Kotlin GIF recorder and saves
   bridge.startScreenRecording(); gif = null;
   assert.equal(bridge.stopScreenRecording(), '', 'no frames: no file');
   assert.equal(written.length, 1);
+});
+
+test('iOS mic control queries both temples through the active bridge and decodes their status records', () => {
+  const sent = [], offs = [];
+  let active = null, listener = null;
+  const bridgeFor = name => ({
+    sendFaceclawMicControl: (record, ...rest) => { sent.push([name, record instanceof Uint8Array, record[0], ...rest]); return true; },
+    addMicStatusListener: fn => { listener = fn; return () => offs.push(name); },
+  });
+  const { micArrayController } = loader({ global: { isIOS: true } }, {
+    '../../native/settings-store': {}, '../../ui/dashboard-settings': { useMicControlSetting: { get: () => false } },
+    '../../native/cloud-stt': { toJavaBytes: () => { throw new Error('Android only'); } },
+    '../../util/array-util': {}, '../../native/audio-monitor': { audioMonitorCommunicator: () => active },
+  })('app/apps/microphones/mic-control.ts');
+  assert.equal(micArrayController.query(), false, 'no session');
+  active = bridgeFor('first');
+  assert.equal(micArrayController.query(), true);
+  const statuses = [];
+  micArrayController.onStatus(s => statuses.push(s));
+  const body = new Uint8Array(21); body.set([0x4d, 0x43, 1, 1]); body[14] = 2;
+  listener(body, 'L');
+  assert.equal(statuses.at(-1).left.active, true); assert.equal(statuses.at(-1).left.side, 'left');
+  active = bridgeFor('second'); micArrayController.query();
+  assert.deepEqual(offs, ['first'], 'a new session moves the status listener');
+  assert.deepEqual(sent.map(([name, bytes, magic, label, right, left]) => [name, bytes, label, right, left]),
+    [['first', true, 'query', true, true], ['second', true, 'query', true, true]]);
 });

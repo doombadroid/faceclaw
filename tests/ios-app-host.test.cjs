@@ -96,7 +96,8 @@ test('iOS host runs continuous capture on the glasses or phone and resumes a par
   const calls = []; let suspended = false;
   const iosVoiceInput = { prepare: async () => true, statusText: '',
     startContinuousCapture: session => calls.push(['start', session]),
-    hasSuspendedCapture: () => suspended, resumeCapture: session => { suspended = false; calls.push(['resume', session]); } };
+    hasSuspendedCapture: () => suspended, resumeCapture: session => { suspended = false; calls.push(['resume', session]); },
+    resumeRawCapture: () => calls.push(['raw']) };
   const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', { require: id => id === '../native/ios-voice-input'
     ? { iosVoiceInput } : id === '../ui/dashboard-settings' ? voiceSettings : {} });
   const host = Object.create(IosPreviewController.prototype), glasses = {};
@@ -109,7 +110,7 @@ test('iOS host runs continuous capture on the glasses or phone and resumes a par
   suspended = true; host.glassesLocked = true; host.state = { phase: 'connected' };
   host.resumeVoiceCapture(); assert.equal(calls.length, 2);
   host.glassesLocked = false; host.resumeVoiceCapture(); host.resumeVoiceCapture();
-  assert.deepEqual(calls.slice(2), [['resume', glasses]]);
+  assert.deepEqual(calls.slice(2), [['raw'], ['resume', glasses], ['raw']], 'the raw tap retries every frame too');
 });
 test('iOS phone battery distinguishes unknown, charging, full and unplugged readings', () => {
   const device = { batteryLevel: -1, batteryState: 0 };
@@ -664,6 +665,7 @@ test('iOS screen recording captures once a second and is saved before its displa
   const preview = target('preview'), session = target('session');
   const host = Object.assign(Object.create(IosPreviewController.prototype), {
     previewTarget: preview, communicator: null, recordTimer: null, sessionOffs: [], glance: { reset() {} },
+    evenHub: { cancelSuspendTimer() {}, wakeLeaseState: null }, evenHubEngaged: false,
     logBluetooth: message => logs.push(message) });
   assert.equal(host.stopScreenRecording(), '', 'idle');
   host.startScreenRecording(); host.startScreenRecording();

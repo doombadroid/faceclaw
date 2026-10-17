@@ -30,8 +30,9 @@ function harness() {
   const settings = settingsFixture();
   // Menu builders that remember their setting, so the glasses tree can be walked.
   const menuItem = setting => ({ label: setting.label, setting });
-  const calls = [], messages = [];
+  const calls = [], messages = [], unavailable = new Set(['microphones']);
   const mocks = {
+    '../../apps/ios-availability': { iosAppUnavailableReason: id => unavailable.has(id) ? 'not yet' : null },
     '../dashboard-settings': { ...settings, enumSettingMenuItem: menuItem, toggleSettingMenuItem: menuItem, textSettingMenuItem: menuItem },
     '../../ui/dashboard-settings': { ...settings, enumSettingMenuItem: menuItem, toggleSettingMenuItem: menuItem },
     './settings-panel': { SettingsPanelLayer: class { constructor(sections) { this.sections = sections; } },
@@ -57,7 +58,7 @@ function harness() {
     '../../native/notification-sources': { readNotificationSources: () => [], setNotificationSourceEnabled() {} },
   };
   const load = loader({ global: { isIOS: true } }, mocks);
-  return { settings, mocks, load, calls, messages };
+  return { settings, mocks, load, calls, messages, unavailable };
 }
 
 /** Every setting the glasses Settings app reaches on iOS, opening each submenu. */
@@ -84,15 +85,19 @@ function catalogSettings(catalog, skip = new Set()) {
 const labels = set => [...set].map(setting => setting.label).sort();
 
 test('the phone catalog lists exactly the settings the glasses offer on iOS, minus the iOS-inert ones', () => {
-  const { settings, load } = harness();
+  const { settings, load, unavailable } = harness();
   const catalog = load('app/ui/dashboard/settings-catalog.ts');
-  for (const position of ['left', 'right', 'bottom', 'popup']) {
+  for (const [position, micsPorted] of [['left', false], ['right', false], ['bottom', true], ['popup', false]]) {
     settings.appSwitcherPositionSetting.set(position);
+    if (micsPorted) unavailable.delete('microphones'); else unavailable.add('microphones');
     const glasses = glassesSettings(load);
     for (const name of IOS_INERT) assert.ok(glasses.has(settings[name]), `${name} is still listed on the glasses (else drop it from IOS_INERT)`);
     // The iOS filter in settings-menus.ts already removed these; the catalog must not bring them back.
-    for (const name of ['watchRemoteEnabledSetting', 'suspendEvenHubWhenScreenOffSetting', 'useMicControlSetting'])
-      assert.ok(!glasses.has(settings[name]), name);
+    assert.ok(!glasses.has(settings.watchRemoteEnabledSetting), 'watchRemoteEnabledSetting');
+    // EvenHub suspend runs on iOS (off by default there).
+    assert.ok(glasses.has(settings.suspendEvenHubWhenScreenOffSetting), 'suspendEvenHubWhenScreenOffSetting');
+    // Mic control only drives the Microphones app, so it shows once that is ported.
+    assert.equal(glasses.has(settings.useMicControlSetting), micsPorted, position);
     for (const name of ['screenTimeoutSetting', 'ringConnectionModeSetting', 'firmwareDebugFlagsSetting', 'saveVoiceRecordingsSetting'])
       assert.ok(glasses.has(settings[name]), name);
     assert.match(settings.saveVoiceRecordingsSetting.description, /Files app/);

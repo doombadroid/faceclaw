@@ -14,6 +14,11 @@ export function navigatingTo(args: NavigatedData): void {
     const context = args.context as ConversationsContext;
     model = new ConversationsViewModel({ speakerId: context?.speakerId });
     page.bindingContext = model;
+    if (global.isIOS) {
+      // OcuSmart: its page colours, and no Ask AI / Speakers (local LLM and voice-prints are Android-only).
+      page.className = "os-page";
+      for (const item of page.actionBar.actionItems.getItems()) page.actionBar.actionItems.removeItem(item);
+    }
   }
   model.reload();
 }

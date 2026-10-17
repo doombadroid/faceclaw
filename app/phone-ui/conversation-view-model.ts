@@ -1,5 +1,6 @@
 import { Frame, ImageSource, Observable, Screen, Utils, action, confirm, fromObject } from "@nativescript/core";
 
+import { createRecordingPlayer } from "../native/mic-native";
 import { rediarizeSession } from "../apps/microphones/rediarize";
 import { summarize, type AnalyzedLine, type EmotionLabel } from "../apps/microphones/sentiment";
 import { speakerRegistry } from "../apps/microphones/speakers";
@@ -30,7 +31,7 @@ export class ConversationViewModel extends Observable {
   private segments: SegmentRow[] = [];
   private rows: TranscriptRow[] = [];
 
-  private player: any = null; // android.media.MediaPlayer
+  private player: any = null; // mic-native's player (Android: a MediaPlayer)
   private activeRowIndex = -1;
   private playing = false;
   private rediarizeRunning = false;
@@ -100,12 +101,6 @@ export class ConversationViewModel extends Observable {
   // --- lifecycle -------------------------------------------------------------
 
   reload(): void {
-    if (!global.isAndroid) {
-      this._emptyMessage = "Conversation review is only available on Android.";
-      this.notifyPropertyChange("emptyMessage", this._emptyMessage);
-      this.notifyPropertyChange("emptyVisibility", this.emptyVisibility);
-      return;
-    }
     this.stopPlaybackHighlight();
     try {
       const sessions = JSON.parse(String(conversationStore().querySessions("{}"))) as SessionRow[];
@@ -273,7 +268,6 @@ export class ConversationViewModel extends Observable {
   // --- playback --------------------------------------------------------------
 
   private onRowTapped(index: number): void {
-    if (!global.isAndroid) return;
     const session = this.session;
     const segment = this.segments[index];
     if (!session?.audioPath || !segment) return;
@@ -321,20 +315,10 @@ export class ConversationViewModel extends Observable {
   private ensurePlayer(audioPath: string): boolean {
     if (this.player) return true;
     try {
-      const player = new android.media.MediaPlayer();
-      player.setDataSource(audioPath);
-      player.prepare();
-      player.setOnCompletionListener(
-        new android.media.MediaPlayer.OnCompletionListener({
-          onCompletion: () => {
-            Utils.executeOnMainThread(() => {
-              this.playing = false;
-              this.updateRowPlayback();
-            });
-          },
-        }),
-      );
-      this.player = player;
+      this.player = createRecordingPlayer(audioPath, () => {
+        this.playing = false;
+        this.updateRowPlayback();
+      });
       return true;
     } catch (error) {
       this.status = `Could not open the recording: ${String(error)}`;
@@ -395,8 +379,16 @@ export class ConversationViewModel extends Observable {
     });
   }
 
+  /** iOS: the action bar's one More item in place of Android's three overflow items. */
+  async onMoreTap(): Promise<void> {
+    const split = "Split speaker...", remove = "Delete conversation";
+    const picked = await action({ cancelButtonText: "Cancel",
+      actions: [...(this.session?.speakers?.length ? [split] : []), remove] });
+    if (picked === split) await this.onSplitSpeakerTap();
+    else if (picked === remove) await this.onDeleteTap();
+  }
+
   async onSplitSpeakerTap(): Promise<void> {
-    if (!global.isAndroid) return;
     const speakers = this.session?.speakers ?? [];
     if (speakers.length === 0) {
       this.status = "This conversation has no speakers to split.";
@@ -423,7 +415,6 @@ export class ConversationViewModel extends Observable {
   }
 
   async onDeleteTap(): Promise<void> {
-    if (!global.isAndroid) return;
     const confirmed = await confirm({
       title: "Delete conversation",
       message: "Delete this conversation, its transcript, and its recording link? This cannot be undone.",
@@ -442,7 +433,6 @@ export class ConversationViewModel extends Observable {
   }
 
   private async onRowLongPressed(index: number): Promise<void> {
-    if (!global.isAndroid) return;
     const segment = this.segments[index];
     if (!segment) return;
     const profiles = speakerRegistry.all();

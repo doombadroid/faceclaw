@@ -153,6 +153,8 @@ export function createPage(): Page {
         onTap: () => pushInTab('glasses', 'ocusmart/settings-category', { category: 'notifications' }) }),
       navRow({ tile: tile('square.grid.2x2.fill', 'purple'), title: 'Apps on Glasses', value: String(launchableAppCount()),
         onTap: () => selectTab('apps') }),
+      // Saved Microphones captions and recordings (the shared XML pages, registered in onboarding-register.ios.ts).
+      navRow({ tile: tile('waveform', 'teal'), title: 'Conversations', onTap: () => pushInTab('glasses', 'phone-ui/conversations-page') }),
       navRow({ tile: tile('hand.tap.fill', 'green'), title: 'Remote & Touchpads', onTap: () => pushInTab('glasses', 'ocusmart/remote') }),
       navRow({ tile: tile('arrow.down.circle.fill', 'gray'), title: 'Software Update', badge: warning ? '1' : undefined,
         onTap: () => pushInTab('glasses', 'ocusmart/update') }),

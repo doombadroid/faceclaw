@@ -1,10 +1,7 @@
-import { Utils } from "@nativescript/core";
-
+import { conversationStore } from "../../native/mic-native";
 import { isLocalModelReady, streamLocalQwen } from "../../native/llama";
 import type { LlmStreamHandle } from "../../assistant/llm-protocol";
 import { parseConversationQuery } from "../../phone-ui/conversation-search";
-
-declare const com: any;
 
 /**
  * Question answering over saved conversations with the on-phone LLM (the
@@ -42,10 +39,7 @@ export function conversationQaAvailable(): boolean {
   return global.isAndroid && isLocalModelReady();
 }
 
-function store(): any {
-  const context = Utils.android.getApplicationContext();
-  return com.faceclaw.app.FaceclawConversationStore.getInstance(context);
-}
+const store = conversationStore;
 
 type SegmentRow = {
   id: number;

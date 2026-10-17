@@ -774,7 +774,8 @@ export const suspendEvenHubWhenScreenOffSetting = new ConfigSettingBoolean({
   id: "suspend-evenhub-screen-off",
   label: "Suspend EvenHub when screen off",
   storageKey: "developer.suspendEvenHubWhenScreenOff",
-  defaultValue: true,
+  // Off on iOS until wake latency from a backgrounded app is measured on a device.
+  defaultValue: !global.isIOS,
   description: "Suspend the EvenHub session while the display is off. This significantly improves battery life, but increases the latency of waking the screen.",
 });
 

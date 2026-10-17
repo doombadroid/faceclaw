@@ -19,25 +19,29 @@ function harness() {
       clouds.push(client); return client;
     },
   };
-  let authorization = 3, microphoneAuthorization = 3, microphoneRequests = 0, permissionRequests = 0, release;
+  let authorization = 3, microphoneAuthorization = 3, microphoneRequests = 0, permissionRequests = 0, release, active = null;
+  // Stands in for liblc3: a 205-byte packet decodes to 800 samples filled with its counter byte.
+  const decoder = { new: () => ({ decodePacket: d => d.length === 205 ? Buffer.alloc(1600, d[204]) : null }) };
   const sandbox = { exports: {}, FaceclawSpeech: { new: () => native, authorizationStatus: () => authorization,
     requestAuthorization: done => { permissionRequests++; done(3); },
     microphoneAuthorizationStatus: () => microphoneAuthorization,
     requestMicrophoneAuthorization: done => { microphoneRequests++; done(3); } },
     setTimeout: fn => { timers.set(fn, fn); return fn; }, clearTimeout: fn => timers.delete(fn),
     NSData: { dataWithBytesLength: (b, n) => Buffer.from(b, 0, n) }, interop: { handleof: b => b, bufferFromData: d => d },
-    require: name => name === './cloud-stt-provider' ? provider : {} };
+    FaceclawLc3Decoder: decoder,
+    require: name => ({ './cloud-stt-provider': provider, './faceclaw-communicator.ios': { FaceclawCommunicatorBridge: { getActive: () => active } },
+      './kotlin-data': { toData: b => Buffer.from(b), fromData: d => new Uint8Array(d) } })[name] ?? {} };
   vm.runInNewContext(ts.transpileModule(fs.readFileSync('app/native/voice-control.ios.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, sandbox);
   const bridge = new sandbox.exports.IosVoiceControlBridge();
   bridge.onTranscript(event => text.push({ ...event }));
-  const session = { setMicrophone(enabled, fn) {
-    commands.push(enabled);
+  const session = { enabled: false, isSessionReady: () => true, isAudioCaptureActive() { return this.enabled; }, setMicrophone(enabled, fn) {
+    commands.push(enabled); this.enabled = enabled;
     if (enabled) { this.packet = fn; return new Promise(resolve => { release = resolve; }); }
     return Promise.resolve();
   } };
   const onboard = { provider: 'onboard', elevenLabsApiKey: '', openAiApiKey: '', sonioxApiKey: '' };
-  return { bridge, native, session, audio, commands, text, timers, clouds, release: () => release(),
+  return { bridge, native, session, audio, commands, text, timers, clouds, release: () => release(), activate: s => { active = s; },
     onboard, cloud: { ...onboard, provider: 'soniox', sonioxApiKey: 'key' },
     microphoneAuthorization: value => { microphoneAuthorization = value; }, microphoneRequests: () => microphoneRequests,
     authorization: value => { authorization = value; }, permissionRequests: () => permissionRequests,
@@ -301,4 +305,58 @@ test('saved voice recordings follow the provider selection into the native captu
   h.bridge.stop(); await h.bridge.startContinuousCapture(null, h.cloud, () => {});
   assert.equal(h.native.saveRecording, false);
   h.bridge.stopContinuousCapture();
+});
+
+// A 205-byte stock packet: 200 LC3 bytes, SSR and angle (s16 LE), counter.
+function micPacket(counter, angle, ssr) {
+  const packet = new Uint8Array(205), view = new DataView(packet.buffer);
+  view.setInt16(200, ssr, true); view.setInt16(202, angle, true); packet[204] = counter;
+  return packet;
+}
+const flush = () => new Promise(resolve => setImmediate(resolve));
+test('the raw tap decodes glasses PCM with its DSP trailer, yields to STT, and comes back after it and after a session end', async () => {
+  const h = harness(); const pcm = [], meta = [];
+  h.bridge.onRawPcm(bytes => pcm.push(bytes)); h.bridge.onFrameMeta(m => meta.push(m));
+  assert.equal(h.bridge.startRawCapture({ communicator: null, owner: 'evenhub' }), false, 'no session yet');
+  h.activate(h.session);
+  assert.equal(h.bridge.startRawCapture({ communicator: null, owner: 'evenhub' }), true);
+  assert.equal(h.bridge.startRawCapture({ communicator: null, owner: 'microphones' }), true);
+  h.bridge.resumeRawCapture();
+  assert.deepEqual(h.commands, [true], 'single-flight: one enable while it awaits its ACK');
+  assert.equal(h.bridge.isRawCaptureLive(), true, 'still coming up counts as live');
+  h.release(); await flush();
+  const rawPacket = h.session.packet;
+  rawPacket(micPacket(7, -30, 12)); rawPacket(new Uint8Array(10));
+  assert.equal(pcm.length, 1); assert.equal(pcm[0].length, 1600); assert.equal(pcm[0][0], 7);
+  assert.deepEqual(meta.map(m => ({ ...m })), [{ angleDegrees: -30, ssr: 12 }]);
+  // Push-to-talk preempts the tap on the same session and refuses a restart while it holds.
+  const stt = h.bridge.startGlassesCapture(h.session, h.onboard, () => {});
+  assert.equal(h.bridge.isRawCaptureLive(), false);
+  rawPacket(micPacket(8, 0, 0)); assert.equal(pcm.length, 1);
+  assert.equal(h.bridge.startRawCapture({ communicator: null, owner: 'evenhub' }), false);
+  h.bridge.resumeRawCapture(); assert.deepEqual(h.commands, [true, true]);
+  h.release(); await stt; h.bridge.stopPushToTalk(); h.event({ kind: 'ended' });
+  h.bridge.resumeRawCapture(); assert.deepEqual(h.commands, [true, true, false, true]);
+  h.release(); await flush();
+  h.session.packet(micPacket(9, 5, 3)); assert.equal(pcm.length, 2);
+  // A session end parks it with its owners; the next acked frame resumes it.
+  h.bridge.handleSessionEnded(); assert.deepEqual(h.commands, [true, true, false, true, false]);
+  assert.equal(h.bridge.isRawCaptureLive(), false);
+  h.bridge.resumeRawCapture(); h.release(); await flush();
+  assert.deepEqual(h.commands, [true, true, false, true, false, true]);
+  h.bridge.stopRawCapture('evenhub'); assert.equal(h.commands.length, 6, 'another owner still wants it');
+  h.bridge.stopRawCapture('microphones'); assert.equal(h.commands.at(-1), false);
+  assert.equal(h.bridge.isRawCaptureLive(), false);
+});
+test('phone STT releases a glasses raw tap, and a parked continuous capture keeps the tap off', async () => {
+  const h = harness(); h.activate(h.session);
+  h.bridge.startRawCapture({ communicator: null, owner: 'evenhub' }); h.release(); await flush();
+  await h.bridge.startPhoneCapture(h.onboard, () => {});
+  assert.deepEqual(h.commands, [true, false]);
+  h.bridge.stopPhoneCapture();
+  const start = h.bridge.startContinuousCapture(h.session, h.onboard, () => {}); h.release(); await start;
+  h.bridge.handleSessionEnded(); h.bridge.resumeRawCapture();
+  assert.deepEqual(h.commands, [true, false, true, false], 'the parked holder owns the mic');
+  h.bridge.stopContinuousCapture(); h.bridge.resumeRawCapture();
+  assert.deepEqual(h.commands, [true, false, true, false, true]);
 });
