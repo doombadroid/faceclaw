@@ -52,6 +52,8 @@ let build: string | null = null
 /** Record a caught error. Never throws: it is called from inside catch blocks. */
 export function reportError(source: string, error: unknown, context?: Record<string, string>): void {
   try {
+    // Thrown by throwIfError (kotlin-data.ts): Kotlin's boundaryError already filed it.
+    if ((error as { reportedByKotlin?: unknown } | null)?.reportedByKotlin === true) return
     const normalized = normalizeError(error), stack = normalized.stack
     let message = normalized.message
     if (!Utils.isMainThread()) { fromWorker(source, message, stack, context); return }

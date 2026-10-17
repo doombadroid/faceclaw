@@ -62,6 +62,18 @@ test('A worker\'s error report reaches the main isolate\'s reports, even while t
   ]);
 });
 
+test('iOS host failures file an error report', () => {
+  const reported = [], logged = [];
+  const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', { console: { error() {} },
+    require: id => id === '../native/error-reports' ? { reportError: (...args) => reported.push(args) } : {} });
+  const host = Object.create(IosPreviewController.prototype);
+  host.logBluetooth = line => logged.push(line); host.recentErrors = []; host.active = false;
+  const error = new Error('surface gone');
+  host.fail(error);
+  assert.deepEqual(reported, [['iOS preview', error]]);
+  assert.equal(host.recentErrors.length, 1, 'still shown in Connection Details');
+});
+
 test('iOS installed apps launch, recover missing packages, and close before uninstall', async () => {
   const calls = [], app = { packageId: 'test.app', name: 'Test' };
   let present = true;

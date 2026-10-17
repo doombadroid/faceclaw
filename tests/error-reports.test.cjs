@@ -386,3 +386,15 @@ test('Merging keeps an earlier launch\'s report of the same error apart', () => 
   assert.deepEqual(third.module.listErrorReports().map(r => [r.message, r.at]),
     [['timeout', '2026-10-17T12:01:00.000Z'], ['timeout', '2026-10-17T12:00:00.000Z']]);
 });
+
+test('An error Kotlin already filed (thrown by throwIfError) is not filed twice', () => {
+  const h = harness();
+  const { throwIfError } = loader({}, {})('app/native/kotlin-data.ts');
+  let thrown;
+  try { throwIfError('IosGlassesSession.configureSurface: Unknown surface: s'); } catch (error) { thrown = error; }
+  assert.equal(thrown.message, 'IosGlassesSession.configureSurface: Unknown surface: s');
+  h.module.reportError('iOS preview', thrown);
+  assert.deepEqual(h.module.listErrorReports(), [], 'boundaryError filed it on the Kotlin side');
+  h.module.reportError('iOS preview', new Error('a JS failure'));
+  assert.deepEqual(h.module.listErrorReports().map(r => r.message), ['a JS failure']);
+});

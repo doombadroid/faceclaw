@@ -17,6 +17,7 @@ import { IosNavigationSensors } from '../native/ios-navigation-sensors'
 import { bindCompassSession, receiveCompassEvent } from '../native/compass.ios'
 import { bindImuSession, imuSessionReady, receiveImuReading } from '../native/imu.ios'
 import { Dialogs, File, knownFolders, path, Utils, type ImageSource } from '@nativescript/core'
+import { reportError } from '../native/error-reports'
 import { iosVoiceInput } from '../native/ios-voice-input'
 import { nightscoutBridge } from '../native/nightscout-bridge'
 import { weatherBridge } from '../native/weather'
@@ -634,6 +635,8 @@ export class IosPreviewController {
   private fail(error: unknown): void {
     const message = error instanceof Error ? error.stack ?? error.message : String(error)
     console.error(`[ios-preview] ${message}`)
+    // Skips an error Kotlin already filed (throwIfError marks those).
+    reportError('iOS preview', error)
     this.logBluetooth(`App error: ${message}`)
     // Kept apart from the log tail: glasses input adds a line per event, which
     // pushes an error out of Connection Details within seconds.
