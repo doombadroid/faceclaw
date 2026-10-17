@@ -67,6 +67,8 @@ test('the Swift wrapper keeps FluidAudio out of its @objc surface and pins the v
 test('the ObjC loader sends only the Parakeet folder to Swift and keeps voice-prints on sherpa', () => {
   const shim = read(SHIM), selectors = swiftSelectors();
   assert.match(shim, /^#import "faceclaw-Swift\.h"$/m);
+  // faceclaw-Swift.h needs NativeScriptEmbedderDelegate declared before it.
+  assert.ok(shim.indexOf('#import "NativeScriptEmbedder.h"') >= 0 && shim.indexOf('#import "NativeScriptEmbedder.h"') < shim.indexOf('#import "faceclaw-Swift.h"'));
   // [FaceclawParakeet recognizeSamples:samples dir:_modelDir] -> recognizeSamples:dir:
   const sent = [...shim.matchAll(/\[FaceclawParakeet ([^\]]+)\]/g)].map(([, message]) => [...message.matchAll(/(\w+):/g)].map(m => `${m[1]}:`).join(''));
   assert.deepEqual([...new Set(sent)].sort(), ['isParakeetDir:', 'loadDir:', 'recognizeSamples:dir:']);

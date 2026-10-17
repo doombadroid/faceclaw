@@ -5,6 +5,9 @@
 #include "FaceclawSherpaCore.h"
 // FaceclawParakeet.swift. The header is named after the product, which NativeScript names after the
 // checkout folder: CI checks out to faceclaw (faceclaw-ios-build's build.yml).
+// The generated header also declares @nativescript/core's NativeScriptViewFactory, which conforms
+// to this protocol; without it first the header does not compile (CI build 35).
+#import "NativeScriptEmbedder.h"
 #import "faceclaw-Swift.h"
 
 /** One offline recognizer; the C object is freed on close or dealloc. */
