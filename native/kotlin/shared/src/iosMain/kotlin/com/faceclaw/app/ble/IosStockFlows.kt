@@ -50,17 +50,17 @@ class IosDeviceInfoProbe(rightAddress: String, leftAddress: String) {
         lock.withLock { this.listener = listener }
     }
 
-    fun start() {
+    fun start(): Unit = boundary("IosDeviceInfoProbe.start", Unit) {
         lock.withLock {
-            if (started) return
+            if (started) return@boundary
             started = true
         }
         runOnThread("faceclaw-device-info") { flow.run() }
     }
 
-    fun cancel() = flow.cancel()
+    fun cancel(): Unit = boundary("IosDeviceInfoProbe.cancel", Unit) { flow.cancel() }
 
-    fun close() {
+    fun close(): Unit = boundary("IosDeviceInfoProbe.close", Unit) {
         cancel()
         runCatching { link.close() }
     }
@@ -101,17 +101,17 @@ class IosFlashPrompt(rightAddress: String, leftAddress: String, warningText: Str
         lock.withLock { this.listener = listener }
     }
 
-    fun start() {
+    fun start(): Unit = boundary("IosFlashPrompt.start", Unit) {
         lock.withLock {
-            if (started) return
+            if (started) return@boundary
             started = true
         }
         runOnThread("faceclaw-flash-prompt") { flow.run() }
     }
 
-    fun cancel() = flow.cancel()
+    fun cancel(): Unit = boundary("IosFlashPrompt.cancel", Unit) { flow.cancel() }
 
-    fun close() {
+    fun close(): Unit = boundary("IosFlashPrompt.close", Unit) {
         cancel()
         runCatching { link.close() }
     }
@@ -152,17 +152,17 @@ class IosFirmwareFlasher(rightAddress: String, leftAddress: String, firmwarePath
         lock.withLock { this.listener = listener }
     }
 
-    fun start() {
+    fun start(): Unit = boundary("IosFirmwareFlasher.start", Unit) {
         lock.withLock {
-            if (started) return
+            if (started) return@boundary
             started = true
         }
         runOnThread("faceclaw-flasher") { flow.run() }
     }
 
-    fun cancel() = flow.cancel()
+    fun cancel(): Unit = boundary("IosFirmwareFlasher.cancel", Unit) { flow.cancel() }
 
-    fun close() {
+    fun close(): Unit = boundary("IosFirmwareFlasher.close", Unit) {
         cancel()
         runCatching { link.close() }
     }

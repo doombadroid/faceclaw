@@ -4,7 +4,7 @@ import { REQUIRED_FACECLAW_FIRMWARE_VERSION, type FirmwareInfo } from "../g2/fir
 import { type CompassEvent } from "./compass-types";
 import { type ImuReading } from "./imu-types";
 import { kotlinListener } from "./kotlin-listener.ios";
-import { fromData, fromKotlinBytes, toData } from "./kotlin-data";
+import { fromData, fromKotlinBytes, throwIfError, toData } from "./kotlin-data";
 import { previewPixels } from "./ios-graphics";
 import { iosBluetooth } from "./ios-bluetooth";
 
@@ -519,7 +519,7 @@ export class FaceclawCommunicatorBridge {
 
   async configureCompositorScreen(width: number, height: number): Promise<void> {
     await this.enqueueNativeCall(() => {
-      this.communicator.configureCompositorScreenWidthHeight(Math.round(width), Math.round(height));
+      throwIfError(this.communicator.configureCompositorScreenWidthHeight(Math.round(width), Math.round(height)));
     });
   }
 
@@ -563,38 +563,38 @@ export class FaceclawCommunicatorBridge {
   async configureSurface(id: string, options: SurfaceOptions): Promise<void> {
     const transparency = options.transparency === "color-key" ? 1 : 0;
     await this.enqueueNativeCall(() => {
-      this.communicator.configureSurfaceIdXYWidthHeightZOrderTransparency(
+      throwIfError(this.communicator.configureSurfaceIdXYWidthHeightZOrderTransparency(
         id, Math.round(options.x), Math.round(options.y), Math.round(options.width), Math.round(options.height),
         Math.round(options.zOrder), transparency,
-      );
+      ));
     });
   }
 
   async removeSurface(id: string): Promise<void> {
-    await this.enqueueNativeCall(() => { this.communicator.removeSurfaceId(id); });
+    await this.enqueueNativeCall(() => throwIfError(this.communicator.removeSurfaceId(id)));
   }
 
   async submitShellScene(bytes: Uint8Array, paintMs = 0, frameId = 0): Promise<void> {
     const snapshot = new Uint8Array(bytes);
-    await this.enqueueNativeCall(() => this.communicator.submitShellSceneBytesPaintMsFrameId(toData(snapshot), Math.round(nonNegativeNumber(paintMs)), Math.round(nonNegativeNumber(frameId))), true);
+    await this.enqueueNativeCall(() => throwIfError(this.communicator.submitShellSceneBytesPaintMsFrameId(toData(snapshot), Math.round(nonNegativeNumber(paintMs)), Math.round(nonNegativeNumber(frameId)))), true);
   }
 
   async setUnderlayDim(belowZOrder: number, factor: number): Promise<void> {
     await this.enqueueNativeCall(() => {
-      this.communicator.setUnderlayDimBelowZOrderFactor256(Math.round(belowZOrder), dimFactor256(factor));
+      throwIfError(this.communicator.setUnderlayDimBelowZOrderFactor256(Math.round(belowZOrder), dimFactor256(factor)));
     });
   }
 
   async setSurfaceVisible(id: string, visible: boolean): Promise<void> {
-    await this.enqueueNativeCall(() => { this.communicator.setSurfaceVisibleIdVisible(id, Boolean(visible)); });
+    await this.enqueueNativeCall(() => throwIfError(this.communicator.setSurfaceVisibleIdVisible(id, Boolean(visible))));
   }
 
   async setSurfaceDepth(id: string, depth: number): Promise<void> {
-    await this.enqueueNativeCall(() => { this.communicator.setSurfaceDepthIdDepth(id, Math.round(depth)); });
+    await this.enqueueNativeCall(() => throwIfError(this.communicator.setSurfaceDepthIdDepth(id, Math.round(depth))));
   }
 
   async setScreenBlanked(blanked: boolean): Promise<void> {
-    await this.enqueueNativeCall(() => { this.communicator.setScreenBlankedBlanked(Boolean(blanked)); });
+    await this.enqueueNativeCall(() => throwIfError(this.communicator.setScreenBlankedBlanked(Boolean(blanked))));
   }
 
   /**
@@ -617,10 +617,10 @@ export class FaceclawCommunicatorBridge {
     const snapshot = new Uint8Array(pixels8bpp);
     const draws = glyphs ? toData(new Uint8Array(glyphs)) : null;
     await this.enqueueNativeCall(() => {
-      this.communicator.submitSurfaceFramePixels8bppSurfaceIdRectXRectYRectWidthRectHeightContentFingerprintPaintMsFrameIdGlyphs(
+      throwIfError(this.communicator.submitSurfaceFramePixels8bppSurfaceIdRectXRectYRectWidthRectHeightContentFingerprintPaintMsFrameIdGlyphs(
         toData(snapshot), surfaceId, Math.round(rect.x), Math.round(rect.y), Math.round(rect.width), Math.round(rect.height),
         fingerprint, Math.round(nonNegativeNumber(paintMs)), Math.round(nonNegativeNumber(frameId)), draws,
-      );
+      ));
     }, true);
   }
 

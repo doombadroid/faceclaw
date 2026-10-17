@@ -4,16 +4,18 @@ import platform.Foundation.NSData
 
 /** Binary adapters only: atlas identity, RLE, residency and planning stay in commonMain. */
 class IosTextureAtlas {
-    fun fontId(key: String): Int = GlyphAtlas.fontId(key)
+    fun fontId(key: String): Int = boundary("IosTextureAtlas.fontId", 0) { GlyphAtlas.fontId(key) }
 
-    fun registerGlyphs(data: NSData) = GlyphAtlas.register(IosByteReader(data))
+    fun registerGlyphs(data: NSData) = boundary("IosTextureAtlas.registerGlyphs", Unit) { GlyphAtlas.register(IosByteReader(data)) }
 
-    fun registerAaGlyphs(data: NSData) = GlyphAtlas.registerAa(IosByteReader(data))
+    fun registerAaGlyphs(data: NSData) = boundary("IosTextureAtlas.registerAaGlyphs", Unit) { GlyphAtlas.registerAa(IosByteReader(data)) }
 
-    fun registerFirmwareGlyphs(data: NSData) = FwGlyphAtlas.register(IosByteReader(data))
+    fun registerFirmwareGlyphs(data: NSData) =
+        boundary("IosTextureAtlas.registerFirmwareGlyphs", Unit) { FwGlyphAtlas.register(IosByteReader(data)) }
 
+    /** 0 (no atlas image: the frame's pixels still carry it) when the image is rejected. */
     fun imageId(key: String, width: Int, height: Int, data: NSData): Int =
-        ImageAtlas.ensure(key, width, height, IosByteReader(data))
+        boundary("IosTextureAtlas.imageId", 0) { ImageAtlas.ensure(key, width, height, IosByteReader(data)) }
 }
 
 /** A snapshot keeps pixels and their screen-space draw identities together while JS coalesces. */

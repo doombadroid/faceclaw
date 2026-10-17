@@ -29,16 +29,11 @@ import platform.posix.memcpy
 /** The shared conversation store over the ObjC FaceclawSqlite port, plus the file sweep Android does with java.io. */
 class IosConversationStore(port: SqlPort) : ConversationStoreCore(port) {
     /** Delete recordings in dirPath no session names (matched by file name). Returns how many went. */
-    fun deleteUnreferencedRecordings(dirPath: String?): Int {
-        if (dirPath == null) return 0
-        return try {
-            val referenced = referencedRecordingNames()
-            val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dirPath, null) ?: return 0
-            names.map { it as String }.count { it !in referenced && NSFileManager.defaultManager.removeItemAtPath("$dirPath/$it", null) }
-        } catch (t: Throwable) {
-            PlatformLog.e("FaceclawConvStore", "recording sweep failed", t)
-            0
-        }
+    fun deleteUnreferencedRecordings(dirPath: String?): Int = boundary("IosConversationStore.deleteUnreferencedRecordings", 0) {
+        if (dirPath == null) return@boundary 0
+        val referenced = referencedRecordingNames()
+        val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dirPath, null) ?: return@boundary 0
+        names.map { it as String }.count { it !in referenced && NSFileManager.defaultManager.removeItemAtPath("$dirPath/$it", null) }
     }
 }
 
@@ -46,26 +41,27 @@ class IosConversationStore(port: SqlPort) : ConversationStoreCore(port) {
 class IosNoiseSuppressor(sampleRate: Int) {
     private val suppressor = FaceclawNoiseSuppressor(sampleRate)
 
-    fun process(pcm: NSData): NSData = suppressor.process(pcm.byteArray())?.data() ?: pcm
+    /** The input unchanged when suppression fails. */
+    fun process(pcm: NSData): NSData = boundary("IosNoiseSuppressor.process", pcm) { suppressor.process(pcm.byteArray())?.data() ?: pcm }
 
-    fun reset() = suppressor.reset()
+    fun reset() = boundary("IosNoiseSuppressor.reset", Unit) { suppressor.reset() }
 }
 
 /** Android FaceclawWavRecorder over NSFileHandle: a header first, rewritten on finish. */
 class IosWavRecorder(private val path: String, private val sampleRate: Int, private val channels: Int) {
     companion object {
         /** Rewrite an unfinished recording's header to the PCM on disk; the PCM bytes, or -1 when missing. */
-        fun repairHeader(path: String, sampleRate: Int, channels: Int): Long {
-            if (!fileExists(path)) return -1
+        fun repairHeader(path: String, sampleRate: Int, channels: Int): Long = boundary("IosWavRecorder.repairHeader", -1L) {
+            if (!fileExists(path)) return@boundary -1L
             val header = BinaryEncoding.wavHeader(0, sampleRate, channels).size.toLong()
             val frame = channels * 2L
             val pcm = maxOf(0L, fileLength(path) - header) / frame * frame
-            val handle = NSFileHandle.fileHandleForUpdatingAtPath(path) ?: return -1
+            val handle = NSFileHandle.fileHandleForUpdatingAtPath(path) ?: return@boundary -1L
             // The error-returning NSFileHandle calls: the legacy ones raise, which would end the process.
             val ok = handle.truncateAtOffset((header + pcm).toULong(), null) && handle.seekToOffset(0u, null) &&
                 handle.writeData(BinaryEncoding.wavHeader(minOf(pcm, Int.MAX_VALUE.toLong()).toInt(), sampleRate, channels).data(), null)
             handle.closeAndReturnError(null)
-            return if (ok) pcm else -1
+            if (ok) pcm else -1L
         }
     }
 
@@ -82,23 +78,23 @@ class IosWavRecorder(private val path: String, private val sampleRate: Int, priv
     /** False when the file could not be created; append and finish are then no-ops. */
     fun isOpen(): Boolean = handle != null
 
-    fun append(pcm: NSData) {
-        val current = handle ?: return
+    fun append(pcm: NSData) = boundary("IosWavRecorder.append", Unit) {
+        val current = handle ?: return@boundary
         if (current.writeData(pcm, null)) dataBytes += pcm.length.toLong()
     }
 
-    fun getDurationMs(): Long = dataBytes * 1000L / (sampleRate * channels * 2L)
+    fun getDurationMs(): Long = boundary("IosWavRecorder.getDurationMs", 0L) { dataBytes * 1000L / (sampleRate * channels * 2L) }
 
-    fun finish(): Long {
-        val current = handle ?: return dataBytes
+    fun finish(): Long = boundary("IosWavRecorder.finish", dataBytes) {
+        val current = handle ?: return@boundary dataBytes
         handle = null
         if (current.seekToOffset(0u, null))
             current.writeData(BinaryEncoding.wavHeader(minOf(dataBytes, Int.MAX_VALUE.toLong()).toInt(), sampleRate, channels).data(), null)
         current.closeAndReturnError(null)
-        return dataBytes
+        dataBytes
     }
 
-    fun discard() {
+    fun discard(): Unit = boundary("IosWavRecorder.discard", Unit) {
         finish()
         deleteFile(path)
     }
@@ -170,17 +166,17 @@ class IosCaptionEngine(private val sherpa: IosSherpaLoader?) {
 
     private val session = CaptionSession(host)
 
-    fun setListener(listener: FaceclawCaptionEngineListener?) = session.setListener(listener)
+    fun setListener(listener: FaceclawCaptionEngineListener?) = boundary("IosCaptionEngine.setListener", Unit) { session.setListener(listener) }
 
-    fun setAsrModelDir(dir: String?) = session.setAsrModelDir(dir)
+    fun setAsrModelDir(dir: String?) = boundary("IosCaptionEngine.setAsrModelDir", Unit) { session.setAsrModelDir(dir) }
 
-    fun setSpeakerModelPath(path: String?) = session.setSpeakerModelPath(path)
+    fun setSpeakerModelPath(path: String?) = boundary("IosCaptionEngine.setSpeakerModelPath", Unit) { session.setSpeakerModelPath(path) }
 
-    fun start() = session.start()
+    fun start() = boundary("IosCaptionEngine.start", Unit) { session.start() }
 
-    fun stop() = session.stop()
+    fun stop() = boundary("IosCaptionEngine.stop", Unit) { session.stop() }
 
-    fun requestStop() = session.requestStop()
+    fun requestStop() = boundary("IosCaptionEngine.requestStop", Unit) { session.requestStop() }
 
-    fun acceptPcm(pcm: NSData) = session.acceptPcm(pcm.byteArray())
+    fun acceptPcm(pcm: NSData) = boundary("IosCaptionEngine.acceptPcm", Unit) { session.acceptPcm(pcm.byteArray()) }
 }

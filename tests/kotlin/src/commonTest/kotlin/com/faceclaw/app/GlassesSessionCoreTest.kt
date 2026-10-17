@@ -4,6 +4,7 @@ import kotlin.concurrent.Volatile
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -289,6 +290,24 @@ private class Session {
 }
 
 class GlassesSessionCoreTest {
+    /** These throw by design; IosGlassesSession turns them into errors, since one reaching Objective-C ends the app. */
+    @Test fun compositorCallsThrowForSurfacesTheyDoNotKnow() {
+        val s = Session()
+        s.core.configureCompositorScreen(640, 480)
+        s.core.configureSurface("s", 0, 0, 64, 32, 0, SurfaceCompositor.TRANSPARENCY_OPAQUE)
+        assertFailsWith<IllegalArgumentException> { s.core.setSurfaceVisible("missing", true) }
+        assertFailsWith<IllegalArgumentException> { s.core.setSurfaceDepth("missing", 0) }
+        assertFailsWith<IllegalArgumentException> { s.core.setSurfaceDepth("s", 200) }
+        assertFailsWith<IllegalArgumentException> {
+            s.core.submitSurfaceFrame(ArrayByteReader(ByteArray(64 * 32)), "missing", 0, 0, 64, 32, null, 0, 1, null)
+        }
+        // A frame painted before the surface shrank (a relayout racing a worker repaint).
+        assertFailsWith<IllegalArgumentException> {
+            s.core.submitSurfaceFrame(ArrayByteReader(ByteArray(64 * 48)), "s", 0, 0, 64, 48, null, 0, 2, null)
+        }
+        assertFailsWith<IllegalArgumentException> { s.core.submitShellScene(ArrayByteReader(byteArrayOf(1, 0)), 0, 3) }
+    }
+
     @Test fun brightnessConfigPrecedesFirstFrameAndSleepWakeFollowsComposites() {
         val s = Session()
         s.core.configureBrightness(false, 70, 2, 100, "0:0,1000:100", 280)

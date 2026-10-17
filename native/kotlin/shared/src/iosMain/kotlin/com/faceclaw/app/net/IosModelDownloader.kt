@@ -55,10 +55,10 @@ class IosModelDownloader internal constructor(
         download = ResumableDownload(url, destPath, expectedSha256, expectedTotalBytes, transport, IosDownloadStorage, posted)
     }
 
-    fun start() = startThread("FaceclawModelDl", true) { download.run() }
+    fun start(): Unit = boundary("IosModelDownloader.start", Unit) { startThread("FaceclawModelDl", true) { download.run() } }
 
     /** Stops the download but keeps the .part file so a later start() resumes. */
-    fun cancel() {
+    fun cancel(): Unit = boundary("IosModelDownloader.cancel", Unit) {
         download.cancel()
         transport.cancel()
     }

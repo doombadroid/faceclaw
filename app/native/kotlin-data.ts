@@ -16,3 +16,7 @@ export function fromKotlinBytes(bytes: any): Uint8Array {
 export function nativeArray<T, R>(items: NSArray<T>, convert: (item: T) => R): R[] {
   return Array.from({ length: items.count }, (_, i) => convert(items.objectAtIndex(i)))
 }
+/** Kotlin compositor calls return their error instead of throwing it (a throw into ObjC ends the app). */
+export function throwIfError(error: string | null): void {
+  if (error) throw new Error(String(error))
+}
