@@ -308,6 +308,17 @@ class GlassesSessionCoreTest {
         assertFailsWith<IllegalArgumentException> { s.core.submitShellScene(ArrayByteReader(byteArrayOf(1, 0)), 0, 3) }
     }
 
+    @Test fun unusableSavedCurveFallsBackToTheDefaultInsteadOfThrowing() {
+        val core = Session().core
+        val als = ByteArray(24).also { byteArrayOf(65, 76, 1, 2, 11, 0, 2).copyInto(it) } // 0.2 lux
+        core.configureBrightness(true, 50, 20, 100, "0:0,1000:100", 280)
+        // ln(1+1e-17) == ln(1), so the knots collide; on iOS a throw here aborts the app.
+        core.configureBrightness(true, 50, 20, 100, "0:0,1e-17:100", 450)
+        assertEquals(450, core.brightnessPolicy.fadeMs)
+        core.brightnessPolicy.sample(als, 1000)
+        assertEquals(26, core.brightnessPolicy.target) // Default curve; the previous one gives 22.
+    }
+
     @Test fun brightnessConfigPrecedesFirstFrameAndSleepWakeFollowsComposites() {
         val s = Session()
         s.core.configureBrightness(false, 70, 2, 100, "0:0,1000:100", 280)

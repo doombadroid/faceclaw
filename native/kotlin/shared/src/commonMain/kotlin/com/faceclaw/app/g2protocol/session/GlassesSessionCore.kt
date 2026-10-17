@@ -655,7 +655,15 @@ class GlassesSessionCore(
     }
 
     fun configureBrightness(auto: Boolean, level: Int, minimum: Int, maximum: Int, curve: String, fadeMs: Int) {
-        monitor.withLock { brightnessPolicy.configure(auto, level, minimum, maximum, curve, fadeMs) }
+        monitor.withLock {
+            try {
+                brightnessPolicy.configure(auto, level, minimum, maximum, curve, fadeMs)
+            } catch (e: IllegalArgumentException) {
+                // The curve is a saved setting; an exception here would abort the iOS app on every connect.
+                logWarn("brightness curve '$curve' rejected; using default", e)
+                brightnessPolicy.configure(auto, level, minimum, maximum, BrightnessPolicy.DEFAULT_CURVE, fadeMs)
+            }
+        }
         interruptibleSleep.interrupt()
     }
 

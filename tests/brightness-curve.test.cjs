@@ -59,3 +59,8 @@ test('curve drafts preview exactly while brightness keeps the previous valid sav
   assert.equal(curve.validationError(), null);
   assert.equal(api.getBrightnessPreferences().curve, '0:0,2:50,6:100');
 });
+
+test('the curve validator agrees with Kotlin BrightnessPolicy.parseCurve on the shared fixture', () => {
+  for (const { curve, valid } of require('./fixtures/brightness-curves.json'))
+    assert.equal(brightnessCurveError(curve) === null, valid, JSON.stringify(curve));
+});
