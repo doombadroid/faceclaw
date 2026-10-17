@@ -1,11 +1,9 @@
-import { Utils } from "@nativescript/core";
-
+import { conversationStore } from "../../native/mic-native";
 import { encodeBase64 } from "../../native/cloud-stt";
 import { toUint8Array } from "../../util/array-util";
 import { micModelPath } from "./mic-models";
 import { wearerCommandsOnlySetting } from "./mic-settings";
 
-declare const com: any;
 declare const android: any;
 
 /**
@@ -65,10 +63,7 @@ export type SpeakerMatch = {
   previousLastHeardAt: number;
 };
 
-function store(): any {
-  const context = Utils.android.getApplicationContext();
-  return com.faceclaw.app.FaceclawConversationStore.getInstance(context);
-}
+const store = conversationStore;
 
 /** Parse a stored JSON string array leniently; anything malformed reads as empty. */
 function parseStringArray(json: unknown): string[] {

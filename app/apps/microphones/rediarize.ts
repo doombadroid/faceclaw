@@ -1,5 +1,4 @@
-import { Utils } from "@nativescript/core";
-
+import { conversationStore } from "../../native/mic-native";
 import { toUint8Array } from "../../util/array-util";
 import { micModelPath } from "./mic-models";
 import { SPEAKER_KNOWN_THRESHOLD, encodeEmbedding, speakerRegistry } from "./speakers";
@@ -30,10 +29,7 @@ export type RediarizeCallbacks = {
 
 type Turn = { startMs: number; endMs: number; cluster: number };
 
-function store(): any {
-  const context = Utils.android.getApplicationContext();
-  return com.faceclaw.app.FaceclawConversationStore.getInstance(context);
-}
+const store = conversationStore;
 
 // Each run's listener is referenced only from Java while the diarizer works;
 // hold it here so it isn't GC'd before its callbacks.

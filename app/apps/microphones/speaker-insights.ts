@@ -1,9 +1,6 @@
-import { Utils } from "@nativescript/core";
-
+import { conversationStore } from "../../native/mic-native";
 import { isLocalModelReady, streamLocalQwen } from "../../native/llama";
 import { speakerRegistry } from "./speakers";
-
-declare const com: any;
 
 /**
  * Per-speaker conversation insights, generated with the on-phone LLM when a
@@ -29,10 +26,7 @@ const GENERATION_TIMEOUT_MS = 90_000;
 
 type SegmentLine = { speakerId: number | null; text: string };
 
-function store(): any {
-  const context = Utils.android.getApplicationContext();
-  return com.faceclaw.app.FaceclawConversationStore.getInstance(context);
-}
+const store = conversationStore;
 
 /** One generation at a time across sessions; a second session-end call queues behind the first. */
 let chain: Promise<void> = Promise.resolve();

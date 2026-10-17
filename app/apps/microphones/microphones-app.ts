@@ -447,10 +447,11 @@ export function createMicrophonesAppWindow(options: InProcessAppOptions): InProc
         ctx.stack.push(layer);
         layer.start(ctx.actions.requestRender);
       }),
-      submenuItem("People", (ctx) => {
+      // iOS has no voice-print model or translator yet: no People, translation or Voice & speakers.
+      ...(global.isIOS ? [] : [submenuItem("People", (ctx) => {
         speakerRegistry.reload();
         ctx.stack.push(peopleMenu());
-      }),
+      })]),
       configToggleItem(
         "Captions",
         // Shows off after repeated engine failures, so turning it on retries.
@@ -459,15 +460,15 @@ export function createMicrophonesAppWindow(options: InProcessAppOptions): InProc
         undefined,
         captionsEnabledSetting.description,
       ),
-      toggleSettingMenuItem(translateEnabledSetting),
+      ...(global.isIOS ? [] : [toggleSettingMenuItem(translateEnabledSetting)]),
       toggleSettingMenuItem(beamFilterSetting),
       toggleSettingMenuItem(ancEnabledSetting),
       submenuItem("Microphone setup", (ctx) => {
         ctx.stack.push(micSetupMenu());
       }),
-      submenuItem("Voice & speakers", (ctx) => {
+      ...(global.isIOS ? [] : [submenuItem("Voice & speakers", (ctx) => {
         ctx.stack.push(voiceSpeakersMenu());
-      }),
+      })]),
       submenuItem("Storage", (ctx) => {
         ctx.stack.push(storageMenu());
       }),

@@ -1,12 +1,26 @@
-import { Utils } from "@nativescript/core";
-
 import { addCompassListener, setCompassEnabled } from "../../native/compass";
-import { encodeBase64, toJavaBytes } from "../../native/cloud-stt";
+import { encodeBase64 } from "../../native/cloud-stt";
 import { toUint8Array } from "../../util/array-util";
 import { voiceControlBridge } from "../../native/voice-control";
 import { voiceActivity } from "../../ui/shell/voice-activity";
 import { onSettingsStoreChanged } from "../../native/settings-store";
-import { isAsrModelReady } from "../../native/asr-model";
+import { audioMonitorCommunicator } from "../../native/audio-monitor";
+import {
+  captionAsrDir,
+  conversationStore,
+  createCaptionEngine,
+  createCaptionListener,
+  createNoiseSuppressor,
+  createWavRecorder,
+  deleteFile,
+  embeddingToFloat32,
+  noiseSuppressorEngine,
+  prepareCaptions,
+  recordingsDir,
+  repairWavHeader,
+  toNativePcm,
+  transcodeRecording,
+} from "../../native/mic-native";
 import {
   TempleAudioPipeline,
   angleInArc,
@@ -67,7 +81,6 @@ import { formatRelativeTime } from "../../util/date-util";
 import { deviceLanguage, identifyLanguage, translateText } from "./translate";
 
 declare const com: any;
-declare const java: any;
 
 /**
  * The Microphones session: owns mic capture while the app window is open,
@@ -95,7 +108,6 @@ const SAMPLE_RATE = 16000;
 const LEVEL_DECAY = 0.75;
 const DOA_SMOOTHING = 0.35;
 const CAPTION_LINE_LIMIT = 60;
-const RECORDING_AAC_BITRATE = 32_000;
 // Encounter popup: a recognized voice not heard for at least this long gets
 // the who-is-this card; shorter gaps are the same conversation continuing.
 const ENCOUNTER_GAP_MS = 15 * 60 * 1000;
@@ -189,7 +201,7 @@ type ConversationRecord = { rowId: number; sentimentSum: number; sentimentCount:
  */
 type CaptionRun = {
   engine: any;
-  // The Java listener proxy must stay referenced or it gets GC'd.
+  // The native listener proxy must stay referenced or it gets GC'd.
   listener: any;
   startWallMs: number;
   audioBaseMs: number;
@@ -351,7 +363,7 @@ class MicSession {
   // ---- lifecycle ----
 
   start(): void {
-    if (this.running || !global.isAndroid) return;
+    if (this.running) return;
     this.running = true;
     this.sessionGeneration += 1;
     this.captionLines = [];
@@ -365,6 +377,7 @@ class MicSession {
     this.offSettings = onSettingsStoreChanged(() => this.handleSettingsChanged());
     this.offSpeakerChanges = speakerRegistry.onChanged(() => this.refreshSpeakerIdentities());
     this.offVoiceActivity = voiceActivity.subscribe((active) => this.handleVoiceActivity(active));
+    prepareCaptions();
     this.startSuppressor();
     this.startCompass();
     // Captions start once capture is up (bringUpCapture), so a session
@@ -640,8 +653,8 @@ class MicSession {
 
   private startSuppressor(): void {
     try {
-      this.suppressor = new com.faceclaw.app.FaceclawNoiseSuppressor(SAMPLE_RATE);
-      this.suppressorEngine = String(com.faceclaw.app.FaceclawNoiseSuppressor.engineDescription());
+      this.suppressor = createNoiseSuppressor(SAMPLE_RATE);
+      this.suppressorEngine = noiseSuppressorEngine();
     } catch (error) {
       console.warn(`noise suppressor unavailable: ${error}`);
       this.suppressor = null;
@@ -975,24 +988,24 @@ class MicSession {
   private feedPcm(pcm: Uint8Array): void {
     const engine = this.captionRun?.engine;
     if (!engine && !this.recorder) return;
-    let javaBytes = toJavaBytes(pcm);
+    let nativePcm = toNativePcm(pcm);
     if (this.ancOn && this.suppressor) {
       try {
-        javaBytes = this.suppressor.process(javaBytes);
+        nativePcm = this.suppressor.process(nativePcm);
       } catch (error) {
         console.warn(`noise suppression failed: ${error}`);
       }
     }
     if (engine) {
       try {
-        engine.acceptPcm(javaBytes);
+        engine.acceptPcm(nativePcm);
       } catch (error) {
         console.warn(`caption feed failed: ${error}`);
       }
     }
     if (this.recorder) {
       try {
-        this.recorder.append(javaBytes);
+        this.recorder.append(nativePcm);
       } catch (error) {
         console.warn(`recording append failed: ${error}`);
       }
@@ -1042,7 +1055,7 @@ class MicSession {
   private createCaptionRun(): CaptionRun | null {
     let engine: any = null;
     try {
-      engine = new com.faceclaw.app.FaceclawCaptionEngine();
+      engine = createCaptionEngine();
       const run: CaptionRun = {
         engine,
         listener: null,
@@ -1054,9 +1067,9 @@ class MicSession {
         stopTimer: null,
         afterStop: null,
       };
-      run.listener = new com.faceclaw.app.FaceclawCaptionEngineListener({
+      run.listener = createCaptionListener({
         onUtterance: (text: string, embedding: any, startMs: number, endMs: number, _peakRms: number) => {
-          // Never let an exception escape into the engine's Java callback.
+          // Never let an exception escape into the engine's native callback.
           try {
             this.handleUtterance(run, String(text), embedding, Number(startMs), Number(endMs));
           } catch (error) {
@@ -1081,10 +1094,7 @@ class MicSession {
         },
       });
       engine.setListener(run.listener);
-      // Live captions are a separate sherpa-onnx pipeline (FaceclawCaptionEngine)
-      // that only ever uses Moonshine; unaffected by the two-model on-device
-      // Whisper addition in native/voice-control.ts's push-to-talk path.
-      engine.setAsrModelDir(isAsrModelReady("moonshine") ? moonshineModelDir() : null);
+      engine.setAsrModelDir(captionAsrDir());
       engine.setSpeakerModelPath(micModelPath("speaker-embedding"));
       engine.start();
       return run;
@@ -1351,7 +1361,7 @@ class MicSession {
     // session; it is saved to its own conversation either way.
     const shown = this.running && run.generation === this.sessionGeneration;
     if (live) this.captionFailures = 0;
-    const embeddingFloats = embedding ? floatArrayToFloat32(embedding) : null;
+    const embeddingFloats = embedding ? embeddingToFloat32(embedding) : null;
     if (live && this.wearerEnrollmentArmed && embeddingFloats) {
       this.wearerEnrollmentArmed = false;
       try {
@@ -1519,7 +1529,7 @@ class MicSession {
     try {
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       this.recordingPath = `${recordingsDir()}/conversation-${stamp}.wav`;
-      this.recorder = new com.faceclaw.app.FaceclawWavRecorder(this.recordingPath, SAMPLE_RATE, 1);
+      this.recorder = createWavRecorder(this.recordingPath, SAMPLE_RATE, 1);
     } catch (error) {
       console.warn(`recording start failed: ${error}`);
       this.recorder = null;
@@ -1560,12 +1570,11 @@ class MicSession {
   // ---- persistence plumbing ----
 
   private store(): any {
-    const context = Utils.android.getApplicationContext();
-    return com.faceclaw.app.FaceclawConversationStore.getInstance(context);
+    return conversationStore();
   }
 
   async applyRetentionSweep(): Promise<void> {
-    if (!global.isAndroid || this.running) return;
+    if (this.running) return;
     try {
       const now = Date.now();
       const captionCutoff = retentionCutoffMs(captionsRetentionSetting.get(), now);
@@ -1587,7 +1596,7 @@ class MicSession {
    * session row knows about.
    */
   recoverInterruptedConversations(): void {
-    if (!global.isAndroid || recoveryDone || this.running) return;
+    if (recoveryDone || this.running) return;
     recoveryDone = true;
     try {
       const store = this.store();
@@ -1621,12 +1630,9 @@ class MicSession {
     return Array.from(rows);
   }
 
+  /** Android's FaceclawBleCommunicator, or the iOS session bridge. */
   private nativeCommunicator(): any {
-    try {
-      return com.faceclaw.app.FaceclawBleCommunicator.getActive();
-    } catch {
-      return null;
-    }
+    return audioMonitorCommunicator();
   }
 }
 
@@ -1678,71 +1684,8 @@ function floatToPcm16(samples: Float32Array): Uint8Array {
   return out;
 }
 
-function floatArrayToFloat32(javaFloats: any): Float32Array {
-  const length = javaFloats.length;
-  const out = new Float32Array(length);
-  for (let i = 0; i < length; i++) out[i] = Number(javaFloats[i]);
-  return out;
-}
-
 function encodeEmbeddingBase64(embedding: Float32Array): string {
   return encodeBase64(new Uint8Array(embedding.buffer, embedding.byteOffset, embedding.byteLength));
-}
-
-function moonshineModelDir(): string {
-  const context = Utils.android.getApplicationContext();
-  return `${context.getFilesDir().getAbsolutePath()}/faceclaw-voice-asr/sherpa-onnx-moonshine-base-en-quantized-2026-02-27`;
-}
-
-function recordingsDir(): string {
-  const context = Utils.android.getApplicationContext();
-  return `${context.getExternalFilesDir(null).getAbsolutePath()}/mic-recordings`;
-}
-
-function deleteFile(path: string): void {
-  try {
-    new java.io.File(path).delete();
-  } catch (error) {
-    console.warn(`could not delete ${path}: ${error}`);
-  }
-}
-
-// Transcoder listeners are referenced only from Java while a transcode runs;
-// hold them here so they aren't GC'd before their callback.
-const pendingTranscodes = new Set<any>();
-
-/**
- * Transcode a finished WAV recording to M4A in the background and move its
- * session onto it. The WAV is deleted only once the row names the M4A, so a
- * failure at any step leaves the session pointing at a file that exists.
- */
-function transcodeRecording(store: any, rowId: number, wavPath: string): void {
-  const m4aPath = wavPath.replace(/\.wav$/, ".m4a");
-  const listener = new com.faceclaw.app.FaceclawAudioTranscoder.Listener({
-    onDone: (outputPath: string, _outputBytes: number) => {
-      pendingTranscodes.delete(listener);
-      try {
-        store.setSessionAudio(rowId, String(outputPath), "aac");
-      } catch (error) {
-        console.warn(`recording audio update failed: ${error}`);
-        deleteFile(String(outputPath));
-        return;
-      }
-      deleteFile(wavPath);
-    },
-    onError: (message: string) => {
-      pendingTranscodes.delete(listener);
-      console.warn(`recording transcode failed: ${message}`);
-    },
-  });
-  pendingTranscodes.add(listener);
-  try {
-    // deleteSourceOnSuccess false: the WAV goes only after the row update above.
-    new com.faceclaw.app.FaceclawAudioTranscoder(wavPath, m4aPath, RECORDING_AAC_BITRATE, false, listener).start();
-  } catch (error) {
-    pendingTranscodes.delete(listener);
-    console.warn(`recording transcode start failed: ${error}`);
-  }
 }
 
 /**
@@ -1752,7 +1695,7 @@ function transcodeRecording(store: any, rowId: number, wavPath: string): void {
  */
 function recoverRecording(store: any, rowId: number, wavPath: string): void {
   try {
-    const bytes = Number(com.faceclaw.app.FaceclawWavRecorder.repairHeader(wavPath, SAMPLE_RATE, 1));
+    const bytes = repairWavHeader(wavPath, SAMPLE_RATE, 1);
     if (bytes < SAMPLE_RATE) {
       deleteFile(wavPath);
       store.setSessionAudio(rowId, null, null);

@@ -1,14 +1,9 @@
-import { Utils } from "@nativescript/core";
-
 import type { EmotionLabel, SentimentBucket } from "../apps/microphones/sentiment";
 
-declare const com: any;
-
 /**
- * Shared plumbing for the conversation review pages: access to the Java
- * conversation store, the row shapes it returns, and the small formatting/
- * color helpers every page needs. Callers must guard store access with
- * `global.isAndroid`.
+ * Shared plumbing for the conversation review pages: access to the
+ * conversation store (native/mic-native), the row shapes it returns, and the
+ * small formatting/color helpers every page needs.
  */
 
 export type SessionSpeakerRef = { id: number; name: string; color: string };
@@ -40,10 +35,7 @@ export type SegmentRow = {
   angle: number | null;
 };
 
-export function conversationStore(): any {
-  const context = Utils.android.getApplicationContext();
-  return com.faceclaw.app.FaceclawConversationStore.getInstance(context);
-}
+export { conversationStore } from "../native/mic-native";
 
 export const NO_CONVERSATIONS_MESSAGE =
   "No conversations yet — enable Captions + Save captions in the Microphones app on the glasses.";
