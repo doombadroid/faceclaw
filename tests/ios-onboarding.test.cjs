@@ -61,7 +61,7 @@ function flasherFixture({ hash = 'custom', outcome = 'success', backgroundOn = '
   const result = new Promise(resolve => flasher.onComplete((success, detail) => resolve({ success, detail })));
   return { calls, events, native, flasher, result, instances, states, progress };
 }
-const listenerModule = load('app/native/kotlin-listener.ios.ts', {}, { NSObject: nsObject });
+const listenerModule = load('app/native/kotlin-listener.ios.ts', { './callback-errors.ios': load('app/native/callback-errors.ios.ts') }, { NSObject: nsObject });
 
 test('iOS flashing checks the image hash, resolves identifiers, runs the Kotlin OTA flow and reports success', async () => {
   for (const hash of ['custom', 'stock']) {
