@@ -75,6 +75,9 @@ actual object PlatformLog {
         emit("$tag: [error] $message" + (error?.let { " (${it.message})" } ?: ""))
 }
 
+// A reference, so the first caught error initializes IosErrorReports whenever it comes.
+internal actual val platformCaughtErrorSink: ((source: String, error: Throwable) -> Unit)? = IosErrorReports::record
+
 actual fun startThread(name: String, daemon: Boolean, body: () -> Unit) {
     val thread = NSThread(block = body)
     thread.name = name

@@ -105,4 +105,14 @@ class BrightnessPolicyTest {
         p.configure(true, 50, 80, 20, "0:0,100:100", 0)
         p.sample(report(0), 1000); assertEquals(80, p.target)
     }
+
+    @Test fun parseCurveAgreesWithTheJsValidatorOnTheSharedFixture() {
+        val json = readFileData(BRIGHTNESS_CURVES_PATH).decodeToString()
+        val cases = Regex("""\{\s*"curve":\s*"([^"]*)",\s*"valid":\s*(true|false)\s*}""").findAll(json).toList()
+        assertEquals(json.split("\"curve\"").size - 1, cases.size, "every fixture case parsed")
+        for (case in cases) {
+            val (curve, valid) = case.destructured
+            assertEquals(valid.toBoolean(), runCatching { BrightnessPolicy.parseCurve(curve) }.isSuccess, curve)
+        }
+    }
 }

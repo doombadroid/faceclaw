@@ -63,7 +63,7 @@ class IosSseRequest internal constructor(
         transfer = IosStreamingHttp.post(url.trim(), body, headers, sink)
     }
 
-    fun cancel() {
+    fun cancel(): Unit = boundary("IosSseRequest.cancel", Unit) {
         cancelled = true
         stream.cancel()
         transfer.cancel()

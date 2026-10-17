@@ -7,6 +7,7 @@ import { firmwareKindLabel, firmwareSummary, reportedState } from './firmware-in
 import { firmwareKey } from './update-page'
 import { APP_NAME } from '../../branding'
 import { FACECLAW_VERSION } from '../../version'
+import { listErrorReports, onErrorReport } from '../../native/error-reports'
 
 // The project docs webpack.config.js copies into the bundle's about/ folder.
 const DOCUMENTS = [['README.md', 'README'], ['LICENSE', 'License'], ['PRIVACY', 'Privacy Policy'], ['ACKNOWLEDGEMENTS.md', 'Acknowledgements']] as const
@@ -18,9 +19,10 @@ export const PARAKEET_CREDIT = 'On-device (Parakeet) transcription uses NVIDIA\'
 
 export function createPage(): Page {
   const runtime = getRuntime(), controller = runtime.controller
-  let shown = ''
+  let shown = '', shownReports = 0
   const { page, refresh } = groupedPage({ title: 'General', largeTitle: false, build: container => {
     shown = firmwareKey(controller.connectionState)
+    shownReports = listErrorReports().length
     const state = reportedState(controller.connectionState), extension = firmwareSummary(state).extension
     const head = new StackLayout()
     head.className = 'os-row os-about-head'
@@ -37,15 +39,21 @@ export function createPage(): Page {
     ], footer: state?.leftVersion || state?.rightVersion ? undefined : 'The glasses report their versions after they connect.' }))
     container.addChild(section({ header: 'Documents', rows: DOCUMENTS.map(([fileName, title]) =>
       navRow({ title, onTap: () => page.frame?.navigate({ create: () => documentPage(fileName, title) }) })), footer: PARAKEET_CREDIT }))
+    container.addChild(section({ rows: [navRow({ title: 'Error Reports', value: String(shownReports),
+      onTap: () => page.frame?.navigate({ moduleName: 'ocusmart/error-reports' }) })],
+      footer: `Errors ${APP_NAME} caught and recovered from, kept for bug reports.` }))
     // The old menu opened Permissions without dropping the connection.
     container.addChild(section({ rows: [navRow({ title: 'Permissions', onTap: () => { void presentDetour('phone-ui/permissions-page', undefined, false) } })] }))
   } })
-  let off: (() => void) | null = null
+  let offs: (() => void)[] = []
+  const reportsChanged = () => { if (listErrorReports().length !== shownReports) refresh() }
   page.on('loaded', () => {
-    off?.()
-    off = runtime.on('connection', state => { if (firmwareKey(state) !== shown) refresh() })
+    for (const off of offs) off()
+    offs = [runtime.on('connection', state => { if (firmwareKey(state) !== shown) refresh() }), onErrorReport((_report, isNew) => { if (isNew) reportsChanged() })]
     refresh()
   })
-  page.on('unloaded', () => { off?.(); off = null })
+  // Back from the list after Clear.
+  page.on('navigatedTo', reportsChanged)
+  page.on('unloaded', () => { for (const off of offs) off(); offs = [] })
   return page
 }

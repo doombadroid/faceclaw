@@ -10,6 +10,7 @@ global.registerModule('ocusmart/settings-category', () => require('./settings-ca
 global.registerModule('ocusmart/settings-choice', () => require('./settings-choice-page'))
 global.registerModule('ocusmart/device', () => require('./device-page'))
 global.registerModule('ocusmart/about', () => require('./about-page'))
+global.registerModule('ocusmart/error-reports', () => require('./error-reports-page'))
 global.registerModule('ocusmart/update', () => require('./update-page'))
 global.registerModule('ocusmart/firmware-channel', () => require('./firmware-channel-page'))
 global.registerModule('ocusmart/setup', () => require('./setup-page'))

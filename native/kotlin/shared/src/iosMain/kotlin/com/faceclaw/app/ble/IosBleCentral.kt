@@ -126,7 +126,7 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
     }
 
     /** Connect [identifier] with CBConnectPeripheralOptionRequiresANCS (the right arm relays iPhone notifications). */
-    fun setRequiresAncs(identifier: String, required: Boolean) {
+    fun setRequiresAncs(identifier: String, required: Boolean): Unit = boundary("IosBleCentral.setRequiresAncs", Unit) {
         val key = identifier.uppercase()
         cond.withLock { peers[key]?.requiresAncs = required }
         pendingAncs[key] = required
@@ -135,22 +135,26 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
     private val pendingAncs = HashMap<String, Boolean>()
 
     /** Whether the OS granted ANCS for the peripheral (false when unknown or disconnected). */
-    fun isAncsAuthorized(identifier: String): Boolean =
+    fun isAncsAuthorized(identifier: String): Boolean = boundary("IosBleCentral.isAncsAuthorized", false) {
         cond.withLock { peers[identifier.uppercase()]?.peripheral?.ancsAuthorized ?: false }
+    }
 
     // ----- readiness and scanning -----------------------------------------------------------
 
     /** Current CBManagerState raw value (0 until the central reports). */
     fun bluetoothState(): Int = bluetoothState.toInt()
 
-    fun authorization(): Int = CBManager.authorization.toInt()
+    fun authorization(): Int = boundary("IosBleCentral.authorization", 0) { CBManager.authorization.toInt() }
 
     /**
      * Creates the central (which triggers the permission prompt on first use) and waits for
      * it to power on. Returns null when ready or a user-facing message (the same texts the
      * TypeScript transport used).
      */
-    fun waitForPoweredOn(timeoutMs: Int = READY_TIMEOUT_MS): String? {
+    fun waitForPoweredOn(timeoutMs: Int = READY_TIMEOUT_MS): String? =
+        boundary("IosBleCentral.waitForPoweredOn", "Bluetooth failed to start.") { awaitPoweredOn(timeoutMs) }
+
+    private fun awaitPoweredOn(timeoutMs: Int): String? {
         ensureCentral()
         val deadline = platform.elapsedRealtimeMs() + timeoutMs
         cond.lock()
@@ -190,13 +194,13 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
      * only waits for readiness (no scan) still receives the state report; an existing central's
      * current state is re-reported to the new listener on the main queue.
      */
-    fun setScanListener(listener: IosBleScanListener?) {
+    fun setScanListener(listener: IosBleScanListener?): Unit = boundary("IosBleCentral.setScanListener", Unit) {
         scanListener = listener
         if (listener != null && !closed) ensureCentral()
     }
 
     /** Starts (or keeps) scanning for all peripherals with duplicates; events reach the scan listener on main. */
-    fun startScan() {
+    fun startScan(): Unit = boundary("IosBleCentral.startScan", Unit) {
         scanRequested = true
         ensureCentral()
         dispatch_sync(queue) {
@@ -205,7 +209,7 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
         }
     }
 
-    fun stopScan() {
+    fun stopScan(): Unit = boundary("IosBleCentral.stopScan", Unit) {
         scanRequested = false
         dispatch_sync(queue) { central?.stopScan() }
     }
@@ -215,7 +219,7 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
     }
 
     /** Known peripheral identifiers from this process's scans/retrievals (uppercase). */
-    fun knownIdentifiers(): List<String> = cond.withLock { peers.keys.toList() }
+    fun knownIdentifiers(): List<String> = boundary("IosBleCentral.knownIdentifiers", emptyList()) { cond.withLock { peers.keys.toList() } }
 
     // ----- SessionLink / StockLink ----------------------------------------------------------
 

@@ -10,7 +10,7 @@ test('iOS game worker forwards an immutable byte payload through its host and ig
     '../../graphics/image': {}, './chrome-layer': { windowIcon() {} },
     '../../assistant/tool-registry': { toolRegistry: { removeAppTools() {} } },
     './geometry': { appViewportSize: () => ({ width: 576, height: 260 }) },
-    '../../native/frame-timings': {}, './worker-state': {},
+    '../../native/frame-timings': {}, '../../native/error-reports': {}, './worker-state': {},
     './shell': { shell: { registerWindow() {} } },
   });
   const { WorkerAppHost } = load('app/ui/shell/worker-window.ts');

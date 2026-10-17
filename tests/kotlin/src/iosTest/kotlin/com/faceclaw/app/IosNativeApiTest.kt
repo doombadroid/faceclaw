@@ -45,6 +45,16 @@ class IosNativeApiTest {
     }
 
     @Test
+    fun nativeCompositorReturnsErrorsInsteadOfThrowingIntoObjectiveC() {
+        val compositor = IosSurfaceCompositor(3, 2)
+        assertEquals("IosSurfaceCompositor.visible: unknown surface app", compositor.visible("app", true))
+        assertNotNull(compositor.submit("app", ByteArray(6).data(), 0, 0, 3, 2))
+        compositor.configure("app", 0, 0, 3, 2, 0, false)
+        assertNull(compositor.visible("app", true))
+        assertNotNull(compositor.submit("app", ByteArray(5).data(), 0, 0, 3, 2))
+    }
+
+    @Test
     fun gifRecorderEncodesCompositeFramesWithTheirSize() {
         val recorder = IosGifRecorder()
         assertNull(recorder.encode(), "no frames, no file")

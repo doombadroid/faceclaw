@@ -28,25 +28,27 @@ class IosRemoteInput internal constructor(
     )
 
     /** Called (on the main queue) whenever a request is waiting in [nextRequest]. */
-    fun setRequestListener(listener: (() -> Unit)?) = session.setRequestListener(listener)
+    fun setRequestListener(listener: (() -> Unit)?) = boundary("IosRemoteInput.setRequestListener", Unit) { session.setRequestListener(listener) }
 
     fun start(port: Int): String = startAddress(port, "127.0.0.1")
 
     /** Returns "" on success or a user-facing error. */
-    fun startAddress(port: Int, address: String): String = session.start(port, address)
+    fun startAddress(port: Int, address: String): String =
+        boundary("IosRemoteInput.startAddress", "Remote input could not start.") { session.start(port, address) }
 
-    fun stop() = session.stop()
+    fun stop() = boundary("IosRemoteInput.stop", Unit) { session.stop() }
 
-    fun nextRequest(): String? = session.nextRequest()
+    fun nextRequest(): String? = boundary("IosRemoteInput.nextRequest", null) { session.nextRequest() }
 
-    fun complete(id: Long, value: String?) = session.complete(id, value)
+    fun complete(id: Long, value: String?) = boundary("IosRemoteInput.complete", Unit) { session.complete(id, value) }
 
-    fun randomSecret(): String = session.randomSecret()
+    /** "" when no secure randomness: the token store rejects anything but 64 hex digits. */
+    fun randomSecret(): String = boundary("IosRemoteInput.randomSecret", "") { session.randomSecret() }
 
-    fun tokenDigest(value: String): String = RemoteInputSession.tokenHash(value)
+    fun tokenDigest(value: String): String = boundary("IosRemoteInput.tokenDigest", "") { RemoteInputSession.tokenHash(value) }
 
     /** JSON array of {name, address, pointToPoint} for the reachable local interfaces. */
-    fun interfaces(): String = RemoteInputSession.interfacesJson(iosInterfaceAddresses())
+    fun interfaces(): String = boundary("IosRemoteInput.interfaces", "[]") { RemoteInputSession.interfacesJson(iosInterfaceAddresses()) }
 
     companion object {
         val shared: IosRemoteInput by lazy { IosRemoteInput() }

@@ -47,6 +47,33 @@ test('iOS worker replies keep cached draw references paired with their baked pix
   assert.equal(received.length, 2, 'closed windows cannot deliver stale cached draws');
 });
 
+test('A worker\'s error report reaches the main isolate\'s reports, even while the worker stops', () => {
+  const reported = [], worker = {};
+  const { WorkerAppHost } = load('app/ui/shell/worker-window.ts', {
+    require: name => name === '../../native/error-reports' ? { reportError: (...args) => reported.push(args) } : {}, global: { isIOS: true },
+  });
+  const host = new WorkerAppHost({ appId: 'test', worker });
+  worker.onmessage({ data: { type: 'error-report', source: 'pinball', message: 'boom', stack: 'at frame', context: { k: 'v' } } });
+  host.stopping = true;
+  worker.onmessage({ data: { type: 'error-report', source: 'pinball', message: 'late', stack: '' } });
+  assert.deepEqual(JSON.parse(JSON.stringify(reported)), [
+    ['pinball', { message: 'boom', stack: 'at frame' }, { k: 'v' }],
+    ['pinball', { message: 'late', stack: '' }, null],
+  ]);
+});
+
+test('iOS host failures file an error report', () => {
+  const reported = [], logged = [];
+  const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', { console: { error() {} },
+    require: id => id === '../native/error-reports' ? { reportError: (...args) => reported.push(args) } : {} });
+  const host = Object.create(IosPreviewController.prototype);
+  host.logBluetooth = line => logged.push(line); host.recentErrors = []; host.active = false;
+  const error = new Error('surface gone');
+  host.fail(error);
+  assert.deepEqual(reported, [['iOS preview', error]]);
+  assert.equal(host.recentErrors.length, 1, 'still shown in Connection Details');
+});
+
 test('iOS installed apps launch, recover missing packages, and close before uninstall', async () => {
   const calls = [], app = { packageId: 'test.app', name: 'Test' };
   let present = true;
@@ -128,7 +155,7 @@ test('settings changes propagate between iOS worker isolates once, including aft
   const store = new Map(), ticks = new Set(), tasks = [];
   const ApplicationSettings = { getString: (k, d) => store.get(k) ?? d, getBoolean: (k, d) => store.get(k) ?? d,
     setString: (k, v) => store.set(k, v), setBoolean: (k, v) => store.set(k, v), hasKey: k => store.has(k) };
-  const context = { require: () => ({ ApplicationSettings }), setTimeout: fn => tasks.push(fn),
+  const context = { require: name => name === './callback-errors.ios' ? { guardCallback: (_where, run) => run() } : { ApplicationSettings }, setTimeout: fn => tasks.push(fn),
     setInterval: fn => { ticks.add(fn); return fn; }, clearInterval: fn => ticks.delete(fn) };
   const main = load('app/native/settings-store.ios.ts', context), worker = load('app/native/settings-store.ios.ts', context);
   const seenMain = [], seenWorker = [];
@@ -501,6 +528,7 @@ test('iOS configures an in-process surface before submitting constructor-trigger
   controller.requestShellRender = () => {};
   controller.schedulePreviewUpdate = () => {};
   controller.communicator = null;
+  controller.displayReady = Promise.resolve();
   controller.previewTarget = {
     async configureSurface(id) { surfaces.add(id); }, async setSurfaceVisible() {},
     async removeSurface(id) { surfaces.delete(id); },
@@ -523,9 +551,11 @@ test('iOS configures an in-process surface before submitting constructor-trigger
 
 test('iOS compositor rejects missing and removed surfaces before crossing into Kotlin', () => {
   let nativeSubmissions = 0;
-  const native = { configureIdXYWidthHeightZOrderTransparent() {}, removeId() {}, submitDrawsIdDataXYWidthHeightDraws() { nativeSubmissions++; } };
+  // Kotlin returns its errors (a throw into Objective-C would end the app); JS throws them.
+  const native = { configureIdXYWidthHeightZOrderTransparent() { return null; }, removeId() { return null; },
+    submitDrawsIdDataXYWidthHeightDraws() { nativeSubmissions++; return null; }, visibleIdVisible: id => `IosSurfaceCompositor.visible: unknown surface ${id}` };
   const api = load('app/graphics/surface-compositor.ios.ts', {
-    require: () => ({ toData: data => data }),
+    require: () => ({ ...load('app/native/kotlin-data.ts', {}), toData: data => data }),
     FaceclawKitIosSurfaceCompositor: { alloc: () => ({ initWithWidthHeight: () => native }) },
   });
   const c = new api.SurfaceCompositor(2, 1), pixels = new Uint8Array([1, 2]);
@@ -536,6 +566,7 @@ test('iOS compositor rejects missing and removed surfaces before crossing into K
   c.removeSurface('nightscout');
   assert.throws(() => c.submitSurfaceFrame('nightscout', pixels, rect), /Unknown surface/);
   assert.equal(nativeSubmissions, 1);
+  assert.throws(() => c.setSurfaceVisible('nightscout', true), /IosSurfaceCompositor\.visible: unknown surface nightscout/);
 });
 
 test('iOS opens the on-glasses onboarding on a new acknowledged frame, once per run while due', () => {

@@ -86,6 +86,7 @@ class IosSessionHost(private val platform: ProtocolPlatform = IosProtocolPlatfor
         when (level) {
             SessionLogLevel.DEBUG, SessionLogLevel.INFO -> PlatformLog.i(tag, message)
             SessionLogLevel.WARN -> PlatformLog.w(tag, if (error != null) "$message (${error.message})" else message)
+            // A caught Throwable is reported by GlassesSessionCore.logWarn (CaughtErrors), not here.
             SessionLogLevel.ERROR -> PlatformLog.e(tag, message, error)
         }
     }

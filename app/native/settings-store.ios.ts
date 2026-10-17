@@ -1,4 +1,5 @@
 import { ApplicationSettings } from '@nativescript/core'
+import { guardCallback } from './callback-errors.ios'
 
 // NSUserDefaults is shared by all NativeScript isolates. Each isolate polls
 // just its observed keys so callbacks always execute on the owning JS thread.
@@ -25,7 +26,7 @@ export function disposeSettingsStore(): void {
   observed.clear()
 }
 function changed(key: string): void {
-  setTimeout(() => { for (const listener of [...listeners]) listener(key) }, 0)
+  setTimeout(() => { for (const listener of [...listeners]) guardCallback('settings listener', () => listener(key)) }, 0)
 }
 export function getStringSetting(key: string, fallback: string): string {
   const value = ApplicationSettings.getString(key, fallback)

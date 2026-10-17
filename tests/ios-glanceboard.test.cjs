@@ -156,6 +156,7 @@ function fixture() {
     './ancs-client': { ANCS_FIRMWARE_VERSION: 16, AncsClient: class { state = 'disconnected'; start() {} stop() {} stopCommand() { return new Uint8Array(); } receive() { return false; } } },
     '../native/nightscout-bridge': { nightscoutBridge: { async start() {}, async stop() {} } },
     '../native/weather': { weatherBridge: { setSessionActive() {} } },
+    '../native/error-reports': { reportError: (source, error) => errors.push(`report ${source}: ${error}`) },
     './glance-host': { GlanceHost }, './events': events,
     // The shared suspender runs for real with its setting off (the iOS default): it stays idle.
     './evenhub-suspend': load('app/g2/evenhub-suspend.ts', { '../native/frame-timings': timings,
@@ -312,4 +313,24 @@ test('the IMU stream requested before Connect starts once the session is ready a
   assert.deepEqual(f.imuSent, [[true, 200]]);
   f.bridge.imuListener({ x: 0.5, y: 0, z: 1, source: 2 });
   assert.deepEqual(readings, [0.5]);
+});
+
+test('window visibility and removal wait for the surfaces to be registered on the display', async () => {
+  const f = fixture();
+  await f.render();
+  const display = f.controller.display;
+  let registered;
+  // A display switch re-registering every surface: visibility for one not yet there must wait.
+  f.controller.displayReady = new Promise(resolve => { registered = resolve; });
+  const calls = [];
+  const original = { visible: display.setSurfaceVisible, remove: display.removeSurface };
+  display.setSurfaceVisible = async (id, visible) => { calls.push(['visible', id, visible]); return original.visible.call(display, id, visible); };
+  display.removeSurface = async id => { calls.push(['remove', id]); return original.remove.call(display, id); };
+  f.controller.setWindowSurfaceVisible('launcher', false);
+  f.controller.removeWindowSurface('launcher');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [], 'nothing reaches the display before registration finishes');
+  registered();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [['visible', 'launcher', false], ['remove', 'launcher']]);
 });

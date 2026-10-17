@@ -12,7 +12,10 @@ export function brightnessCurveError(value: string): string | null {
     return "Lux must be 0–1000000 and percent must be 0–100.";
   if (points[0][0] !== 0 || points[0][1] !== 0 || points[points.length - 1][1] !== 100)
     return "Start at 0:0 and end at 100%. Set dark-room brightness with Auto minimum.";
-  if (points.some(([lux, percent], i) => i > 0 && (lux <= points[i-1][0] || percent < points[i-1][1])))
+  // Mirror Kotlin BrightnessPolicy.parseCurve, which interpolates in ln(1+lux): distinct
+  // lux such as 0 and 1e-17 can map to the same knot, and Kotlin rejects that.
+  const x = points.map(([lux]) => Math.log(1 + lux));
+  if (points.some(([, percent], i) => i > 0 && (x[i] <= x[i-1] || percent < points[i-1][1])))
     return "Lux must increase and brightness must not decrease.";
   return null;
 }

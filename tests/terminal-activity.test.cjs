@@ -149,6 +149,7 @@ test('host applies activity only to its own open windows and cleans up on close'
     '../../graphics/image': { GrayImage: Image },
     './chrome-layer': { windowIcon: (icon, letter, glyph, phase) => phase },
     '../../assistant/tool-registry': { toolRegistry: { removeAppTools() {} } },
+    '../../native/error-reports': {},
     './geometry': { appViewportSize: () => ({ width: 576, height: 260 }) },
     '../../native/frame-timings': {},
     './worker-state': {},

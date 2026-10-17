@@ -334,7 +334,11 @@ class GlassesSessionCore(
 
     internal fun logDebug(line: String) = host.log(SessionLogLevel.DEBUG, TAG, line, null)
 
-    internal fun logWarn(line: String, error: Throwable? = null) = host.log(SessionLogLevel.WARN, TAG, line, error)
+    /** With [error], a caught error: it is reported too, since the log line alone is invisible on iOS. */
+    internal fun logWarn(line: String, error: Throwable? = null) {
+        host.log(SessionLogLevel.WARN, TAG, line, error)
+        if (error != null) CaughtErrors.report("$TAG: $line", error)
+    }
 
     internal fun logError(line: String) = host.log(SessionLogLevel.ERROR, TAG, line, null)
 
@@ -654,6 +658,10 @@ class GlassesSessionCore(
         interruptibleSleep.interrupt()
     }
 
+    /**
+     * Throws IllegalArgumentException for a curve BrightnessPolicy rejects, leaving the previous
+     * settings in force: Android's JS logs it; IosGlassesSession returns it through boundaryError.
+     */
     fun configureBrightness(auto: Boolean, level: Int, minimum: Int, maximum: Int, curve: String, fadeMs: Int) {
         monitor.withLock { brightnessPolicy.configure(auto, level, minimum, maximum, curve, fadeMs) }
         interruptibleSleep.interrupt()
@@ -1682,7 +1690,7 @@ class GlassesSessionCore(
         try {
             listenerToCall.onAudioPacket(data.copyOf(), arm, arrivalMs)
         } catch (t: Throwable) {
-            logLine("G2 mic packet listener failed: " + safeMessage(t))
+            logWarn("G2 mic packet listener failed", t)
         }
     }
 

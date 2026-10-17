@@ -29,13 +29,13 @@ object ConnectionCounters {
 
     /** The counts since the last drain, as a JSON object of name to count, and starts over. */
     @JvmStatic
-    fun drain(): String {
+    fun drain(): String = boundary("ConnectionCounters.drain", "{}") {
         val drained = lock.withLock {
             val out = counts
             counts = LinkedHashMap()
             out
         }
-        return Json.write(drained)
+        Json.write(drained)
     }
 
     /** An event name from fixed text: "CFW recovery retry limit" -> "cfw-recovery-retry-limit". */

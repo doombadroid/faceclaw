@@ -4,6 +4,7 @@ import kotlin.concurrent.Volatile
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -289,6 +290,62 @@ private class Session {
 }
 
 class GlassesSessionCoreTest {
+    /** These throw by design; IosGlassesSession turns them into errors, since one reaching Objective-C ends the app. */
+    @Test fun compositorCallsThrowForSurfacesTheyDoNotKnow() {
+        val s = Session()
+        s.core.configureCompositorScreen(640, 480)
+        s.core.configureSurface("s", 0, 0, 64, 32, 0, SurfaceCompositor.TRANSPARENCY_OPAQUE)
+        assertFailsWith<IllegalArgumentException> { s.core.setSurfaceVisible("missing", true) }
+        assertFailsWith<IllegalArgumentException> { s.core.setSurfaceDepth("missing", 0) }
+        assertFailsWith<IllegalArgumentException> { s.core.setSurfaceDepth("s", 200) }
+        assertFailsWith<IllegalArgumentException> {
+            s.core.submitSurfaceFrame(ArrayByteReader(ByteArray(64 * 32)), "missing", 0, 0, 64, 32, null, 0, 1, null)
+        }
+        // A frame painted before the surface shrank (a relayout racing a worker repaint).
+        assertFailsWith<IllegalArgumentException> {
+            s.core.submitSurfaceFrame(ArrayByteReader(ByteArray(64 * 48)), "s", 0, 0, 64, 48, null, 0, 2, null)
+        }
+        assertFailsWith<IllegalArgumentException> { s.core.submitShellScene(ArrayByteReader(byteArrayOf(1, 0)), 0, 3) }
+    }
+
+    /**
+     * A rejected curve throws to the caller, as it did before iOS: Android's JS logs "brightness
+     * configuration failed" and retries; iOS's facade (IosGlassesSession.configureBrightness, checked
+     * by tests/never-silent.test.cjs) returns it through boundaryError, which files the report.
+     */
+    @Test fun unusableCurveThrowsAndLeavesThePreviousSettings() {
+        val core = Session().core
+        val als = ByteArray(24).also { byteArrayOf(65, 76, 1, 2, 11, 0, 2).copyInto(it) } // 0.2 lux
+        core.configureBrightness(true, 50, 20, 100, "0:0,1000:100", 280)
+        val reported = mutableListOf<String>()
+        val before = CaughtErrors.sink
+        CaughtErrors.sink = { source, _ -> reported += source }
+        // ln(1+1e-17) == ln(1), so the knots collide.
+        try {
+            assertFailsWith<IllegalArgumentException> { core.configureBrightness(true, 50, 20, 100, "0:0,1e-17:100", 450) }
+        } finally { CaughtErrors.sink = before }
+        assertEquals(emptyList(), reported, "the caller reports it (boundaryError on iOS), not the core")
+        assertEquals(280, core.brightnessPolicy.fadeMs)
+        core.brightnessPolicy.sample(als, 1000)
+        assertEquals(22, core.brightnessPolicy.target) // The previous curve; the default gives 26.
+    }
+
+    /** Session-core catches log at WARN with the Throwable; on iOS that line alone is invisible. */
+    @Test fun aListenerThatThrowsFilesAReport() {
+        val s = Session()
+        s.core.setListener(object : FaceclawBleCommunicatorListener by FakeListener() {
+            override fun onStateChange(phase: String?, status: String?) = error("ui gone")
+        })
+        val reported = mutableListOf<Pair<String, String?>>()
+        val before = CaughtErrors.sink
+        CaughtErrors.sink = { source, error -> reported += source to error.message }
+        try {
+            s.core.emitState()
+            s.core.logWarn("no Throwable, nothing caught")
+        } finally { CaughtErrors.sink = before }
+        assertEquals(listOf<Pair<String, String?>>("FaceclawComm: listener onStateChange failed" to "ui gone"), reported)
+    }
+
     @Test fun brightnessConfigPrecedesFirstFrameAndSleepWakeFollowsComposites() {
         val s = Session()
         s.core.configureBrightness(false, 70, 2, 100, "0:0,1000:100", 280)

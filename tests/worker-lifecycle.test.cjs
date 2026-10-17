@@ -4,7 +4,7 @@ const { loader } = require('./helpers/load-typescript.cjs');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture() {
-  const sent = [], stopped = [], removed = [], focused = [], timers = new Map(), published = [];
+  const sent = [], reported = [], stopped = [], removed = [], focused = [], timers = new Map(), published = [];
   let kills = 0, resolveSurface;
   const worker = { postMessage: message => sent.push(message), terminate: () => kills++ };
   const shellWindows = new Map();
@@ -12,7 +12,7 @@ function fixture() {
     '../../graphics/image': {}, './chrome-layer': { windowIcon() {} },
     '../../assistant/tool-registry': { toolRegistry: { removeAppTools() {} } },
     './geometry': { appViewportSize: () => ({ width: 576, height: 288 }) },
-    '../../native/frame-timings': {}, './worker-state': { publishWorkerState: (...args) => published.push(args) },
+    '../../native/frame-timings': {}, '../../native/error-reports': { reportError: (...args) => reported.push(args) }, './worker-state': { publishWorkerState: (...args) => published.push(args) },
     './shell': { shell: { registerWindow: w => shellWindows.set(w.windowId, w), setTrayIcon() {},
       focusWindow: id => focused.push(id), isWindowFocused: () => false } },
   });
@@ -20,7 +20,7 @@ function fixture() {
   const host = new WorkerAppHost({ appId: 'game', worker, onStopping: () => stopped.push(host),
     configureSurface: () => new Promise(resolve => { resolveSurface = resolve; }),
     setSurfaceVisible() {}, removeSurface: id => removed.push(id), requestShellRender() {} });
-  return { host, sent, stopped, timers, removed, focused, published, get kills() { return kills; },
+  return { host, worker, reported, sent, stopped, timers, removed, focused, published, get kills() { return kills; },
     ready: () => worker.onmessage({ data: { type: 'worker-ready' } }),
     reply: data => worker.onmessage({ data }),
     open: id => host.openWindow({ windowId: id, title: id, focus: true }),
@@ -89,6 +89,19 @@ test('worker shutdown unregisters the isolate settings observer before acknowled
   finishWorkerShutdown(); assert.deepEqual(calls, ['dispose', 'worker-stopped']);
 });
 
+test("an app worker's uncaught error goes on to the main isolate's worker.onerror", () => {
+  // iOS runtime 9.0.3 WorkerWrapper::CallOnErrorHandlers drops an error thrown from onmessage unless the
+  // worker's global onerror is a function; a falsy result passes it to WorkerAppHost's onerror (which reports).
+  const global = { postMessage() {} };
+  loader({ global }, { '../../native/settings-store': { disposeSettingsStore() {} } })('app/ui/shell/worker-lifecycle.ts');
+  assert.equal(typeof global.onerror, 'function');
+  assert.equal(Boolean(global.onerror(new Error('in onmessage'))), false, 'not handled here');
+  const fs = require('node:fs');
+  for (const file of fs.readdirSync('app/apps', { recursive: true }).filter(name => name.endsWith('-app.worker.ts'))) {
+    assert.match(fs.readFileSync(`app/apps/${file}`, 'utf8'), /from "\.\.\/\.\.\/ui\/shell\/worker-lifecycle"/, file);
+  }
+});
+
 test('every app worker answers idle checks and shutdown; Terminal releases controls only on shutdown', () => {
   const fs = require('node:fs'), vm = require('node:vm'), ts = require('typescript');
   for (const app of ['blocks', 'flappy', 'freecell', 'minesweeper', 'navigate', 'pinball', 'roam', 'terminal']) {
@@ -138,4 +151,11 @@ test('both controllers remove only the retiring host and create a fresh worker o
     const next = host.ensureWorkerHost('flappy', () => ({})); assert.notEqual(next, first);
     first.options.onStopping(); assert.equal(host.appHosts.get('flappy'), next);
   }
+});
+
+test("a worker's uncaught error files an error report on the main isolate", () => {
+  const f = fixture(); f.ready();
+  const error = { message: 'Uncaught TypeError: x is undefined', filename: 'game.js', lineno: 3 };
+  f.worker.onerror(error);
+  assert.deepEqual(f.reported, [['worker game', error]]);
 });

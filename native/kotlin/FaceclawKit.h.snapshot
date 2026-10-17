@@ -6,9 +6,9 @@
 #import <Foundation/NSString.h>
 #import <Foundation/NSValue.h>
 
-@class FaceclawKitAlarmEntry, FaceclawKitAlarmEntryCompanion, FaceclawKitAlarmRingingPolicyCompanion, FaceclawKitAlarmScheduleCompanion, FaceclawKitAudioSegmentation, FaceclawKitBinaryEncoding, FaceclawKitBleImageOptimizerCompanion, FaceclawKitBleImageOptimizerIncrementalPlan, FaceclawKitBleImageOptimizerMultiRectPlan, FaceclawKitBleMagicPool, FaceclawKitBleMagicPoolCompanion, FaceclawKitBleMagicPoolReleaseRecord, FaceclawKitBleProtocolBatterySnapshot, FaceclawKitBleProtocolCompanion, FaceclawKitBleProtocolCompassEvent, FaceclawKitBleProtocolFaceclawGestureEvent, FaceclawKitBleProtocolFirmwareInfo, FaceclawKitBleProtocolFirmwareInfoCompanion, FaceclawKitBleProtocolImageFragment, FaceclawKitBleProtocolImageTileOptions, FaceclawKitBleProtocolListSelection, FaceclawKitBleProtocolParsedFrame, FaceclawKitBleProtocolRingBatterySnapshot, FaceclawKitBleProtocolVarintResult, FaceclawKitBlockingQueue<T>, FaceclawKitBmpUtilCompanion, FaceclawKitBondState, FaceclawKitBrightnessPolicyCompanion, FaceclawKitByteReader, FaceclawKitCachedResource, FaceclawKitCaptionSegmenterCompanion, FaceclawKitCaptionSessionCompanion, FaceclawKitCfwMessageWindowCompanion, FaceclawKitCfwTransportAck, FaceclawKitCfwTransportCompanion, FaceclawKitCollectionUtilsCompanion, FaceclawKitConnectionCounters, FaceclawKitConnectionOptionsCompanion, FaceclawKitConversationStoreCore, FaceclawKitConversationStoreCoreCompanion, FaceclawKitDeviceInfoProbeFlowCompanion, FaceclawKitDimDither, FaceclawKitDisplayListRenderer, FaceclawKitDisplayListRendererBuiltinGlyph, FaceclawKitDisplayListRendererTarget, FaceclawKitDrawClip, FaceclawKitDrawProtocol, FaceclawKitDrawRecordKind, FaceclawKitDrawValue, FaceclawKitDrawValueCompanion, FaceclawKitEvenHubAssetServer, FaceclawKitEvenHubAssetServerAsset, FaceclawKitEvenHubAssetServerResponse, FaceclawKitFaceclawNoiseSuppressorCompanion, FaceclawKitFaceclawRingEventDecoderCompanion, FaceclawKitFaceclawRingEventDecoderDirectRingEvent, FaceclawKitFirmwareImage, FaceclawKitFirmwareImageSegment, FaceclawKitFlashPromptFlowCompanion, FaceclawKitFontResourceAtlasCompanion, FaceclawKitFontResourceAtlasFont, FaceclawKitFrameDisplayList, FaceclawKitFrameDisplayListCompanion, FaceclawKitFrameTimingsCore, FaceclawKitFrameTimingsCoreCompanion, FaceclawKitFwGlyphAtlasCompanion, FaceclawKitFwGlyphAtlasEntry, FaceclawKitG2Event, FaceclawKitG2EventCompanion, FaceclawKitGattWriteMode, FaceclawKitGlassesSessionCoreCompanion, FaceclawKitGlassesStatusGate, FaceclawKitGlassesStatusGateCompanion, FaceclawKitGlyphAtlasCompanion, FaceclawKitGlyphAtlasGlyph, FaceclawKitGlyphPacket, FaceclawKitGrayPacket, FaceclawKitHttpIdentity, FaceclawKitImageAtlasCompanion, FaceclawKitImageAtlasEntry, FaceclawKitInterfaceAddress, FaceclawKitInterruptibleSleep, FaceclawKitIosBleCentralCompanion, FaceclawKitIosBleTraffic, FaceclawKitIosCaptionEngineCompanion, FaceclawKitIosFrameTimings, FaceclawKitIosFrameTimingsCompanion, FaceclawKitIosGlassesSessionCompanion, FaceclawKitIosLocalServerPort, FaceclawKitIosProtocolMessage, FaceclawKitIosProtocolPlatform, FaceclawKitIosRemoteInput, FaceclawKitIosRemoteInputCompanion, FaceclawKitIosSecureRandom, FaceclawKitIosTextureFrame, FaceclawKitIosTexturePlan, FaceclawKitIosWavRecorderCompanion, FaceclawKitJson, FaceclawKitJsonNumber, FaceclawKitJsonNumberCompanion, FaceclawKitKotlinArray<T>, FaceclawKitKotlinBooleanArray, FaceclawKitKotlinBooleanIterator, FaceclawKitKotlinByteArray, FaceclawKitKotlinByteIterator, FaceclawKitKotlinEnum<E>, FaceclawKitKotlinEnumCompanion, FaceclawKitKotlinException, FaceclawKitKotlinFloatArray, FaceclawKitKotlinFloatIterator, FaceclawKitKotlinIntArray, FaceclawKitKotlinIntIterator, FaceclawKitKotlinLongArray, FaceclawKitKotlinLongIterator, FaceclawKitKotlinPair<__covariant A, __covariant B>, FaceclawKitKotlinShortArray, FaceclawKitKotlinShortIterator, FaceclawKitKotlinThrowable, FaceclawKitKotlinUnit, FaceclawKitLc3PacketFramerCompanion, FaceclawKitLvglFontFileCompanion, FaceclawKitMenuSelection, FaceclawKitMenuSelectionCompanion, FaceclawKitMessageBuilderCompanion, FaceclawKitMessageReceiverMessage, FaceclawKitOpenTypeNames, FaceclawKitOtaFlashFlowCompanion, FaceclawKitOutboundMessage, FaceclawKitPlatformLog, FaceclawKitPreviewPalette, FaceclawKitRemoteInputSessionCompanion, FaceclawKitResourceCacheState, FaceclawKitResourceCacheStateCompanion, FaceclawKitResumableDownloadCompanion, FaceclawKitRingingItem, FaceclawKitScenePlannerPlan, FaceclawKitSegmentedTranscriptCompanion, FaceclawKitSessionLogLevel, FaceclawKitSettingsDocument, FaceclawKitSettingsDocumentCompanion, FaceclawKitSha256Digest, FaceclawKitSharedGifScreenRecorderCompanion, FaceclawKitSharedScreenshotsCompanion, FaceclawKitShellScene, FaceclawKitShellSceneCompanion, FaceclawKitShellSceneLayer, FaceclawKitSpeakerEmbeddings, FaceclawKitSpeakerEmbeddingsCentroid, FaceclawKitSseEvent, FaceclawKitSseEventComplete, FaceclawKitSseEventFailure, FaceclawKitSseEventHttpError, FaceclawKitSseEventLine, FaceclawKitSseStreamCompanion, FaceclawKitStatusIconArt, FaceclawKitStockFlowTimings, FaceclawKitStockLinkSessionAuthResult, FaceclawKitStockLinkSessionCompanion, FaceclawKitSurfaceCompositorCompanion, FaceclawKitSurfaceCompositorComposite, FaceclawKitSurfaceCompositorScreenDraw, FaceclawKitSurfaceCompositorScreenDrawCompanion, FaceclawKitSvgIcon, FaceclawKitSvgIconSource, FaceclawKitSvgShape, FaceclawKitTexturePlannerCompanion, FaceclawKitTexturePlannerResult, FaceclawKitUtteranceDecoderCompanion, FaceclawKitVideoFrameScalerCompanion, FaceclawKitVoiceCaptureSessionAudioStats, FaceclawKitVoiceCaptureSessionCompanion, FaceclawKitVoiceCaptureSessionMode, FaceclawKitVoiceModelKind, FaceclawKitVoicePrint, FaceclawKitWavPcmReader, FaceclawKitWavPcmReaderWavInfo, NSData;
+@class FaceclawKitAlarmEntry, FaceclawKitAlarmEntryCompanion, FaceclawKitAlarmRingingPolicyCompanion, FaceclawKitAlarmScheduleCompanion, FaceclawKitAudioSegmentation, FaceclawKitBinaryEncoding, FaceclawKitBleImageOptimizerCompanion, FaceclawKitBleImageOptimizerIncrementalPlan, FaceclawKitBleImageOptimizerMultiRectPlan, FaceclawKitBleMagicPool, FaceclawKitBleMagicPoolCompanion, FaceclawKitBleMagicPoolReleaseRecord, FaceclawKitBleProtocolBatterySnapshot, FaceclawKitBleProtocolCompanion, FaceclawKitBleProtocolCompassEvent, FaceclawKitBleProtocolFaceclawGestureEvent, FaceclawKitBleProtocolFirmwareInfo, FaceclawKitBleProtocolFirmwareInfoCompanion, FaceclawKitBleProtocolImageFragment, FaceclawKitBleProtocolImageTileOptions, FaceclawKitBleProtocolListSelection, FaceclawKitBleProtocolParsedFrame, FaceclawKitBleProtocolRingBatterySnapshot, FaceclawKitBleProtocolVarintResult, FaceclawKitBlockingQueue<T>, FaceclawKitBmpUtilCompanion, FaceclawKitBondState, FaceclawKitBrightnessPolicyCompanion, FaceclawKitByteReader, FaceclawKitCachedResource, FaceclawKitCaptionSegmenterCompanion, FaceclawKitCaptionSessionCompanion, FaceclawKitCfwMessageWindowCompanion, FaceclawKitCfwTransportAck, FaceclawKitCfwTransportCompanion, FaceclawKitCollectionUtilsCompanion, FaceclawKitConnectionCounters, FaceclawKitConnectionOptionsCompanion, FaceclawKitConversationStoreCore, FaceclawKitConversationStoreCoreCompanion, FaceclawKitDeviceInfoProbeFlowCompanion, FaceclawKitDimDither, FaceclawKitDisplayListRenderer, FaceclawKitDisplayListRendererBuiltinGlyph, FaceclawKitDisplayListRendererTarget, FaceclawKitDrawClip, FaceclawKitDrawProtocol, FaceclawKitDrawRecordKind, FaceclawKitDrawValue, FaceclawKitDrawValueCompanion, FaceclawKitEvenHubAssetServer, FaceclawKitEvenHubAssetServerAsset, FaceclawKitEvenHubAssetServerResponse, FaceclawKitFaceclawNoiseSuppressorCompanion, FaceclawKitFaceclawRingEventDecoderCompanion, FaceclawKitFaceclawRingEventDecoderDirectRingEvent, FaceclawKitFirmwareImage, FaceclawKitFirmwareImageSegment, FaceclawKitFlashPromptFlowCompanion, FaceclawKitFontResourceAtlasCompanion, FaceclawKitFontResourceAtlasFont, FaceclawKitFrameDisplayList, FaceclawKitFrameDisplayListCompanion, FaceclawKitFrameTimingsCore, FaceclawKitFrameTimingsCoreCompanion, FaceclawKitFwGlyphAtlasCompanion, FaceclawKitFwGlyphAtlasEntry, FaceclawKitG2Event, FaceclawKitG2EventCompanion, FaceclawKitGattWriteMode, FaceclawKitGlassesSessionCoreCompanion, FaceclawKitGlassesStatusGate, FaceclawKitGlassesStatusGateCompanion, FaceclawKitGlyphAtlasCompanion, FaceclawKitGlyphAtlasGlyph, FaceclawKitGlyphPacket, FaceclawKitGrayPacket, FaceclawKitHttpIdentity, FaceclawKitImageAtlasCompanion, FaceclawKitImageAtlasEntry, FaceclawKitInterfaceAddress, FaceclawKitInterruptibleSleep, FaceclawKitIosBleCentralCompanion, FaceclawKitIosBleTraffic, FaceclawKitIosCaptionEngineCompanion, FaceclawKitIosErrorReports, FaceclawKitIosFrameTimings, FaceclawKitIosFrameTimingsCompanion, FaceclawKitIosGlassesSessionCompanion, FaceclawKitIosLocalServerPort, FaceclawKitIosProtocolMessage, FaceclawKitIosProtocolPlatform, FaceclawKitIosRemoteInput, FaceclawKitIosRemoteInputCompanion, FaceclawKitIosSecureRandom, FaceclawKitIosTextureFrame, FaceclawKitIosTexturePlan, FaceclawKitIosWavRecorderCompanion, FaceclawKitJson, FaceclawKitJsonNumber, FaceclawKitJsonNumberCompanion, FaceclawKitKotlinArray<T>, FaceclawKitKotlinBooleanArray, FaceclawKitKotlinBooleanIterator, FaceclawKitKotlinByteArray, FaceclawKitKotlinByteIterator, FaceclawKitKotlinEnum<E>, FaceclawKitKotlinEnumCompanion, FaceclawKitKotlinException, FaceclawKitKotlinFloatArray, FaceclawKitKotlinFloatIterator, FaceclawKitKotlinIntArray, FaceclawKitKotlinIntIterator, FaceclawKitKotlinLongArray, FaceclawKitKotlinLongIterator, FaceclawKitKotlinPair<__covariant A, __covariant B>, FaceclawKitKotlinShortArray, FaceclawKitKotlinShortIterator, FaceclawKitKotlinThrowable, FaceclawKitKotlinUnit, FaceclawKitLc3PacketFramerCompanion, FaceclawKitLvglFontFileCompanion, FaceclawKitMenuSelection, FaceclawKitMenuSelectionCompanion, FaceclawKitMessageBuilderCompanion, FaceclawKitMessageReceiverMessage, FaceclawKitOpenTypeNames, FaceclawKitOtaFlashFlowCompanion, FaceclawKitOutboundMessage, FaceclawKitPlatformLog, FaceclawKitPreviewPalette, FaceclawKitRemoteInputSessionCompanion, FaceclawKitResourceCacheState, FaceclawKitResourceCacheStateCompanion, FaceclawKitResumableDownloadCompanion, FaceclawKitRingingItem, FaceclawKitScenePlannerPlan, FaceclawKitSegmentedTranscriptCompanion, FaceclawKitSessionLogLevel, FaceclawKitSettingsDocument, FaceclawKitSettingsDocumentCompanion, FaceclawKitSha256Digest, FaceclawKitSharedGifScreenRecorderCompanion, FaceclawKitSharedScreenshotsCompanion, FaceclawKitShellScene, FaceclawKitShellSceneCompanion, FaceclawKitShellSceneLayer, FaceclawKitSpeakerEmbeddings, FaceclawKitSpeakerEmbeddingsCentroid, FaceclawKitSseEvent, FaceclawKitSseEventComplete, FaceclawKitSseEventFailure, FaceclawKitSseEventHttpError, FaceclawKitSseEventLine, FaceclawKitSseStreamCompanion, FaceclawKitStatusIconArt, FaceclawKitStockFlowTimings, FaceclawKitStockLinkSessionAuthResult, FaceclawKitStockLinkSessionCompanion, FaceclawKitSurfaceCompositorCompanion, FaceclawKitSurfaceCompositorComposite, FaceclawKitSurfaceCompositorScreenDraw, FaceclawKitSurfaceCompositorScreenDrawCompanion, FaceclawKitSvgIcon, FaceclawKitSvgIconSource, FaceclawKitSvgShape, FaceclawKitTexturePlannerCompanion, FaceclawKitTexturePlannerResult, FaceclawKitUtteranceDecoderCompanion, FaceclawKitVideoFrameScalerCompanion, FaceclawKitVoiceCaptureSessionAudioStats, FaceclawKitVoiceCaptureSessionCompanion, FaceclawKitVoiceCaptureSessionMode, FaceclawKitVoiceModelKind, FaceclawKitVoicePrint, FaceclawKitWavPcmReader, FaceclawKitWavPcmReaderWavInfo, NSData;
 
-@protocol FaceclawKitAlarmScheduler, FaceclawKitAlarmStore, FaceclawKitAudioPacketDecoder, FaceclawKitCallbackDispatcher, FaceclawKitCancellable, FaceclawKitCaptionHost, FaceclawKitCaptionSegmentSink, FaceclawKitChunkSink, FaceclawKitDownloadResponse, FaceclawKitDownloadStorage, FaceclawKitDownloadTransport, FaceclawKitFaceclawAmbientLightListener, FaceclawKitFaceclawAudioPacketListener, FaceclawKitFaceclawBleCommunicatorListener, FaceclawKitFaceclawBleListener, FaceclawKitFaceclawCaptionEngineListener, FaceclawKitFaceclawCompassListener, FaceclawKitFaceclawDeviceInfoProbeListener, FaceclawKitFaceclawFirmwareFlasherListener, FaceclawKitFaceclawFlashPromptListener, FaceclawKitFaceclawImuListener, FaceclawKitFaceclawMicStatusListener, FaceclawKitFaceclawModelDownloaderListener, FaceclawKitFaceclawSettingsListener, FaceclawKitFaceclawSseListener, FaceclawKitFaceclawVoiceControllerListener, FaceclawKitFileSink, FaceclawKitIosAncsAuthorizationListener, FaceclawKitIosAncsListener, FaceclawKitIosAudioPacketListener, FaceclawKitIosBleScanListener, FaceclawKitIosPcmRecognizer, FaceclawKitIosSherpaLoader, FaceclawKitIosSpeakerVerifiedListener, FaceclawKitIosTranscriptListener, FaceclawKitIosVideoListener, FaceclawKitIosVoicePrinter, FaceclawKitKotlinComparable, FaceclawKitKotlinIterator, FaceclawKitLc3Codec, FaceclawKitLocalServerPort, FaceclawKitMessageCallback, FaceclawKitOfflineTranscriber, FaceclawKitPacketAudioSource, FaceclawKitPcmAudioSource, FaceclawKitProtocolCondition, FaceclawKitProtocolDeflater, FaceclawKitProtocolLock, FaceclawKitProtocolPlatform, FaceclawKitRandomAccessBytes, FaceclawKitRandomSource, FaceclawKitRecordingSink, FaceclawKitRemoteInputConnection, FaceclawKitRemoteInputListener, FaceclawKitRetainedDrawing, FaceclawKitRingingSink, FaceclawKitSessionDispatcher, FaceclawKitSessionHost, FaceclawKitSessionLink, FaceclawKitSettingsDispatcher, FaceclawKitSettingsStorage, FaceclawKitSpeakerEmbedder, FaceclawKitSqlPort, FaceclawKitStockLink, FaceclawKitStockLinkListener, FaceclawKitVoiceCaptureHost;
+@protocol FaceclawKitAlarmScheduler, FaceclawKitAlarmStore, FaceclawKitAudioPacketDecoder, FaceclawKitCallbackDispatcher, FaceclawKitCancellable, FaceclawKitCaptionHost, FaceclawKitCaptionSegmentSink, FaceclawKitChunkSink, FaceclawKitDownloadResponse, FaceclawKitDownloadStorage, FaceclawKitDownloadTransport, FaceclawKitFaceclawAmbientLightListener, FaceclawKitFaceclawAudioPacketListener, FaceclawKitFaceclawBleCommunicatorListener, FaceclawKitFaceclawBleListener, FaceclawKitFaceclawCaptionEngineListener, FaceclawKitFaceclawCompassListener, FaceclawKitFaceclawDeviceInfoProbeListener, FaceclawKitFaceclawFirmwareFlasherListener, FaceclawKitFaceclawFlashPromptListener, FaceclawKitFaceclawImuListener, FaceclawKitFaceclawMicStatusListener, FaceclawKitFaceclawModelDownloaderListener, FaceclawKitFaceclawSettingsListener, FaceclawKitFaceclawSseListener, FaceclawKitFaceclawVoiceControllerListener, FaceclawKitFileSink, FaceclawKitIosAncsAuthorizationListener, FaceclawKitIosAncsListener, FaceclawKitIosAudioPacketListener, FaceclawKitIosBleScanListener, FaceclawKitIosErrorReportListener, FaceclawKitIosPcmRecognizer, FaceclawKitIosSherpaLoader, FaceclawKitIosSpeakerVerifiedListener, FaceclawKitIosTranscriptListener, FaceclawKitIosVideoListener, FaceclawKitIosVoicePrinter, FaceclawKitKotlinComparable, FaceclawKitKotlinIterator, FaceclawKitLc3Codec, FaceclawKitLocalServerPort, FaceclawKitMessageCallback, FaceclawKitOfflineTranscriber, FaceclawKitPacketAudioSource, FaceclawKitPcmAudioSource, FaceclawKitProtocolCondition, FaceclawKitProtocolDeflater, FaceclawKitProtocolLock, FaceclawKitProtocolPlatform, FaceclawKitRandomAccessBytes, FaceclawKitRandomSource, FaceclawKitRecordingSink, FaceclawKitRemoteInputConnection, FaceclawKitRemoteInputListener, FaceclawKitRetainedDrawing, FaceclawKitRingingSink, FaceclawKitSessionDispatcher, FaceclawKitSessionHost, FaceclawKitSessionLink, FaceclawKitSettingsDispatcher, FaceclawKitSettingsStorage, FaceclawKitSpeakerEmbedder, FaceclawKitSqlPort, FaceclawKitStockLink, FaceclawKitStockLinkListener, FaceclawKitVoiceCaptureHost;
 
 NS_ASSUME_NONNULL_BEGIN
 #pragma clang diagnostic push
@@ -3040,6 +3040,11 @@ __attribute__((swift_name("GlassesSessionCore")))
  */
 - (void)cancelBandwidthBenchmark __attribute__((swift_name("cancelBandwidthBenchmark()")));
 - (void)close __attribute__((swift_name("close()")));
+
+/**
+ * Throws IllegalArgumentException for a curve BrightnessPolicy rejects, leaving the previous
+ * settings in force: Android's JS logs it; IosGlassesSession returns it through boundaryError.
+ */
 - (void)configureBrightnessAuto:(BOOL)auto_ level:(int32_t)level minimum:(int32_t)minimum maximum:(int32_t)maximum curve:(NSString *)curve fadeMs:(int32_t)fadeMs __attribute__((swift_name("configureBrightness(auto:level:minimum:maximum:curve:fadeMs:)")));
 
 /** Set the compositor's output frame size. Call before configuring surfaces. */
@@ -3951,6 +3956,49 @@ __attribute__((swift_name("IosDeviceInfoProbe")))
 @end
 
 
+/** Implemented in app/native/kotlin-error-reports.ios.ts, which hands each to the JS error reports. */
+__attribute__((swift_name("IosErrorReportListener")))
+@protocol FaceclawKitIosErrorReportListener
+@required
+
+/** [occurrences]: how many times it happened since the last call for this source and message. */
+- (void)onCaughtErrorSource:(NSString *)source message:(NSString *)message stack:(NSString *)stack occurrences:(int32_t)occurrences __attribute__((swift_name("onCaughtError(source:message:stack:occurrences:)")));
+@end
+
+
+/**
+ * Errors the iOS facades caught instead of crashing, handed to JS so each leaves a report
+ * the owner sees. Buffer and listener are touched on the main queue only, so no lock; the
+ * repeat filter runs on the caller's thread, under [repeatsLock].
+ */
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("IosErrorReports")))
+@interface FaceclawKitIosErrorReports : FaceclawKitBase
++ (instancetype)alloc __attribute__((unavailable));
+
+/**
+ * Errors the iOS facades caught instead of crashing, handed to JS so each leaves a report
+ * the owner sees. Buffer and listener are touched on the main queue only, so no lock; the
+ * repeat filter runs on the caller's thread, under [repeatsLock].
+ */
++ (instancetype)allocWithZone:(struct _NSZone *)zone __attribute__((unavailable));
++ (instancetype)iosErrorReports __attribute__((swift_name("init()")));
+@property (class, readonly, getter=shared) FaceclawKitIosErrorReports *shared __attribute__((swift_name("shared")));
+
+/**
+ * The owner cleared the reports (Settings): forget the repeat counts, so an error that keeps
+ * happening is forwarded at its next occurrence instead of at its next power of two. Never throws.
+ */
+- (void)forgetRepeats __attribute__((swift_name("forgetRepeats()")));
+
+/** Never throws: it is called from inside catch blocks. */
+- (void)recordSource:(NSString *)source error:(FaceclawKitKotlinThrowable *)error __attribute__((swift_name("record(source:error:)")));
+
+/** Set from JS on the main thread; reports caught before then are delivered on registration. */
+@property id<FaceclawKitIosErrorReportListener> _Nullable listener __attribute__((swift_name("listener")));
+@end
+
+
 /** iOS host for the shared [OtaFlashFlow] (custom-firmware OTA over the stock protocol). */
 __attribute__((objc_subclassing_restricted))
 __attribute__((swift_name("IosFirmwareFlasher")))
@@ -4061,13 +4109,18 @@ __attribute__((swift_name("IosGlassesSession")))
 - (void)close __attribute__((swift_name("close()")));
 - (int32_t)compositeHeight __attribute__((swift_name("compositeHeight()")));
 - (int32_t)compositeWidth __attribute__((swift_name("compositeWidth()")));
-- (void)configureBrightnessAuto:(BOOL)auto_ level:(int32_t)level minimum:(int32_t)minimum maximum:(int32_t)maximum curve:(NSString *)curve fadeMs:(int32_t)fadeMs __attribute__((swift_name("configureBrightness(auto:level:minimum:maximum:curve:fadeMs:)")));
+
+/**
+ * A curve Kotlin rejects leaves the previous settings in force; the error is filed as a report
+ * and returned for JS to throw (pushBrightness logs it and retries on the next settings change).
+ */
+- (NSString * _Nullable)configureBrightnessAuto:(BOOL)auto_ level:(int32_t)level minimum:(int32_t)minimum maximum:(int32_t)maximum curve:(NSString *)curve fadeMs:(int32_t)fadeMs __attribute__((swift_name("configureBrightness(auto:level:minimum:maximum:curve:fadeMs:)")));
 
 /** Set the compositor's output frame size. Call before configuring surfaces. */
-- (void)configureCompositorScreenWidth:(int32_t)width height:(int32_t)height __attribute__((swift_name("configureCompositorScreen(width:height:)")));
-- (void)configureSurfaceId:(NSString *)id x:(int32_t)x y:(int32_t)y width:(int32_t)width height:(int32_t)height zOrder:(int32_t)zOrder transparency:(int32_t)transparency __attribute__((swift_name("configureSurface(id:x:y:width:height:zOrder:transparency:)")));
+- (NSString * _Nullable)configureCompositorScreenWidth:(int32_t)width height:(int32_t)height __attribute__((swift_name("configureCompositorScreen(width:height:)")));
+- (NSString * _Nullable)configureSurfaceId:(NSString *)id x:(int32_t)x y:(int32_t)y width:(int32_t)width height:(int32_t)height zOrder:(int32_t)zOrder transparency:(int32_t)transparency __attribute__((swift_name("configureSurface(id:x:y:width:height:zOrder:transparency:)")));
 - (void)disconnect __attribute__((swift_name("disconnect()")));
-- (void)enableWearDetectionAndRequestState __attribute__((swift_name("enableWearDetectionAndRequestState()")));
+- (NSString * _Nullable)enableWearDetectionAndRequestState __attribute__((swift_name("enableWearDetectionAndRequestState()")));
 
 /** Frame-timings export text (see FrameTimingsCore), for the phone-side debug page. */
 - (NSString *)frameTimingsExport __attribute__((swift_name("frameTimingsExport()")));
@@ -4086,7 +4139,7 @@ __attribute__((swift_name("IosGlassesSession")))
 - (void)removeCompassListenerListener:(id<FaceclawKitFaceclawCompassListener> _Nullable)listener __attribute__((swift_name("removeCompassListener(listener:)")));
 - (void)removeImuListenerListener:(id<FaceclawKitFaceclawImuListener> _Nullable)listener __attribute__((swift_name("removeImuListener(listener:)")));
 - (void)removeMicStatusListenerListener:(id<FaceclawKitFaceclawMicStatusListener> _Nullable)listener __attribute__((swift_name("removeMicStatusListener(listener:)")));
-- (void)removeSurfaceId:(NSString *)id __attribute__((swift_name("removeSurface(id:)")));
+- (NSString * _Nullable)removeSurfaceId:(NSString *)id __attribute__((swift_name("removeSurface(id:)")));
 - (BOOL)resumeEvenHubSession __attribute__((swift_name("resumeEvenHubSession()")));
 
 /** The right arm's usable write payload (ATT MTU minus the 3-byte header), or 20 when unknown. */
@@ -4104,7 +4157,7 @@ __attribute__((swift_name("IosGlassesSession")))
 - (void)setCompassEnabledForOwnerOwner:(NSString * _Nullable)owner enable:(BOOL)enable __attribute__((swift_name("setCompassEnabledForOwner(owner:enable:)")));
 - (BOOL)setFaceclawWakeLeaseEnabledEnabled:(BOOL)enabled __attribute__((swift_name("setFaceclawWakeLeaseEnabled(enabled:)")));
 - (void)setFirmwareDebugFlagsEnabled:(BOOL)enabled __attribute__((swift_name("setFirmwareDebugFlags(enabled:)")));
-- (void)setG2ScreenOnScreenOn:(BOOL)screenOn __attribute__((swift_name("setG2ScreenOn(screenOn:)")));
+- (NSString * _Nullable)setG2ScreenOnScreenOn:(BOOL)screenOn __attribute__((swift_name("setG2ScreenOn(screenOn:)")));
 - (void)setImuReportEnabledEnable:(BOOL)enable reportFrq:(int32_t)reportFrq __attribute__((swift_name("setImuReportEnabled(enable:reportFrq:)")));
 - (void)setListenerListener:(id<FaceclawKitFaceclawBleCommunicatorListener> _Nullable)listener __attribute__((swift_name("setListener(listener:)")));
 
@@ -4114,10 +4167,10 @@ __attribute__((swift_name("IosGlassesSession")))
 
 /** Ask CoreBluetooth for ANCS on the right arm's next connection (call before start()). */
 - (void)setRequiresAncsRequired:(BOOL)required __attribute__((swift_name("setRequiresAncs(required:)")));
-- (void)setScreenBlankedBlanked:(BOOL)blanked __attribute__((swift_name("setScreenBlanked(blanked:)")));
-- (void)setSurfaceDepthId:(NSString *)id depth:(int32_t)depth __attribute__((swift_name("setSurfaceDepth(id:depth:)")));
-- (void)setSurfaceVisibleId:(NSString *)id visible:(BOOL)visible __attribute__((swift_name("setSurfaceVisible(id:visible:)")));
-- (void)setUnderlayDimBelowZOrder:(int32_t)belowZOrder factor256:(int32_t)factor256 __attribute__((swift_name("setUnderlayDim(belowZOrder:factor256:)")));
+- (NSString * _Nullable)setScreenBlankedBlanked:(BOOL)blanked __attribute__((swift_name("setScreenBlanked(blanked:)")));
+- (NSString * _Nullable)setSurfaceDepthId:(NSString *)id depth:(int32_t)depth __attribute__((swift_name("setSurfaceDepth(id:depth:)")));
+- (NSString * _Nullable)setSurfaceVisibleId:(NSString *)id visible:(BOOL)visible __attribute__((swift_name("setSurfaceVisible(id:visible:)")));
+- (NSString * _Nullable)setUnderlayDimBelowZOrder:(int32_t)belowZOrder factor256:(int32_t)factor256 __attribute__((swift_name("setUnderlayDim(belowZOrder:factor256:)")));
 - (BOOL)start __attribute__((swift_name("start()")));
 - (BOOL)startBandwidthBenchmarkMessageSize:(int32_t)messageSize windowSize:(int32_t)windowSize durationMs:(int32_t)durationMs __attribute__((swift_name("startBandwidthBenchmark(messageSize:windowSize:durationMs:)")));
 - (BOOL)startBandwidthBenchmarkWithLinkModeMessageSize:(int32_t)messageSize windowSize:(int32_t)windowSize durationMs:(int32_t)durationMs linkMode:(int32_t)linkMode __attribute__((swift_name("startBandwidthBenchmarkWithLinkMode(messageSize:windowSize:durationMs:linkMode:)")));
@@ -4133,8 +4186,8 @@ __attribute__((swift_name("IosGlassesSession")))
 - (BOOL)startG2AudioForwardingNsDataListener:(id<FaceclawKitIosAudioPacketListener>)listener __attribute__((swift_name("startG2AudioForwardingNsData(listener:)")));
 - (void)stopG2AudioCapture __attribute__((swift_name("stopG2AudioCapture()")));
 - (void)stopG2AudioForwarding __attribute__((swift_name("stopG2AudioForwarding()")));
-- (void)submitShellSceneBytes:(NSData *)bytes paintMs:(int32_t)paintMs frameId:(int32_t)frameId __attribute__((swift_name("submitShellScene(bytes:paintMs:frameId:)")));
-- (void)submitSurfaceFramePixels8bpp:(NSData *)pixels8bpp surfaceId:(NSString *)surfaceId rectX:(int32_t)rectX rectY:(int32_t)rectY rectWidth:(int32_t)rectWidth rectHeight:(int32_t)rectHeight contentFingerprint:(NSString * _Nullable)contentFingerprint paintMs:(int32_t)paintMs frameId:(int32_t)frameId glyphs:(NSData * _Nullable)glyphs __attribute__((swift_name("submitSurfaceFrame(pixels8bpp:surfaceId:rectX:rectY:rectWidth:rectHeight:contentFingerprint:paintMs:frameId:glyphs:)")));
+- (NSString * _Nullable)submitShellSceneBytes:(NSData *)bytes paintMs:(int32_t)paintMs frameId:(int32_t)frameId __attribute__((swift_name("submitShellScene(bytes:paintMs:frameId:)")));
+- (NSString * _Nullable)submitSurfaceFramePixels8bpp:(NSData *)pixels8bpp surfaceId:(NSString *)surfaceId rectX:(int32_t)rectX rectY:(int32_t)rectY rectWidth:(int32_t)rectWidth rectHeight:(int32_t)rectHeight contentFingerprint:(NSString * _Nullable)contentFingerprint paintMs:(int32_t)paintMs frameId:(int32_t)frameId glyphs:(NSData * _Nullable)glyphs __attribute__((swift_name("submitSurfaceFrame(pixels8bpp:surfaceId:rectX:rectY:rectWidth:rectHeight:contentFingerprint:paintMs:frameId:glyphs:)")));
 - (BOOL)suspendEvenHubSession __attribute__((swift_name("suspendEvenHubSession()")));
 
 /** Queue one relay packet for the right arm; never blocks the caller (writes run on a serial queue). */
@@ -4210,6 +4263,8 @@ __attribute__((objc_subclassing_restricted))
 __attribute__((swift_name("IosNoiseSuppressor")))
 @interface FaceclawKitIosNoiseSuppressor : FaceclawKitBase
 - (instancetype)initWithSampleRate:(int32_t)sampleRate __attribute__((swift_name("init(sampleRate:)"))) __attribute__((objc_designated_initializer));
+
+/** The input unchanged when suppression fails. */
 - (NSData *)processPcm:(NSData *)pcm __attribute__((swift_name("process(pcm:)")));
 - (void)reset __attribute__((swift_name("reset()")));
 @end
@@ -4249,15 +4304,15 @@ __attribute__((swift_name("IosPcmRecognizer")))
 @end
 
 
-/** Stable binary facade over the shared wire algorithms and font parser. */
+/** Stable binary facade over the shared wire algorithms and font parser. Bad input returns empty data or null. */
 __attribute__((objc_subclassing_restricted))
 __attribute__((swift_name("IosProtocol")))
 @interface FaceclawKitIosProtocol : FaceclawKitBase
 
-/** Stable binary facade over the shared wire algorithms and font parser. */
+/** Stable binary facade over the shared wire algorithms and font parser. Bad input returns empty data or null. */
 - (instancetype)init __attribute__((swift_name("init()"))) __attribute__((objc_designated_initializer));
 
-/** Stable binary facade over the shared wire algorithms and font parser. */
+/** Stable binary facade over the shared wire algorithms and font parser. Bad input returns empty data or null. */
 + (instancetype)new __attribute__((availability(swift, unavailable, message="use object initializers instead")));
 - (NSArray<FaceclawKitCfwTransportAck *> * _Nullable)acksData:(NSData *)data __attribute__((swift_name("acks(data:)")));
 - (NSData *)audioControlMagic:(int32_t)magic enabled:(BOOL)enabled __attribute__((swift_name("audioControl(magic:enabled:)")));
@@ -4352,6 +4407,8 @@ __attribute__((swift_name("IosRemoteInput")))
 /** JSON array of {name, address, pointToPoint} for the reachable local interfaces. */
 - (NSString *)interfaces __attribute__((swift_name("interfaces()")));
 - (NSString * _Nullable)nextRequest __attribute__((swift_name("nextRequest()")));
+
+/** "" when no secure randomness: the token store rejects anything but 64 hex digits. */
 - (NSString *)randomSecret __attribute__((swift_name("randomSecret()")));
 
 /** Called (on the main queue) whenever a request is waiting in [nextRequest]. */
@@ -4495,25 +4552,24 @@ __attribute__((swift_name("IosSseRequest")))
 @end
 
 
-/** iOS retains/coalesces surface updates in the same compositor Android uses. */
+/** iOS retains/coalesces surface updates in the same compositor Android uses. Mutators return the error, or null. */
 __attribute__((objc_subclassing_restricted))
 __attribute__((swift_name("IosSurfaceCompositor")))
 @interface FaceclawKitIosSurfaceCompositor : FaceclawKitBase
 - (instancetype)initWithWidth:(int32_t)width height:(int32_t)height __attribute__((swift_name("init(width:height:)"))) __attribute__((objc_designated_initializer));
-- (void)blankBlanked:(BOOL)blanked __attribute__((swift_name("blank(blanked:)")));
+- (NSString * _Nullable)blankBlanked:(BOOL)blanked __attribute__((swift_name("blank(blanked:)")));
 - (NSData *)composite __attribute__((swift_name("composite()")));
-- (FaceclawKitIosTextureFrame *)compositeFrame __attribute__((swift_name("compositeFrame()")));
-- (void)configureId:(NSString *)id x:(int32_t)x y:(int32_t)y width:(int32_t)width height:(int32_t)height zOrder:(int32_t)zOrder transparent:(BOOL)transparent __attribute__((swift_name("configure(id:x:y:width:height:zOrder:transparent:)")));
-- (void)depthId:(NSString *)id depth:(int32_t)depth __attribute__((swift_name("depth(id:depth:)")));
-- (void)dimBelow:(int32_t)below factor:(double)factor __attribute__((swift_name("dim(below:factor:)")));
-- (void)removeId:(NSString *)id __attribute__((swift_name("remove(id:)")));
+- (NSString * _Nullable)configureId:(NSString *)id x:(int32_t)x y:(int32_t)y width:(int32_t)width height:(int32_t)height zOrder:(int32_t)zOrder transparent:(BOOL)transparent __attribute__((swift_name("configure(id:x:y:width:height:zOrder:transparent:)")));
+- (NSString * _Nullable)depthId:(NSString *)id depth:(int32_t)depth __attribute__((swift_name("depth(id:depth:)")));
+- (NSString * _Nullable)dimBelow:(int32_t)below factor:(double)factor __attribute__((swift_name("dim(below:factor:)")));
+- (NSString * _Nullable)removeId:(NSString *)id __attribute__((swift_name("remove(id:)")));
 
 /** Called on the main queue after each step of an animation the preview is replaying (see SurfaceCompositor). */
 - (void)setPreviewAnimationListenerListener:(void (^ _Nullable)(void))listener __attribute__((swift_name("setPreviewAnimationListener(listener:)")));
-- (void)shellData:(NSData *)data __attribute__((swift_name("shell(data:)")));
-- (void)submitId:(NSString *)id data:(NSData *)data x:(int32_t)x y:(int32_t)y width:(int32_t)width height:(int32_t)height __attribute__((swift_name("submit(id:data:x:y:width:height:)")));
-- (void)submitDrawsId:(NSString *)id data:(NSData *)data x:(int32_t)x y:(int32_t)y width:(int32_t)width height:(int32_t)height draws:(NSData * _Nullable)draws __attribute__((swift_name("submitDraws(id:data:x:y:width:height:draws:)")));
-- (void)visibleId:(NSString *)id visible:(BOOL)visible __attribute__((swift_name("visible(id:visible:)")));
+- (NSString * _Nullable)shellData:(NSData *)data __attribute__((swift_name("shell(data:)")));
+- (NSString * _Nullable)submitId:(NSString *)id data:(NSData *)data x:(int32_t)x y:(int32_t)y width:(int32_t)width height:(int32_t)height __attribute__((swift_name("submit(id:data:x:y:width:height:)")));
+- (NSString * _Nullable)submitDrawsId:(NSString *)id data:(NSData *)data x:(int32_t)x y:(int32_t)y width:(int32_t)width height:(int32_t)height draws:(NSData * _Nullable)draws __attribute__((swift_name("submitDraws(id:data:x:y:width:height:draws:)")));
+- (NSString * _Nullable)visibleId:(NSString *)id visible:(BOOL)visible __attribute__((swift_name("visible(id:visible:)")));
 @end
 
 
@@ -4528,6 +4584,8 @@ __attribute__((swift_name("IosTextureAtlas")))
 /** Binary adapters only: atlas identity, RLE, residency and planning stay in commonMain. */
 + (instancetype)new __attribute__((availability(swift, unavailable, message="use object initializers instead")));
 - (int32_t)fontIdKey:(NSString *)key __attribute__((swift_name("fontId(key:)")));
+
+/** 0 (no atlas image: the frame's pixels still carry it) when the image is rejected. */
 - (int32_t)imageIdKey:(NSString *)key width:(int32_t)width height:(int32_t)height data:(NSData *)data __attribute__((swift_name("imageId(key:width:height:data:)")));
 - (void)registerAaGlyphsData:(NSData *)data __attribute__((swift_name("registerAaGlyphs(data:)")));
 - (void)registerFirmwareGlyphsData:(NSData *)data __attribute__((swift_name("registerFirmwareGlyphs(data:)")));
@@ -4638,7 +4696,7 @@ __attribute__((swift_name("IosVideoPlayer")))
 - (void)seekToPositionMs:(double)positionMs __attribute__((swift_name("seekTo(positionMs:)")));
 - (void)setListenerListener:(id<FaceclawKitIosVideoListener> _Nullable)listener __attribute__((swift_name("setListener(listener:)")));
 
-/** Play [path] scaled to width x height (display orientation) from [startMs]. */
+/** Play [path] scaled to width x height (display orientation) from [startMs]; a failure reaches listener.onError. */
 - (void)startPath:(NSString *)path width:(int32_t)width height:(int32_t)height monochrome:(BOOL)monochrome gamma:(float)gamma audio:(BOOL)audio startMs:(double)startMs __attribute__((swift_name("start(path:width:height:monochrome:gamma:audio:startMs:)")));
 
 /** End playback and release AVFoundation; the last frame stays readable. */

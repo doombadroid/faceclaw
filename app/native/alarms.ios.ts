@@ -1,6 +1,7 @@
 import { Application, ApplicationSettings, Utils } from '@nativescript/core'
 import { APP_NAME } from '../branding'
 import type { AlarmKind, AlarmReliabilityIssue, PhoneAlarmAction } from './alarms'
+import { guardCallback, logJsError } from './callback-errors.ios'
 export type { AlarmKind, AlarmReliabilityIssue, PhoneAlarmAction } from './alarms'
 
 // Local notifications stand in for Android's alarm service. Nothing runs at fire time while
@@ -171,19 +172,22 @@ function handleResponse(identifier: string, action: string): void {
   if (action === 'snooze' && entry) arm({ ...entry, at: event.atMs + event.minutes * 60_000 })
   else saveEntry(id, null)
   for (const listener of [...actionListeners]) {
-    try { listener(event) } catch (error) { console.warn(`phone alarm action listener failed: ${error}`) }
+    try { listener(event) } catch (error) { logJsError('phone alarm action listener', error) }
   }
 }
 
 @NativeClass()
 class AlarmNotificationDelegate extends NSObject implements UNUserNotificationCenterDelegate {
   static ObjCProtocols = [UNUserNotificationCenterDelegate]
+  // Bodies under guardCallback (a throw into UIKit ends the app); iOS still gets its completion call.
   userNotificationCenterWillPresentNotificationWithCompletionHandler(_center: UNUserNotificationCenter, notification: UNNotification, done: (options: UNNotificationPresentationOptions) => void): void {
     const loud = UNNotificationPresentationOptions.Banner | UNNotificationPresentationOptions.Sound | UNNotificationPresentationOptions.List
-    done(notification.request.content.sound ? loud : UNNotificationPresentationOptions.List)
+    const options = guardCallback('userNotificationCenterWillPresentNotification', () => notification.request.content.sound ? loud : UNNotificationPresentationOptions.List)
+    done(options ?? loud)
   }
   userNotificationCenterDidReceiveNotificationResponseWithCompletionHandler(_center: UNUserNotificationCenter, response: UNNotificationResponse, done: () => void): void {
-    try { handleResponse(String(response.notification.request.identifier), String(response.actionIdentifier)) } finally { done() }
+    guardCallback('userNotificationCenterDidReceiveNotificationResponse', () => handleResponse(String(response.notification.request.identifier), String(response.actionIdentifier)))
+    done()
   }
 }
 // UNUserNotificationCenter.delegate is weak: this module keeps the only strong reference.

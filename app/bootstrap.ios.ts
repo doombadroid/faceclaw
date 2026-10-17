@@ -1,8 +1,21 @@
 import { Application, Frame } from '@nativescript/core'
+import { logJsError } from './native/callback-errors.ios'
 declare const FaceclawConfigPort: any
+
+// nativescript.config.ts discards uncaught JS errors instead of ending the app; each becomes an error report.
+Application.on(Application.discardedErrorEvent, (args) => logJsError('uncaught JS', args.error))
+Application.on(Application.uncaughtErrorEvent, (args) => logJsError('uncaught JS', args.error))
 
 // Apply transferred preferences before settings getters or app workers load.
 FaceclawConfigPort.processPendingRequest()
+// Caught errors leave a report the owner sees (native/error-reports.ts); before anything can catch one.
+const { installKotlinErrorReports } = require('./native/kotlin-error-reports.ios') as typeof import('./native/kotlin-error-reports.ios')
+const { installErrorNotice } = require('./phone-ui/ios/error-reports-page') as typeof import('./phone-ui/ios/error-reports-page')
+// The notice listens first: registering the Kotlin listener can deliver buffered reports. Each has
+// its own try: a notice that fails must not leave Kotlin's reports buffered for the whole session,
+// and either failure still reaches disk and Settings > General > Error Reports.
+try { installErrorNotice() } catch (error) { logJsError('error reports install', error) }
+try { installKotlinErrorReports() } catch (error) { logJsError('error reports install', error) }
 require('./phone-ui/onboarding-register.ios')
 require('./phone-ui/ios/register')
 // After the transferred preferences, before anything reads the provider.
@@ -11,7 +24,7 @@ migrateIosVoiceProvider()
 // Before Application.run: a notification action can cold-launch the app in the background.
 const { installPhoneAlarmDelegate } = require('./native/alarms.ios') as typeof import('./native/alarms.ios')
 // Alarm alerts must never stop the app from launching.
-try { installPhoneAlarmDelegate() } catch (error) { console.error(`phone alarm delegate not installed: ${error}`) }
+try { installPhoneAlarmDelegate() } catch (error) { logJsError('phone alarm delegate install', error) }
 // Opt-in analytics (app/analytics/), started once the app is up.
 // oxlint-disable-next-line typescript/no-deprecated -- still fires once, with the first window's content
 Application.on(Application.launchEvent, () => {

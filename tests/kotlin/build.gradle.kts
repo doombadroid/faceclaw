@@ -37,10 +37,12 @@ val generateFixturePaths = tasks.register("generateFixturePaths") {
     val output = layout.buildDirectory.file("generated/fixtures/com/faceclaw/app/FixturePaths.kt")
     outputs.dir(layout.buildDirectory.dir("generated/fixtures"))
     doLast {
-        val font = file("../../app/fonts/source-han-sans/SourceHanSansSC-Light-20.lvgl.bin").canonicalPath
+        fun path(name: String) = file(name).canonicalPath.replace("\\", "\\\\").replace("\"", "\\\"")
         output.get().asFile.apply {
             parentFile.mkdirs()
-            writeText("package com.faceclaw.app\ninternal const val TEST_FONT_PATH = \"${font.replace("\\", "\\\\").replace("\"", "\\\"")}\"\n")
+            writeText("package com.faceclaw.app\ninternal const val TEST_FONT_PATH = \"${path("../../app/fonts/source-han-sans/SourceHanSansSC-Light-20.lvgl.bin")}\"\n" +
+                // Shared with tests/brightness-curve.test.cjs so the JS and Kotlin validators agree.
+                "internal const val BRIGHTNESS_CURVES_PATH = \"${path("../fixtures/brightness-curves.json")}\"\n")
         }
     }
 }

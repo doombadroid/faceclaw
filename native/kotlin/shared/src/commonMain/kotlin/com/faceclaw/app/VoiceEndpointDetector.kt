@@ -37,14 +37,14 @@ class VoiceEndpointDetector {
     }
 
     /** RMS in PCM16 units. Allows native decoders to reuse their existing level calculation. */
-    fun acceptLevel(rms: Double, sampleCount: Int): Boolean {
-        if (fired || sampleCount <= 0) return false
+    fun acceptLevel(rms: Double, sampleCount: Int): Boolean = boundary("VoiceEndpointDetector.acceptLevel", false) {
+        if (fired || sampleCount <= 0) return@boundary false
         totalSamples += sampleCount
         val elapsedMs = totalSamples * 1000 / 16000
         if (elapsedMs <= 300) {
             noiseAccum += rms
             noisePackets++
-            return false
+            return@boundary false
         }
         if (threshold == 0.0) threshold = max(if (noisePackets > 0) noiseAccum / noisePackets else 0.0, 220.0)
         if (!speechStarted) {
@@ -54,13 +54,13 @@ class VoiceEndpointDetector {
             } else if (elapsedMs >= 6000) {
                 fired = true
             }
-            return fired
+            return@boundary fired
         }
         if (rms < threshold * 1.8) {
             silenceSamples += sampleCount
             if (silenceSamples * 1000 / 16000 >= 900) fired = true
         } else silenceSamples = 0
         if (elapsedMs >= 30000) fired = true
-        return fired
+        return@boundary fired
     }
 }

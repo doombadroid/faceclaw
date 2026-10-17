@@ -122,22 +122,22 @@ class IosVideoPlayer {
     }
 
     /** JSON {width, height (rotated), rotation, durationMs, hasAudio} or {error}, as Android's probe(). */
-    fun probe(path: String): String {
+    fun probe(path: String): String = boundary("IosVideoPlayer.probe", """{"error":"Could not read the video"}""") {
         val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(path), options = null)
         val track = asset.tracksWithMediaType(AVMediaTypeVideo).firstOrNull() as? AVAssetTrack
-            ?: return """{"error":"No playable video track"}"""
+            ?: return@boundary """{"error":"No playable video track"}"""
         val rotation = trackRotation(track)
         val (w, h) = track.naturalSize().useContents { width.roundToInt() to height.roundToInt() }
         val swap = rotation == 90 || rotation == 270
         val hasAudio = asset.tracksWithMediaType(AVMediaTypeAudio).isNotEmpty()
-        return """{"width":${if (swap) h else w},"height":${if (swap) w else h},"rotation":$rotation,""" +
+        """{"width":${if (swap) h else w},"height":${if (swap) w else h},"rotation":$rotation,""" +
             """"durationMs":${assetDurationMs(asset).toLong()},"hasAudio":$hasAudio}"""
     }
 
-    /** Play [path] scaled to width x height (display orientation) from [startMs]. */
-    fun start(path: String, width: Int, height: Int, monochrome: Boolean, gamma: Float, audio: Boolean, startMs: Double) {
+    /** Play [path] scaled to width x height (display orientation) from [startMs]; a failure reaches listener.onError. */
+    fun start(path: String, width: Int, height: Int, monochrome: Boolean, gamma: Float, audio: Boolean, startMs: Double): Unit = boundaryError("IosVideoPlayer.start") {
         stop()
-        if (width <= 0 || height <= 0) return
+        if (width <= 0 || height <= 0) return@boundaryError
         val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(path), options = null)
         val track = asset.tracksWithMediaType(AVMediaTypeVideo).firstOrNull() as? AVAssetTrack
         val item = AVPlayerItem(asset = asset)
@@ -177,39 +177,39 @@ class IosVideoPlayer {
             avPlayer.play()
         }
         scheduleTick(run)
-    }
+    }.let { error -> if (error != null) dispatch_async(dispatch_get_main_queue()) { listener?.onError(error) } }
 
-    fun pause() {
+    fun pause(): Unit = boundary("IosVideoPlayer.pause", Unit) {
         playing = false
         player?.pause()
     }
 
-    fun resume() {
-        val avPlayer = player ?: return
+    fun resume(): Unit = boundary("IosVideoPlayer.resume", Unit) {
+        val avPlayer = player ?: return@boundary
         playing = true
         avPlayer.play()
     }
 
     /** Exact seek, kept clear of the end so a seek never lands on 'ended'. */
-    fun seekTo(positionMs: Double) {
+    fun seekTo(positionMs: Double): Unit = boundary("IosVideoPlayer.seekTo", Unit) {
         val limit = if (durationMs > SEEK_END_MARGIN_MS) durationMs - SEEK_END_MARGIN_MS else 0.0
         player?.seekToTime(time(positionMs.coerceIn(0.0, limit)), kCMTimeZero.readValue(), kCMTimeZero.readValue())
     }
 
-    fun positionMs(): Double {
-        val ms = CMTimeGetSeconds(player?.currentTime() ?: return 0.0) * 1000
-        return if (ms.isFinite()) ms else 0.0
+    fun positionMs(): Double = boundary("IosVideoPlayer.positionMs", 0.0) {
+        val ms = CMTimeGetSeconds(player?.currentTime() ?: return@boundary 0.0) * 1000
+        if (ms.isFinite()) ms else 0.0
     }
 
     fun isPlaying(): Boolean = playing
 
     /** The latest frame if it was scaled to width x height, else null. */
-    fun lastFrame(width: Int, height: Int): NSData? = lock.withLock {
-        latest?.takeIf { width == latestWidth && it.size == width * height }?.data()
+    fun lastFrame(width: Int, height: Int): NSData? = boundary("IosVideoPlayer.lastFrame", null) {
+        lock.withLock { latest?.takeIf { width == latestWidth && it.size == width * height }?.data() }
     }
 
     /** End playback and release AVFoundation; the last frame stays readable. */
-    fun stop() {
+    fun stop(): Unit = boundary("IosVideoPlayer.stop", Unit) {
         generation++
         playing = false
         endObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }

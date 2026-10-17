@@ -41,7 +41,8 @@ const KIT7 = '00000000-0000-4000-8000-000000000007';
 
 function alarms({ status = 2, alertSetting = 2, timeSensitive = 0, active = true, kit } = {}) {
   const clock = { now: T - 60_000 };
-  const pending = new Map(), removedDelivered = [], opened = [], authRequests = [], store = new Map();
+  const pending = new Map(), removedDelivered = [], opened = [], authRequests = [], store = new Map(), reports = [];
+  const callbackErrors = load('app/native/callback-errors.ios.ts', { require: () => ({ reportError: (source, error) => reports.push([source, String(error?.message ?? error)]) }) });
   const settings = { authorizationStatus: status, alertSetting, timeSensitiveSetting: timeSensitive };
   const resume = [];
   const center = {
@@ -64,6 +65,7 @@ function alarms({ status = 2, alertSetting = 2, timeSensitive = 0, active = true
         Utils: { openUrl: url => opened.push(url), executeOnMainThread: fn => fn() },
       },
       '../branding': { APP_NAME: 'OcuSmart' },
+      './callback-errors.ios': callbackErrors,
     })[name],
     NativeClass: () => c => c,
     NSObject: class { static new() { return new this(); } },
@@ -95,7 +97,7 @@ function alarms({ status = 2, alertSetting = 2, timeSensitive = 0, active = true
       { actionIdentifier, notification: { request: { identifier } } }, () => { completed = true; });
     return completed;
   };
-  return { module, clock, pending, removedDelivered, opened, authRequests, center, settings, respond, resume: () => resume.forEach(fn => fn()) };
+  return { module, clock, pending, removedDelivered, opened, authRequests, center, settings, respond, reports, store, resume: () => resume.forEach(fn => fn()) };
 }
 
 test('iOS alarm: silent at T plus a sounding escalation at T+5s while the glasses can carry it', () => {
@@ -177,6 +179,32 @@ test('iOS alarm: foreground presentation is list-only for the silent request', (
   const present = sound => { let options; center.delegate.userNotificationCenterWillPresentNotificationWithCompletionHandler(center, { request: { content: { sound } } }, o => { options = o; }); return options; };
   assert.equal(present(undefined), 8);
   assert.equal(present('default'), 16 | 2 | 8);
+});
+
+test('iOS alarm: a delegate method that throws files a report and still calls the completion handler', () => {
+  const { center, respond, reports } = alarms();
+  let options;
+  const throwing = { get request() { throw new Error('no request'); } };
+  assert.doesNotThrow(() => center.delegate.userNotificationCenterWillPresentNotificationWithCompletionHandler(center, throwing, o => { options = o; }));
+  assert.equal(options, 16 | 2 | 8, 'an alarm that cannot be inspected is still presented');
+  assert.equal(reports.length, 1);
+  assert.match(reports[0][0], /WillPresent/);
+  let completed = false;
+  assert.doesNotThrow(() => center.delegate.userNotificationCenterDidReceiveNotificationResponseWithCompletionHandler(center, throwing, () => { completed = true; }));
+  assert.ok(completed);
+  assert.equal(reports.length, 2);
+  assert.ok(respond('fc-1-ring', 'dismiss'), 'a normal response still completes');
+});
+
+test('iOS alarm: an action listener that throws files a report, and the next listener still hears it', () => {
+  const { module, respond, reports } = alarms();
+  module.schedulePhoneAlarm(7, T, 'Alarm', '7:00', 'alarm', 10);
+  const heard = [];
+  module.onPhoneAlarmAction(() => { throw new Error('engine gone'); });
+  module.onPhoneAlarmAction(event => heard.push(event.action));
+  assert.ok(respond('fc-7', 'dismiss'));
+  same(heard, ['dismiss']);
+  same(reports, [['phone alarm action listener', 'engine gone']]);
 });
 
 test('iOS alarm: reliability reports denied and Time Sensitive off, and fixes open Settings', () => {

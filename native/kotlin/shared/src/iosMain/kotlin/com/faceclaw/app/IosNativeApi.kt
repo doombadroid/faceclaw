@@ -80,69 +80,73 @@ class IosMessageReceiver {
         receiver.receive(link, data.byteArray(), now).map { IosProtocolMessage(it) }
 }
 
-/** Stable binary facade over the shared wire algorithms and font parser. */
+/** Stable binary facade over the shared wire algorithms and font parser. Bad input returns empty data or null. */
 class IosProtocol {
-    fun authentication(magic: Int): NSData = BleProtocol.buildAuthenticationRequest(magic).data()
+    private val empty = NSData()
 
-    fun prelude(): NSData = BleProtocol.PRELUDE_F5872_PAYLOAD.data()
+    fun authentication(magic: Int): NSData = boundary("IosProtocol.authentication", empty) { BleProtocol.buildAuthenticationRequest(magic).data() }
 
-    fun heartbeat(magic: Int): NSData = BleProtocol.buildHeartbeat(magic).data()
+    fun prelude(): NSData = boundary("IosProtocol.prelude", empty) { BleProtocol.PRELUDE_F5872_PAYLOAD.data() }
+
+    fun heartbeat(magic: Int): NSData = boundary("IosProtocol.heartbeat", empty) { BleProtocol.buildHeartbeat(magic).data() }
 
     fun audioControl(magic: Int, enabled: Boolean): NSData =
-        BleProtocol.buildAudioControl(magic, enabled).data()
+        boundary("IosProtocol.audioControl", empty) { BleProtocol.buildAudioControl(magic, enabled).data() }
 
-    fun settingsQuery(magic: Int): NSData = BleProtocol.buildSettingsQuery(magic).data()
+    fun settingsQuery(magic: Int): NSData = boundary("IosProtocol.settingsQuery", empty) { BleProtocol.buildSettingsQuery(magic).data() }
 
-    fun shutdown(magic: Int): NSData = BleProtocol.buildShutdown(magic, 1).data()
+    fun shutdown(magic: Int): NSData = boundary("IosProtocol.shutdown", empty) { BleProtocol.buildShutdown(magic, 1).data() }
 
-    fun framebufferLease(acquire: Boolean): NSData =
+    fun framebufferLease(acquire: Boolean): NSData = boundary("IosProtocol.framebufferLease", empty) {
         BleProtocol.buildFaceclawWakeControl(
                 if (acquire) BleProtocol.FACECLAW_FB_OP_ACQUIRE
                 else BleProtocol.FACECLAW_FB_OP_RELEASE,
                 0,
             )
             .data()
+    }
 
-    fun createLayout(magic: Int): NSData = BleProtocol.buildCreateInputPage(magic).data()
+    fun createLayout(magic: Int): NSData = boundary("IosProtocol.createLayout", empty) { BleProtocol.buildCreateInputPage(magic).data() }
 
-    fun integer(field: Int, value: Int): NSData = BleProtocol.encodeVarintField(field, value).data()
+    fun integer(field: Int, value: Int): NSData = boundary("IosProtocol.integer", empty) { BleProtocol.encodeVarintField(field, value).data() }
 
     fun bytes(field: Int, data: NSData): NSData =
-        BleProtocol.encodeBytesField(field, data.byteArray()).data()
+        boundary("IosProtocol.bytes", empty) { BleProtocol.encodeBytesField(field, data.byteArray()).data() }
 
-    fun crc(data: NSData): Int = CfwTransport.crc(data.byteArray())
+    fun crc(data: NSData): Int = boundary("IosProtocol.crc", 0) { CfwTransport.crc(data.byteArray()) }
 
     fun frame(data: NSData, sid: Int, flag: Int, sequence: Int, maxWrite: Int): List<NSData> =
-        BleProtocol.framePb(data.byteArray(), sid, flag, sequence, maxWrite).map { it.data() }
+        boundary("IosProtocol.frame", emptyList()) { BleProtocol.framePb(data.byteArray(), sid, flag, sequence, maxWrite).map { it.data() } }
 
     fun acks(data: NSData): List<CfwTransport.Ack>? =
-        CfwTransport.parseAcks(data.byteArray())?.toList()
+        boundary("IosProtocol.acks", null) { CfwTransport.parseAcks(data.byteArray())?.toList() }
 
     fun readInteger(data: NSData, field: Int, fallback: Int): Int =
-        BleProtocol.readVarintFieldValue(data.byteArray(), field, fallback)
+        boundary("IosProtocol.readInteger", fallback) { BleProtocol.readVarintFieldValue(data.byteArray(), field, fallback) }
 
     fun readBytes(data: NSData, field: Int): NSData? =
-        BleProtocol.readFieldBytes(data.byteArray(), field)?.data()
+        boundary("IosProtocol.readBytes", null) { BleProtocol.readFieldBytes(data.byteArray(), field)?.data() }
 
     fun readString(data: NSData, field: Int): String =
-        BleProtocol.readStringFieldValue(data.byteArray(), field)
+        boundary("IosProtocol.readString", "") { BleProtocol.readStringFieldValue(data.byteArray(), field) }
 
-    fun glassesInput(data: NSData, sid: Int, flag: Int): G2Event? =
+    fun glassesInput(data: NSData, sid: Int, flag: Int): G2Event? = boundary("IosProtocol.glassesInput", null) {
         if (sid in intArrayOf(BleProtocol.SID_EVENHUB, BleProtocol.SID_EVEN_AI) && flag in intArrayOf(1, 6))
             G2Event.decodePayload(sid, data.byteArray())
         else null
-
-    fun compassInput(data: NSData, sid: Int, flag: Int): BleProtocol.CompassEvent? =
-        BleProtocol.parseCompassPayload(sid, flag, data.byteArray())
-
-    fun ringInput(data: NSData): G2Event? = FaceclawRingEventDecoder.decode(data.byteArray())?.event
-
-    fun pack(data: NSData, width: Int, height: Int): NSData {
-        require(width > 0 && height > 0 && data.length == width.toULong() * height.toULong())
-        return BmpUtil.pack4bppFromGray8(data.byteArray(), width, height).data()
     }
 
-    fun rle(data: NSData): NSData = BleImageOptimizer.rleEncode(data.byteArray()).data()
+    fun compassInput(data: NSData, sid: Int, flag: Int): BleProtocol.CompassEvent? =
+        boundary("IosProtocol.compassInput", null) { BleProtocol.parseCompassPayload(sid, flag, data.byteArray()) }
+
+    fun ringInput(data: NSData): G2Event? = boundary("IosProtocol.ringInput", null) { FaceclawRingEventDecoder.decode(data.byteArray())?.event }
+
+    fun pack(data: NSData, width: Int, height: Int): NSData = boundary("IosProtocol.pack", empty) {
+        require(width > 0 && height > 0 && data.length == width.toULong() * height.toULong())
+        BmpUtil.pack4bppFromGray8(data.byteArray(), width, height).data()
+    }
+
+    fun rle(data: NSData): NSData = boundary("IosProtocol.rle", empty) { BleImageOptimizer.rleEncode(data.byteArray()).data() }
 
     fun boundingBox(
         previous: NSData?,
@@ -150,7 +154,7 @@ class IosProtocol {
         width: Int,
         height: Int,
         frameId: Int,
-    ): NSData? =
+    ): NSData? = boundary("IosProtocol.boundingBox", null) {
         BleImageOptimizer.buildIncrementalImagePayload(
                 previous?.byteArray(),
                 next.byteArray(),
@@ -160,8 +164,9 @@ class IosProtocol {
             )
             ?.payload
             ?.data()
+    }
 
-    fun fullFrameBands(data: NSData, width: Int, height: Int, firstId: Int): List<NSData> {
+    fun fullFrameBands(data: NSData, width: Int, height: Int, firstId: Int): List<NSData> = boundary("IosProtocol.fullFrameBands", emptyList()) {
         require(
             width in 1..640 &&
                 width % 4 == 0 &&
@@ -171,7 +176,7 @@ class IosProtocol {
         )
         val packed = data.byteArray()
         var id = firstId
-        return (0 until height step 64).map { top ->
+        (0 until height step 64).map { top ->
             val result =
                 BleImageOptimizer.encodeMode3Rect(
                         packed,
@@ -188,29 +193,29 @@ class IosProtocol {
         }
     }
 
-    fun fontMetrics(path: String): NSData = LvglFontFile.getMetrics(path).data()
+    fun fontMetrics(path: String): NSData = boundary("IosProtocol.fontMetrics", empty) { LvglFontFile.getMetrics(path).data() }
 
     fun fontGlyph(path: String, codePoint: Int): NSData =
-        LvglFontFile.getGlyph(path, codePoint).data()
+        boundary("IosProtocol.fontGlyph", empty) { LvglFontFile.getGlyph(path, codePoint).data() }
 
     fun png(data: NSData, width: Int, height: Int): NSData =
-        SharedScreenshots.encode4BitGrayPng(data.byteArray(), width, height).data()
+        boundary("IosProtocol.png", empty) { SharedScreenshots.encode4BitGrayPng(data.byteArray(), width, height).data() }
 
     /**
      * Android's photo tone (GrayPacket.fromArgb) on an already-decoded [wLo,wHi,hLo,hHi,pixels]
      * packet such as FaceclawGraphics returns: the gamma curve, then optional dither. A malformed
      * packet comes back unchanged.
      */
-    fun tone(packet: NSData, gamma: Float, dither: Boolean): NSData {
+    fun tone(packet: NSData, gamma: Float, dither: Boolean): NSData = boundary("IosProtocol.tone", packet) {
         val bytes = packet.byteArray()
-        if (bytes.size < GrayPacket.HEADER_SIZE) return packet
+        if (bytes.size < GrayPacket.HEADER_SIZE) return@boundary packet
         val width = (bytes[0].toInt() and 255) or ((bytes[1].toInt() and 255) shl 8)
         val height = (bytes[2].toInt() and 255) or ((bytes[3].toInt() and 255) shl 8)
-        if (bytes.size != GrayPacket.HEADER_SIZE + width * height) return packet
+        if (bytes.size != GrayPacket.HEADER_SIZE + width * height) return@boundary packet
         val curve = GrayPacket.toneCurve(gamma)
         for (i in GrayPacket.HEADER_SIZE until bytes.size) bytes[i] = curve[bytes[i].toInt() and 255].toByte()
         if (dither) GrayPacket.ditherToDisplayLevels(bytes, GrayPacket.HEADER_SIZE, width, height)
-        return bytes.data()
+        bytes.data()
     }
 }
 
@@ -218,13 +223,14 @@ class IosProtocol {
 class IosGifRecorder {
     private val recorder = SharedGifScreenRecorder()
 
-    fun add(gray: NSData, width: Int, height: Int, timestampMs: Long) = recorder.addFrame(gray.byteArray(), width, height, timestampMs)
+    fun add(gray: NSData, width: Int, height: Int, timestampMs: Long) =
+        boundary("IosGifRecorder.add", Unit) { recorder.addFrame(gray.byteArray(), width, height, timestampMs) }
 
     /** The GIF, or null when no frame was recorded. */
-    fun encode(): NSData? = recorder.encode().takeIf { it.isNotEmpty() }?.data()
+    fun encode(): NSData? = boundary("IosGifRecorder.encode", null) { recorder.encode().takeIf { it.isNotEmpty() }?.data() }
 }
 
-/** iOS retains/coalesces surface updates in the same compositor Android uses. */
+/** iOS retains/coalesces surface updates in the same compositor Android uses. Mutators return the error, or null. */
 class IosSurfaceCompositor(width: Int, height: Int) {
     private val compositor = SurfaceCompositor().also { it.configureScreen(width, height) }
     private val sizes = mutableMapOf<String, Pair<Int, Int>>()
@@ -238,73 +244,76 @@ class IosSurfaceCompositor(width: Int, height: Int) {
         height: Int,
         zOrder: Int,
         transparent: Boolean,
-    ) {
+    ): String? = boundaryError("IosSurfaceCompositor.configure") {
         compositor.configureSurface(id, x, y, width, height, zOrder, if (transparent) 1 else 0)
         sizes[id] = width to height
     }
 
-    fun remove(id: String) {
+    fun remove(id: String): String? = boundaryError("IosSurfaceCompositor.remove") {
         sizes.remove(id)
         compositor.removeSurface(id)
     }
 
-    fun visible(id: String, visible: Boolean) = compositor.setSurfaceVisible(id, visible)
+    fun visible(id: String, visible: Boolean): String? = boundaryError("IosSurfaceCompositor.visible") { compositor.setSurfaceVisible(id, visible) }
 
-    fun depth(id: String, depth: Int) = compositor.setSurfaceDepth(id, depth)
+    fun depth(id: String, depth: Int): String? = boundaryError("IosSurfaceCompositor.depth") { compositor.setSurfaceDepth(id, depth) }
 
-    fun dim(below: Int, factor: Double) {
+    fun dim(below: Int, factor: Double): String? = boundaryError("IosSurfaceCompositor.dim") {
         require(factor.isFinite())
         compositor.setUnderlayDim(below, (factor.coerceIn(0.0, 1.0) * 256).toInt())
     }
 
-    fun blank(blanked: Boolean) = compositor.setBlanked(blanked)
+    fun blank(blanked: Boolean): String? = boundaryError("IosSurfaceCompositor.blank") { compositor.setBlanked(blanked) }
 
-    fun shell(data: NSData) = compositor.setShellScene(IosByteReader(data))
+    fun shell(data: NSData): String? = boundaryError("IosSurfaceCompositor.shell") { compositor.setShellScene(IosByteReader(data)) }
 
-    fun submit(id: String, data: NSData, x: Int, y: Int, width: Int, height: Int) =
+    fun submit(id: String, data: NSData, x: Int, y: Int, width: Int, height: Int): String? =
         submitDraws(id, data, x, y, width, height, null)
 
-    fun submitDraws(id: String, data: NSData, x: Int, y: Int, width: Int, height: Int, draws: NSData?) {
-        val (sw, sh) = sizes[id] ?: error("Unknown surface: $id")
-        require(width > 0 && height > 0 && data.length == width.toULong() * height.toULong())
-        val left = maxOf(0, x)
-        val right = minOf(sw, x + width)
-        val top = maxOf(0, y)
-        val bottom = minOf(sh, y + height)
-        if (right <= left || bottom <= top) return
-        val reader =
-            if (left == x && top == y && right - left == width && bottom - top == height)
-                IosByteReader(data)
-            else {
-                val source = data.byteArray()
-                val clipped = ByteArray((right - left) * (bottom - top))
-                for (row in top until bottom) source.copyInto(
-                    clipped,
-                    (row - top) * (right - left),
-                    (row - y) * width + left - x,
-                    (row - y) * width + right - x,
-                )
-                ArrayByteReader(clipped)
-            }
-        compositor.submitSurface(
-            id,
-            reader,
-            left,
-            top,
-            right - left,
-            bottom - top,
-            (++sequence).toString(),
-            // Draw records describe a full surface. Partial/clipped updates must discard
-            // old identities; their pixels remain available through the baked fallback.
-            if (x == 0 && y == 0 && width == sw && height == sh) draws?.let(::IosByteReader)
-            else null,
-        )
-    }
+    fun submitDraws(id: String, data: NSData, x: Int, y: Int, width: Int, height: Int, draws: NSData?): String? =
+        boundaryError("IosSurfaceCompositor.submitDraws") {
+            val (sw, sh) = sizes[id] ?: error("Unknown surface: $id")
+            require(width > 0 && height > 0 && data.length == width.toULong() * height.toULong())
+            val left = maxOf(0, x)
+            val right = minOf(sw, x + width)
+            val top = maxOf(0, y)
+            val bottom = minOf(sh, y + height)
+            if (right <= left || bottom <= top) return@boundaryError
+            val reader =
+                if (left == x && top == y && right - left == width && bottom - top == height)
+                    IosByteReader(data)
+                else {
+                    val source = data.byteArray()
+                    val clipped = ByteArray((right - left) * (bottom - top))
+                    for (row in top until bottom) source.copyInto(
+                        clipped,
+                        (row - top) * (right - left),
+                        (row - y) * width + left - x,
+                        (row - y) * width + right - x,
+                    )
+                    ArrayByteReader(clipped)
+                }
+            compositor.submitSurface(
+                id,
+                reader,
+                left,
+                top,
+                right - left,
+                bottom - top,
+                (++sequence).toString(),
+                // Draw records describe a full surface. Partial/clipped updates must discard
+                // old identities; their pixels remain available through the baked fallback.
+                if (x == 0 && y == 0 && width == sw && height == sh) draws?.let(::IosByteReader)
+                else null,
+            )
+        }
 
-    fun composite(): NSData = compositor.composite().gray.data()
+    fun composite(): NSData = boundary("IosSurfaceCompositor.composite", NSData()) { compositor.composite().gray.data() }
 
-    fun compositeFrame(): IosTextureFrame = IosTextureFrame(compositor.composite())
+    /** For the Kotlin tests; JS reads [composite]. */
+    internal fun compositeFrame(): IosTextureFrame = IosTextureFrame(compositor.composite())
 
     /** Called on the main queue after each step of an animation the preview is replaying (see SurfaceCompositor). */
-    fun setPreviewAnimationListener(listener: (() -> Unit)?) = compositor.setPreviewAnimationListener(listener)
+    fun setPreviewAnimationListener(listener: (() -> Unit)?) =
+        boundary("IosSurfaceCompositor.setPreviewAnimationListener", Unit) { compositor.setPreviewAnimationListener(listener) }
 }
