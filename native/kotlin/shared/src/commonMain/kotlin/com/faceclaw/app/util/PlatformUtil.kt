@@ -30,16 +30,18 @@ expect object PlatformLog {
 fun PlatformLog.e(tag: String, message: String) = e(tag, message, null)
 
 /**
- * Runs an iOS facade entry point that JavaScript or an ObjC shim calls ([name] is `Class.fun`).
- * Kotlin/Native ends the process when an exception without @Throws reaches Objective-C, before any
- * JS catch runs, and @Throws would rename the selectors JS calls; so it is logged and [fallback]
- * returned. tests/kotlin-boundary.test.cjs checks every facade fun goes through here.
+ * Runs an entry point that JavaScript or an ObjC shim calls ([name] is `Class.fun`): an iOS facade, or a
+ * shared class they call directly. Kotlin/Native ends the process when an exception without @Throws
+ * reaches Objective-C, before any JS catch runs, and @Throws would rename the selectors JS calls; so it
+ * is logged, reported ([CaughtErrors]) and [fallback] returned. tests/kotlin-boundary.test.cjs checks
+ * every such fun goes through here.
  */
 internal inline fun <T> boundary(name: String, fallback: T, block: () -> T): T =
     try {
         block()
     } catch (t: Throwable) {
         PlatformLog.e("FaceclawKit", "$name failed", t)
+        CaughtErrors.report(name, t)
         fallback
     }
 
@@ -50,5 +52,27 @@ internal inline fun boundaryError(name: String, block: () -> Unit): String? =
         null
     } catch (t: Throwable) {
         PlatformLog.e("FaceclawKit", "$name failed", t)
+        CaughtErrors.report(name, t)
         "$name: ${t.message ?: t}"
     }
+
+/**
+ * Where a caught error goes so it is never a silent failure (a log line alone is invisible on iOS):
+ * on iOS an error report the owner sees (IosErrorReports). commonMain cannot call iosMain, hence the sink.
+ */
+internal object CaughtErrors {
+    var sink: ((source: String, error: Throwable) -> Unit)? = platformCaughtErrorSink
+
+    /** Never throws: it is called from inside catch blocks. */
+    fun report(source: String, error: Throwable) {
+        try {
+            sink?.invoke(source, error)
+        } catch (t: Throwable) {
+            // Not back into the sink: the reporter failing must not report itself in a loop.
+            runCatching { PlatformLog.e("FaceclawKit", "could not report an error from $source", t) }
+        }
+    }
+}
+
+/** iOS: IosErrorReports::record. Android: none yet (logcat is visible there). */
+internal expect val platformCaughtErrorSink: ((source: String, error: Throwable) -> Unit)?

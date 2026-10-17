@@ -1,5 +1,5 @@
-// Every iosMain entry point JavaScript or an ObjC shim calls must go through boundary() or
-// boundaryError() (commonMain util/PlatformUtil.kt). Kotlin/Native terminates the app when an
+// Every iosMain or commonMain entry point JavaScript or an ObjC shim calls (directly, or inherited by
+// a class they call) must go through boundary() or boundaryError() (commonMain util/PlatformUtil.kt). Kotlin/Native terminates the app when an
 // exception without @Throws reaches Objective-C, so a JS try/catch or .catch() never runs; @Throws
 // would rename every selector the JS uses. Constructors and properties are not checked here.
 const test = require('node:test');
@@ -9,6 +9,8 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const IOS_MAIN = path.join(ROOT, 'native/kotlin/shared/src/iosMain/kotlin');
+const COMMON_MAIN = path.join(ROOT, 'native/kotlin/shared/src/commonMain/kotlin');
+const kotlinFiles = () => [IOS_MAIN, COMMON_MAIN].flatMap(dir => walk(dir, n => n.endsWith('.kt')));
 
 // Referenced from JS but never called: JS passes IosProtocolPlatform.shared to IosBleCentral.
 const NOT_CALLED = new Set(['IosProtocolPlatform']);
@@ -22,7 +24,13 @@ const TRIVIAL = new Set([
   'IosVideoPlayer.setListener', 'IosVideoPlayer.isPlaying',
   'IosWavRecorder.isOpen',
   'IosDeviceInfoProbe.setListener', 'IosFlashPrompt.setListener', 'IosFirmwareFlasher.setListener',
+  'VoiceEndpointDetector.reset',
 ]);
+// Called only from Kotlin (the session cores, Android); JS and the ObjC shims never call them.
+const KOTLIN_ONLY = new Set(['ConnectionCounters.increment', 'ConnectionCounters.slug', 'VoiceEndpointDetector.accept']);
+// The error reporter itself: its body is one try/catch(Throwable) (checked below), and boundary()
+// would hand a failure of the reporter back to the reporter.
+const REPORTER = new Set(['IosErrorReports.record']);
 
 function walk(dir, test) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
@@ -68,13 +76,20 @@ function closingBrace(masked, open) {
   throw new Error('unbalanced braces');
 }
 
+// A top-level class or object: annotations and modifiers before it, its header continued on indented
+// (or ")") lines only, so a body-less class cannot swallow the next declaration.
+const CLASS = /^(?:@[\w.]+(?:\([^)\n]*\))? +)*(?:(?:public|open|abstract|data|sealed|final|actual|value) )*(class|object) (\w+)([^{\n]*(?:\n[ \t)][^{\n]*)*?)\{/gm;
+
 /** Public member funs of each top-level class/object (and its companion), with the text after the signature. */
-function facadeFunctions(file) {
+function facadeFunctions(file, owners = new Map()) {
   const text = fs.readFileSync(file, 'utf8');
   const masked = mask(text);
   const out = [];
-  for (const m of masked.matchAll(/^(?:open |abstract |data )?(class|object) (\w+)[^{\n]*(?:\n[^{\n]*)*?\{/gm)) {
+  for (const m of masked.matchAll(CLASS)) {
     const owner = m[2];
+    // Supertypes after the last top-level ':' of the header (constructor parameters have their own).
+    const header = m[3].replace(/\([^()]*(?:\([^()]*\)[^()]*)*\)/g, '');
+    owners.set(owner, { supertypes: (header.split(':')[1] ?? '').split(',').map(t => t.trim().replace(/[(<].*$/, '')).filter(Boolean) });
     const open = m.index + m[0].length - 1;
     const close = closingBrace(masked, open);
     const scopes = [[open + 1, close]];
@@ -122,33 +137,45 @@ function referencedNames() {
   return names;
 }
 
+/** Every parsed fun, the owners parsed, and the owners JS reaches: by name, or as a supertype of one it does. */
+function scan() {
+  const owners = new Map();
+  const fns = kotlinFiles().flatMap(file => facadeFunctions(file, owners));
+  const reached = new Set([...referencedNames()].filter(name => owners.has(name)));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const name of [...reached]) for (const supertype of owners.get(name).supertypes) {
+      if (owners.has(supertype) && !reached.has(supertype)) { reached.add(supertype); grew = true; }
+    }
+  }
+  return { fns, owners, reached };
+}
+
 function unguarded() {
-  const names = referencedNames();
+  const { fns, reached } = scan();
   const problems = [];
   let checked = 0;
-  for (const file of walk(IOS_MAIN, n => n.endsWith('.kt'))) {
-    const fns = facadeFunctions(file);
-    for (const fn of fns) {
-      if (!names.has(fn.owner) || NOT_CALLED.has(fn.owner)) continue;
-      if (fn.override && KOTLIN_PORTS.has(fn.owner)) continue;
-      const label = `${fn.owner}.${fn.name}`;
-      if (TRIVIAL.has(label)) continue;
-      checked++;
-      const siblings = new Set(fns.filter(other => other.owner === fn.owner && guarded(other)).map(other => other.name));
-      if (!guarded(fn, siblings)) problems.push(`${fn.where}: ${label} is callable from JS but not \`= boundary("${label}", ...)\``);
-    }
+  for (const fn of fns) {
+    if (!reached.has(fn.owner) || NOT_CALLED.has(fn.owner)) continue;
+    if (fn.override && KOTLIN_PORTS.has(fn.owner)) continue;
+    const label = `${fn.owner}.${fn.name}`;
+    if (TRIVIAL.has(label) || KOTLIN_ONLY.has(label) || REPORTER.has(label)) continue;
+    checked++;
+    const siblings = new Set(fns.filter(other => other.owner === fn.owner && guarded(other)).map(other => other.name));
+    if (!guarded(fn, siblings)) problems.push(`${fn.where}: ${label} is callable from JS but not \`= boundary("${label}", ...)\``);
   }
   return { problems, checked };
 }
 
-test('every JS-callable iosMain facade fun goes through boundary()', () => {
+test('every JS-callable facade fun goes through boundary()', () => {
   const { problems, checked } = unguarded();
   assert.ok(checked > 100, `only ${checked} facade funs found; the parser lost them`);
   assert.deepEqual(problems, []);
 });
 
 test('the gate finds the facades it guards', () => {
-  const found = new Set(walk(IOS_MAIN, n => n.endsWith('.kt')).flatMap(facadeFunctions).map(fn => `${fn.owner}.${fn.name}`));
+  const { fns, owners, reached } = scan();
+  const found = new Set(fns.map(fn => `${fn.owner}.${fn.name}`));
   for (const label of ['IosGlassesSession.setSurfaceVisible', 'IosSurfaceCompositor.visible', 'IosVideoPlayer.probe',
     'IosWavRecorder.repairHeader', 'IosRemoteInput.startAddress', 'IosConversationStore.deleteUnreferencedRecordings']) {
     assert.ok(found.has(label), label);
@@ -157,6 +184,24 @@ test('the gate finds the facades it guards', () => {
   assert.ok(!found.has('IosGlassesSession.onAudioPacket'));
   assert.ok(!found.has('IosCaptionEngine.loadTranscriber'));
   assert.ok(!found.has('IosGlassesSession.coreForTests'));
+  // commonMain classes JS or a shim calls directly, and the one IosConversationStore inherits from.
+  for (const owner of ['ConnectionCounters', 'VoiceEndpointDetector', 'ConversationStoreCore']) assert.ok(reached.has(owner), owner);
+  assert.ok(found.has('ConversationStoreCore.querySessions'));
+  // Every FaceclawKit<Name> the app names is a parsed class/object or a declared interface/enum:
+  // a class the header regex skipped (an annotation, a modifier) would otherwise drop out unseen.
+  const declared = new Set(kotlinFiles().flatMap(file => [...fs.readFileSync(file, 'utf8')
+    .matchAll(/^\s*(?:(?:public|fun|sealed|enum|actual) )*interface (\w+)|^\s*enum class (\w+)/gm)].map(m => m[1] ?? m[2])));
+  const lost = [...referencedNames()].filter(name => !owners.has(name) && !declared.has(name));
+  assert.deepEqual(lost, []);
+  // The reporter is exempt only while its body is one try/catch.
+  const reporter = fns.find(fn => fn.owner === 'IosErrorReports' && fn.name === 'record');
+  assert.match(reporter.rest, /^[^)]*\)\s*\{\s*try\s*\{[^]*\} catch \(t: Throwable\) \{/);
+});
+
+test('the class regex takes annotations and modifiers and does not let a body-less class swallow the next', () => {
+  const heads = text => [...text.matchAll(CLASS)].map(m => m[2]);
+  assert.deepEqual(heads('@OptIn(X::class) class IosA {\n}\nsealed class B {\n}\nfinal class C(\n    val x: Int,\n) : D() {\n}\nactual object E {\n}\n'), ['IosA', 'B', 'C', 'E']);
+  assert.deepEqual(heads('data class P(val a: Int)\n\nclass IosQ {\n}\n'), ['IosQ']);
 });
 
 test('guarded() needs the helper and the owner.name label', () => {

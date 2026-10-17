@@ -312,8 +312,15 @@ class GlassesSessionCoreTest {
         val core = Session().core
         val als = ByteArray(24).also { byteArrayOf(65, 76, 1, 2, 11, 0, 2).copyInto(it) } // 0.2 lux
         core.configureBrightness(true, 50, 20, 100, "0:0,1000:100", 280)
+        val reported = mutableListOf<Pair<String, String>>()
+        val before = CaughtErrors.sink
+        CaughtErrors.sink = { source, error -> reported += source to error.toString() }
         // ln(1+1e-17) == ln(1), so the knots collide; on iOS a throw here aborts the app.
-        core.configureBrightness(true, 50, 20, 100, "0:0,1e-17:100", 450)
+        try { core.configureBrightness(true, 50, 20, 100, "0:0,1e-17:100", 450) } finally { CaughtErrors.sink = before }
+        // The fallback is not silent: the owner gets a report naming the rejected curve.
+        assertEquals(1, reported.size)
+        assertEquals("brightness", reported[0].first)
+        assertTrue("0:0,1e-17:100" in reported[0].second, reported[0].second)
         assertEquals(450, core.brightnessPolicy.fadeMs)
         core.brightnessPolicy.sample(als, 1000)
         assertEquals(26, core.brightnessPolicy.target) // Default curve; the previous one gives 22.

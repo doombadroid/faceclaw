@@ -661,6 +661,7 @@ class GlassesSessionCore(
             } catch (e: IllegalArgumentException) {
                 // The curve is a saved setting; an exception here would abort the iOS app on every connect.
                 logWarn("brightness curve '$curve' rejected; using default", e)
+                CaughtErrors.report("brightness", IllegalArgumentException("brightness curve '$curve' rejected (${e.message}); using the default", e))
                 brightnessPolicy.configure(auto, level, minimum, maximum, BrightnessPolicy.DEFAULT_CURVE, fadeMs)
             }
         }

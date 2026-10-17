@@ -42,6 +42,8 @@ actual object PlatformLog {
     }
 }
 
+internal actual val platformCaughtErrorSink: ((source: String, error: Throwable) -> Unit)? = null
+
 actual fun startThread(name: String, daemon: Boolean, body: () -> Unit) {
     val thread = Thread(body, name)
     thread.isDaemon = daemon

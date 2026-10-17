@@ -21,13 +21,12 @@ interface SqlPort {
  */
 open class ConversationStoreCore(private val sql: SqlPort) {
     companion object {
-        private const val TAG = "FaceclawConvStore"
         private const val DB_VERSION = 2
         private const val DEFAULT_COLOR = "#4FC3F7"
     }
 
     init {
-        guard(Unit) { migrate() }
+        boundary("ConversationStoreCore.init", Unit) { migrate() }
     }
 
     private fun rows(statement: String, vararg args: Any?): List<List<String?>> =
@@ -41,14 +40,6 @@ open class ConversationStoreCore(private val sql: SqlPort) {
 
     private fun insert(statement: String, vararg args: Any?): Long =
         if (sql.query(statement, args.map { it?.toString() }) == null) -1 else long("SELECT last_insert_rowid()") ?: -1
-
-    private fun <T> guard(fallback: T, block: () -> T): T =
-        try {
-            block()
-        } catch (t: Throwable) {
-            PlatformLog.e(TAG, "conversation store failed", t)
-            fallback
-        }
 
     private fun <T> transaction(block: () -> T): T {
         exec("BEGIN")
@@ -93,26 +84,26 @@ open class ConversationStoreCore(private val sql: SqlPort) {
 
     // ---- sessions ----
 
-    fun startSession(startedAtMs: Long, title: String?): Long = guard(-1L) {
+    fun startSession(startedAtMs: Long, title: String?): Long = boundary("ConversationStoreCore.startSession", -1L) {
         insert("INSERT INTO sessions (started_at, title) VALUES (?, ?)", startedAtMs, title?.ifEmpty { null })
     }
 
-    fun endSession(sessionId: Long, endedAtMs: Long, audioPath: String?, audioCodec: String?, avgSentiment: Double) = guard(Unit) {
+    fun endSession(sessionId: Long, endedAtMs: Long, audioPath: String?, audioCodec: String?, avgSentiment: Double) = boundary("ConversationStoreCore.endSession", Unit) {
         if (audioPath.isNullOrEmpty()) exec("UPDATE sessions SET ended_at=?, avg_sentiment=? WHERE id=?", endedAtMs, avgSentiment, sessionId)
         else exec("UPDATE sessions SET ended_at=?, audio_path=?, audio_codec=?, avg_sentiment=? WHERE id=?",
             endedAtMs, audioPath, audioCodec, avgSentiment, sessionId)
     }
 
-    fun setSessionAudio(sessionId: Long, audioPath: String?, audioCodec: String?) = guard(Unit) {
+    fun setSessionAudio(sessionId: Long, audioPath: String?, audioCodec: String?) = boundary("ConversationStoreCore.setSessionAudio", Unit) {
         exec("UPDATE sessions SET audio_path=?, audio_codec=? WHERE id=?", audioPath, audioCodec, sessionId)
     }
 
-    fun getSessionAudioPath(sessionId: Long): String = guard("") {
+    fun getSessionAudioPath(sessionId: Long): String = boundary("ConversationStoreCore.getSessionAudioPath", "") {
         rows("SELECT audio_path FROM sessions WHERE id=?", sessionId).firstOrNull()?.firstOrNull() ?: ""
     }
 
     /** Sessions, newest first. filterJson: sinceMs, untilMs, speakerId, emotion, query, limit. */
-    fun querySessions(filterJson: String?): String = guard("[]") {
+    fun querySessions(filterJson: String?): String = boundary("ConversationStoreCore.querySessions", "[]") {
         val filter = parseFilter(filterJson)
         val where = ArrayList<String>()
         val args = ArrayList<Any?>()
@@ -144,7 +135,7 @@ open class ConversationStoreCore(private val sql: SqlPort) {
     // ---- segments ----
 
     /** Insert one transcript segment (Android's JSON keys). Returns the new row id, or -1. */
-    fun insertSegment(json: String?): Long = guard(-1L) {
+    fun insertSegment(json: String?): Long = boundary("ConversationStoreCore.insertSegment", -1L) {
         val s = Json.parseObject(json ?: "")
         val sessionId = s.long("sessionId") ?: error("sessionId missing")
         val columns = linkedMapOf<String, Any?>(
@@ -166,7 +157,7 @@ open class ConversationStoreCore(private val sql: SqlPort) {
     }
 
     /** Update mutable fields of a segment (same keys as insertSegment; a null speakerId clears it). */
-    fun updateSegment(segmentId: Long, json: String?) = guard(Unit) {
+    fun updateSegment(segmentId: Long, json: String?) = boundary("ConversationStoreCore.updateSegment", Unit) {
         val s = Json.parseObject(json ?: "")
         val values = linkedMapOf<String, Any?>()
         if (s.containsKey("speakerId")) values["speaker_id"] = s.long("speakerId")
@@ -186,12 +177,12 @@ open class ConversationStoreCore(private val sql: SqlPort) {
         "translationLang" to (c[8] ?: ""), "sentiment" to (c[9]?.toDouble() ?: 0.0), "emotion" to (c[10] ?: ""), "angle" to c[11]?.toLong(),
     )
 
-    fun querySegments(sessionId: Long): String = guard("[]") {
+    fun querySegments(sessionId: Long): String = boundary("ConversationStoreCore.querySegments", "[]") {
         Json.write(rows("SELECT $segmentColumns FROM segments WHERE session_id=? ORDER BY started_at ASC", sessionId).map(::segmentRow))
     }
 
     /** Search segments across sessions. filterJson: query, emotion, speakerId, sinceMs, untilMs, limit. */
-    fun searchSegments(filterJson: String?): String = guard("[]") {
+    fun searchSegments(filterJson: String?): String = boundary("ConversationStoreCore.searchSegments", "[]") {
         val filter = parseFilter(filterJson)
         val where = ArrayList<String>()
         val args = ArrayList<Any?>()
@@ -209,14 +200,14 @@ open class ConversationStoreCore(private val sql: SqlPort) {
     }
 
     /** Per-segment voice-print embeddings of a session (for re-diarization). */
-    fun querySegmentEmbeddings(sessionId: Long): String = guard("[]") {
+    fun querySegmentEmbeddings(sessionId: Long): String = boundary("ConversationStoreCore.querySegmentEmbeddings", "[]") {
         Json.write(rows("SELECT id, hex(embedding) FROM segments WHERE session_id=? AND embedding IS NOT NULL", sessionId)
             .map { linkedMapOf("id" to it[0]!!.toLong(), "embeddingBase64" to Base64.encode(hexBytes(it[1]))) })
     }
 
     // ---- speakers ----
 
-    fun createSpeaker(name: String?, color: String?, isWearer: Boolean, embeddingBase64: String?): Long = guard(-1L) {
+    fun createSpeaker(name: String?, color: String?, isWearer: Boolean, embeddingBase64: String?): Long = boundary("ConversationStoreCore.createSpeaker", -1L) {
         val now = currentTimeMillis()
         val embedding = embeddingBase64?.takeIf { it.isNotEmpty() }?.let { blobLiteral(Base64.decode(it)) }
         insert("INSERT INTO speakers (name, color, is_wearer, created_at, last_heard_at, embedding, embedding_count)" +
@@ -224,7 +215,7 @@ open class ConversationStoreCore(private val sql: SqlPort) {
             name, color?.ifEmpty { null } ?: DEFAULT_COLOR, if (isWearer) 1 else 0, now, now)
     }
 
-    fun querySpeakers(): String = guard("[]") {
+    fun querySpeakers(): String = boundary("ConversationStoreCore.querySpeakers", "[]") {
         Json.write(rows("SELECT p.id, p.name, p.color, p.is_wearer, hex(p.embedding), p.embedding_count, p.last_heard_at, p.tag," +
             " p.last_recap, p.action_items, p.facts, p.insights_updated_at, p.insights_session_id," +
             " (SELECT COUNT(*) FROM segments g WHERE g.speaker_id = p.id) FROM speakers p ORDER BY p.last_heard_at DESC").map { c ->
@@ -239,27 +230,27 @@ open class ConversationStoreCore(private val sql: SqlPort) {
         })
     }
 
-    fun renameSpeaker(speakerId: Long, name: String?) = guard(Unit) { exec("UPDATE speakers SET name=? WHERE id=?", name, speakerId) }
+    fun renameSpeaker(speakerId: Long, name: String?) = boundary("ConversationStoreCore.renameSpeaker", Unit) { exec("UPDATE speakers SET name=? WHERE id=?", name, speakerId) }
 
-    fun setSpeakerColor(speakerId: Long, color: String?) = guard(Unit) { exec("UPDATE speakers SET color=? WHERE id=?", color, speakerId) }
+    fun setSpeakerColor(speakerId: Long, color: String?) = boundary("ConversationStoreCore.setSpeakerColor", Unit) { exec("UPDATE speakers SET color=? WHERE id=?", color, speakerId) }
 
-    fun setSpeakerTag(speakerId: Long, tag: String?) = guard(Unit) { exec("UPDATE speakers SET tag=? WHERE id=?", tag, speakerId) }
+    fun setSpeakerTag(speakerId: Long, tag: String?) = boundary("ConversationStoreCore.setSpeakerTag", Unit) { exec("UPDATE speakers SET tag=? WHERE id=?", tag, speakerId) }
 
     /** LLM insights for a speaker: recap, action items and facts (JSON string arrays). */
-    fun setSpeakerInsights(speakerId: Long, recap: String?, actionItemsJson: String?, factsJson: String?, sessionId: Long) = guard(Unit) {
+    fun setSpeakerInsights(speakerId: Long, recap: String?, actionItemsJson: String?, factsJson: String?, sessionId: Long) = boundary("ConversationStoreCore.setSpeakerInsights", Unit) {
         exec("UPDATE speakers SET last_recap=?, action_items=?, facts=?, insights_updated_at=?, insights_session_id=? WHERE id=?",
             recap ?: "", actionItemsJson ?: "", factsJson ?: "", currentTimeMillis(), sessionId, speakerId)
     }
 
     /** Exactly one wearer profile at a time. */
-    fun setSpeakerWearer(speakerId: Long, isWearer: Boolean) = guard(Unit) {
+    fun setSpeakerWearer(speakerId: Long, isWearer: Boolean) = boundary("ConversationStoreCore.setSpeakerWearer", Unit) {
         if (isWearer) exec("UPDATE speakers SET is_wearer = 0")
         exec("UPDATE speakers SET is_wearer=? WHERE id=?", if (isWearer) 1 else 0, speakerId)
     }
 
     /** Running-mean centroid update, capped so a long session cannot drown the enrolled voice. */
-    fun updateSpeakerEmbedding(speakerId: Long, embeddingBase64: String?, maxCount: Int) = guard(Unit) {
-        val update = SpeakerEmbeddings.blobToFloats(Base64.decode(embeddingBase64 ?: "")) ?: return@guard
+    fun updateSpeakerEmbedding(speakerId: Long, embeddingBase64: String?, maxCount: Int) = boundary("ConversationStoreCore.updateSpeakerEmbedding", Unit) {
+        val update = SpeakerEmbeddings.blobToFloats(Base64.decode(embeddingBase64 ?: "")) ?: return@boundary
         val row = rows("SELECT hex(embedding), embedding_count FROM speakers WHERE id=?", speakerId).firstOrNull()
         val current = row?.get(0)?.let { SpeakerEmbeddings.blobToFloats(hexBytes(it)) }
         val centroid = SpeakerEmbeddings.runningMean(current, row?.get(1)?.toInt() ?: 0, update, maxCount)
@@ -268,8 +259,8 @@ open class ConversationStoreCore(private val sql: SqlPort) {
     }
 
     /** Move every segment from one speaker onto another and drop the source. */
-    fun mergeSpeakers(fromId: Long, intoId: Long) = guard(Unit) {
-        if (fromId == intoId) return@guard
+    fun mergeSpeakers(fromId: Long, intoId: Long) = boundary("ConversationStoreCore.mergeSpeakers", Unit) {
+        if (fromId == intoId) return@boundary
         transaction {
             exec("UPDATE segments SET speaker_id=? WHERE speaker_id=?", intoId, fromId)
             val profiles = rows("SELECT id, hex(embedding), embedding_count, is_wearer, last_recap, action_items, facts," +
@@ -298,16 +289,16 @@ open class ConversationStoreCore(private val sql: SqlPort) {
         }
     }
 
-    fun reassignSegmentSpeaker(segmentId: Long, speakerId: Long) = guard(Unit) {
+    fun reassignSegmentSpeaker(segmentId: Long, speakerId: Long) = boundary("ConversationStoreCore.reassignSegmentSpeaker", Unit) {
         exec("UPDATE segments SET speaker_id=? WHERE id=?", speakerId, segmentId)
     }
 
     /** Reassign every segment of a speaker within one session (split support). */
-    fun reassignSessionSpeaker(sessionId: Long, fromSpeakerId: Long, toSpeakerId: Long) = guard(Unit) {
+    fun reassignSessionSpeaker(sessionId: Long, fromSpeakerId: Long, toSpeakerId: Long) = boundary("ConversationStoreCore.reassignSessionSpeaker", Unit) {
         exec("UPDATE segments SET speaker_id=? WHERE session_id=? AND speaker_id=?", toSpeakerId, sessionId, fromSpeakerId)
     }
 
-    fun deleteSpeaker(speakerId: Long) = guard(Unit) {
+    fun deleteSpeaker(speakerId: Long) = boundary("ConversationStoreCore.deleteSpeaker", Unit) {
         exec("UPDATE segments SET speaker_id=NULL WHERE speaker_id=?", speakerId)
         exec("DELETE FROM speakers WHERE id=?", speakerId)
     }
@@ -318,7 +309,7 @@ open class ConversationStoreCore(private val sql: SqlPort) {
      * Delete caption sessions older than the cutoff (0 disables), and strip recordings older
      * than their own cutoff while keeping the transcript. Returns a JSON summary.
      */
-    fun applyRetention(captionCutoffMs: Long, recordingCutoffMs: Long): String = guard("{}") {
+    fun applyRetention(captionCutoffMs: Long, recordingCutoffMs: Long): String = boundary("ConversationStoreCore.applyRetention", "{}") {
         var sessionsDeleted = 0L
         var recordingsDeleted = 0
         val deleteAudio = { cutoff: Long ->
@@ -344,7 +335,7 @@ open class ConversationStoreCore(private val sql: SqlPort) {
      * Close out sessions a dead process left open (ended_at NULL), except excludeIdsJson's.
      * Returns them as a JSON array of {id, audioPath, audioCodec}.
      */
-    fun closeInterruptedSessions(excludeIdsJson: String?): String = guard("[]") {
+    fun closeInterruptedSessions(excludeIdsJson: String?): String = boundary("ConversationStoreCore.closeInterruptedSessions", "[]") {
         val exclude = if (excludeIdsJson.isNullOrEmpty()) emptySet() else Json.parseArray(excludeIdsJson).map { (it as JsonNumber).toLong() }.toSet()
         val closed = rows("SELECT id, audio_path, audio_codec FROM sessions WHERE ended_at IS NULL")
             .filter { it[0]!!.toLong() !in exclude }
@@ -361,7 +352,7 @@ open class ConversationStoreCore(private val sql: SqlPort) {
     protected fun referencedRecordingNames(): Set<String> =
         rows("SELECT audio_path FROM sessions WHERE audio_path IS NOT NULL").map { it[0]!!.substringAfterLast('/') }.toSet()
 
-    fun deleteSession(sessionId: Long) = guard(Unit) {
+    fun deleteSession(sessionId: Long) = boundary("ConversationStoreCore.deleteSession", Unit) {
         getSessionAudioPath(sessionId).takeIf { it.isNotEmpty() }?.let { deleteFile(it) }
         exec("DELETE FROM segments WHERE session_id=?", sessionId)
         exec("DELETE FROM sessions WHERE id=?", sessionId)
