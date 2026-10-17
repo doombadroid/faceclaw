@@ -293,3 +293,12 @@ test('partials keep flowing across a roll, and the script tracker keeps its plac
   assert.equal(atRoll, 6); assert.equal(tracker.position, 10);
   h.bridge.stopContinuousCapture();
 });
+
+test('saved voice recordings follow the provider selection into the native capture', async () => {
+  const h = harness();
+  await h.bridge.startPhoneCapture({ ...h.onboard, saveRecording: true }, () => {});
+  assert.equal(h.native.saveRecording, true);
+  h.bridge.stop(); await h.bridge.startContinuousCapture(null, h.cloud, () => {});
+  assert.equal(h.native.saveRecording, false);
+  h.bridge.stopContinuousCapture();
+});

@@ -52,7 +52,7 @@ import { onAnySettingChanged,
   previewColorSetting, lockScreenEnabledSetting, getBrightnessPreferences, getStringSettingById,
   nightscoutSiteUrlSetting, nightscoutApiTokenSetting, voiceProviderSetting, elevenLabsApiKeySetting,
   openAiApiKeySetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs,
-  ringConnectionModeSetting, firmwareDebugFlagsSetting } from '../ui/dashboard-settings'
+  ringConnectionModeSetting, firmwareDebugFlagsSetting, saveVoiceRecordingsSetting } from '../ui/dashboard-settings'
 import type { VoiceProviderSelection } from '../native/cloud-stt-provider'
 import type { PhoneGesture } from '../phone-ui/phone-gestures'
 import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from '../apps/onboarding/onboarding-progress'
@@ -1040,7 +1040,7 @@ export class IosPreviewController {
   /** The transcription provider setting and the keys the cloud ones need. */
   private voiceProvider(): VoiceProviderSelection {
     return { provider: voiceProviderSetting.get(), elevenLabsApiKey: elevenLabsApiKeySetting.get(),
-      openAiApiKey: openAiApiKeySetting.get(), sonioxApiKey: sonioxApiKeySetting.get() }
+      openAiApiKey: openAiApiKeySetting.get(), sonioxApiKey: sonioxApiKeySetting.get(), saveRecording: saveVoiceRecordingsSetting.get() }
   }
   /** Append to the app log (Connection Details, bluetooth.log and the system log). */
   log(message: string): void { this.logBluetooth(message) }

@@ -148,7 +148,7 @@ export class IosVoiceControlBridge {
       onStatus: status => { if (current()) this.setStatus(status) },
       onError: message => { if (current()) { this.teardown(); this.setStatus(message); this.emitEnd() } },
     }, () => this.holders.has('continuous'))
-    native.continuous = this.holders.has('continuous')
+    native.continuous = this.holders.has('continuous'); native.saveRecording = !!voice.saveRecording
     if (!cloud) return String((phone ? native.startPhoneWithEndpointing(endpointing) : native.startWithEndpointing(endpointing)) ?? '')
     const error = String(native.startPcmCaptureWithEndpointingPhone(endpointing, phone) ?? '')
     if (error) return error

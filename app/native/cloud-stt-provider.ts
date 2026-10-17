@@ -14,6 +14,8 @@ export type VoiceProviderSelection = {
   elevenLabsApiKey: string;
   openAiApiKey: string;
   sonioxApiKey: string;
+  /** iOS: keep a WAV of the capture (the Developer setting). */
+  saveRecording?: boolean;
 };
 
 type CloudProvider = {

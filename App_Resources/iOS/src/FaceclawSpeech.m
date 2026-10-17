@@ -1,6 +1,7 @@
 #import "FaceclawSpeech.h"
 #import "FaceclawLc3Decoder.h"
 #import "FaceclawSpeechTranscript.h"
+#import "FaceclawLog.h"
 #import <FaceclawKit/FaceclawKit.h>
 #import <Speech/Speech.h>
 #import <AVFoundation/AVFoundation.h>
@@ -27,6 +28,8 @@
 @property(nonatomic) BOOL endpointing;
 @property(nonatomic, strong) NSDate *taskStarted;
 @property(nonatomic) NSUInteger fastErrors;
+// Set on the main queue at start and end, appended on audioQueue.
+@property(atomic, strong) NSMutableData *recording;
 @end
 /** Resamples one tap buffer to 16 kHz mono PCM16LE. Called on the serial
  * audio queue; the converter keeps its filter state between buffers. */
@@ -44,6 +47,34 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
         }];
     if (status == AVAudioConverterOutputStatus_Error || !output.frameLength) return nil;
     return [NSData dataWithBytes:output.int16ChannelData[0] length:output.frameLength * sizeof(int16_t)];
+}
+/** Writes 16 kHz mono PCM16LE as Documents/voice-recordings/voice-<time>.wav.
+ * ponytail: the capture is held in memory (~32 KB/s, as on Android); stream to
+ * the file if hour-long continuous recordings matter. */
+static void writeWav(NSData *pcm) {
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSURL *folder = [[files URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:@"voice-recordings" isDirectory:YES];
+    NSError *error = nil;
+    if (![files createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:&error]) {
+        [FaceclawLog log:[NSString stringWithFormat:@"Voice recording: %@", error.localizedDescription]];
+        return;
+    }
+    NSDateFormatter *formatter = [NSDateFormatter new];
+    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    formatter.dateFormat = @"yyyyMMdd-HHmmss-SSS";
+    NSURL *file = [folder URLByAppendingPathComponent:[NSString stringWithFormat:@"voice-%@.wav", [formatter stringFromDate:[NSDate date]]]];
+    // The canonical 44-byte header; iOS devices are little-endian, as WAV is.
+    uint32_t dataSize = (uint32_t)pcm.length, riffSize = 36 + dataSize, fmtSize = 16, rate = 16000, byteRate = 32000;
+    uint16_t encoding = 1, channels = 1, blockAlign = 2, bits = 16;
+    NSMutableData *wav = [NSMutableData dataWithCapacity:44 + pcm.length];
+    [wav appendBytes:"RIFF" length:4]; [wav appendBytes:&riffSize length:4]; [wav appendBytes:"WAVEfmt " length:8];
+    [wav appendBytes:&fmtSize length:4]; [wav appendBytes:&encoding length:2]; [wav appendBytes:&channels length:2];
+    [wav appendBytes:&rate length:4]; [wav appendBytes:&byteRate length:4]; [wav appendBytes:&blockAlign length:2];
+    [wav appendBytes:&bits length:2]; [wav appendBytes:"data" length:4]; [wav appendBytes:&dataSize length:4];
+    [wav appendData:pcm];
+    if (![wav writeToURL:file options:NSDataWritingAtomic error:&error])
+        [FaceclawLog log:[NSString stringWithFormat:@"Voice recording: %@", error.localizedDescription]];
+    else [FaceclawLog log:[NSString stringWithFormat:@"Voice recording saved: %@ (%.1f s)", file.lastPathComponent, dataSize / 32000.0]];
 }
 @implementation FaceclawSpeech
 - (instancetype)init {
@@ -94,6 +125,7 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
         if (!self.decoder) return @"Could not initialize the glasses audio decoder.";
     }
     self.pcmOutput = pcm;
+    self.recording = self.saveRecording ? [NSMutableData data] : nil;
     self.bestText = @""; self.accepting = YES;
     // Always measured: hands-free capture finishes on it, continuous capture rolls on it.
     self.endpointing = endpointing;
@@ -201,7 +233,9 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
     AVAudioFormat *format = [input outputFormatForBus:0];
     if (format.sampleRate <= 0 || !format.channelCount) return @"No phone microphone is available. Check your audio input and try again.";
     AVAudioConverter *converter = nil;
-    if (self.pcmOutput) {
+    BOOL pcmOutput = self.pcmOutput;
+    // 16 kHz PCM for a cloud provider or a saved recording.
+    if (pcmOutput || self.recording) {
         AVAudioFormat *pcmFormat = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatInt16 sampleRate:16000 channels:1 interleaved:YES];
         converter = [[AVAudioConverter alloc] initFromFormat:format toFormat:pcmFormat];
         if (!converter) return @"Could not convert phone microphone audio.";
@@ -222,10 +256,10 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
             memcpy(destination->mBuffers[i].mData, source->mBuffers[i].mData, source->mBuffers[i].mDataByteSize);
         dispatch_async(owner.audioQueue, ^{ @autoreleasepool {
             if (owner.generation != generation) return;
-            if (converter) {
-                NSData *pcm = resampleToPcm(converter, copy);
-                if (pcm.length) [owner deliverPcm:pcm generation:generation];
-            } else [owner.request appendAudioPCMBuffer:copy];
+            NSData *pcm = converter ? resampleToPcm(converter, copy) : nil;
+            if (!pcmOutput) [owner.request appendAudioPCMBuffer:copy];
+            else if (pcm.length) [owner deliverPcm:pcm generation:generation];
+            if (pcm.length) [owner.recording appendData:pcm];
             double sum = 0;
             if (copy.floatChannelData) {
                 const float *samples = copy.floatChannelData[0];
@@ -301,6 +335,7 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
                 // The decoder's output is already the PCM consumer's format.
                 if (pcmOutput) [self deliverPcm:pcm generation:generation];
                 else [self.request appendAudioPCMBuffer:buffer];
+                [self.recording appendData:pcm];
             }
             speechEnded = [self.endpointDetector acceptLevelRms:rms * 32768.0 sampleCount:(int32_t)frames];
         }
@@ -347,7 +382,15 @@ static NSData *resampleToPcm(AVAudioConverter *converter, AVAudioPCMBuffer *inpu
         if (self.generation == generation && self.pcmHandler) self.pcmHandler(pcm);
     });
 }
+/** Ends the capture's recording (main queue); it is written on audioQueue, after any
+ * chunk still being appended there. */
+- (void)saveRecordingFile {
+    NSMutableData *recording = self.recording;
+    self.recording = nil;
+    if (recording) dispatch_async(self.audioQueue, ^{ if (recording.length) writeWav(recording); });
+}
 - (void)cancel {
+    [self saveRecordingFile];
     self.generation++;
     self.accepting = NO; self.pendingPackets = 0; self.pcmOutput = NO;
     [self stopPhoneAudio];

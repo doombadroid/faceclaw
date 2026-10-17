@@ -27,6 +27,7 @@ import {
   previewColorSetting,
   previewScalingSetting,
   ringConnectionModeSetting,
+  saveVoiceRecordingsSetting,
   screenFadeSetting,
   screenTimeoutSetting,
   showBleBandwidthSetting,
@@ -144,6 +145,7 @@ const PHONE_TITLES: Record<string, string> = {
   "data-collection": dataCollectionSetting.label.replace(/ statistics$/, " Statistics"),
   "show-ble-bandwidth": "Show BLE Bandwidth Usage",
   "ring-connection-mode": "Ring Connection",
+  "save-voice-recordings": "Save Voice Recordings",
   "firmware-debug-flags": "Firmware Debug Flags",
 };
 
@@ -296,6 +298,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     title: "Developer",
     sections: () => [
       { footer: ringConnectionModeSetting.description, items: [item(ringConnectionModeSetting)] },
+      { footer: saveVoiceRecordingsSetting.description, items: [item(saveVoiceRecordingsSetting)] },
       { footer: firmwareDebugFlagsSetting.description, items: [item(firmwareDebugFlagsSetting)] },
       { footer: showBleBandwidthSetting.description, items: [item(showBleBandwidthSetting)] },
     ],

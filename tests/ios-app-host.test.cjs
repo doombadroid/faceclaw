@@ -6,7 +6,7 @@ const ts = require('typescript');
 const path = require('node:path');
 // The provider settings ios-preview-controller hands the voice bridge.
 const voiceSettings = { voiceProviderSetting: { get: () => 'onboard' }, elevenLabsApiKeySetting: { get: () => '' },
-  openAiApiKeySetting: { get: () => '' }, sonioxApiKeySetting: { get: () => '' } };
+  openAiApiKeySetting: { get: () => '' }, sonioxApiKeySetting: { get: () => '' }, saveVoiceRecordingsSetting: { get: () => false } };
 function load(file, context) {
   const sandbox = { exports: {}, ...context };
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');

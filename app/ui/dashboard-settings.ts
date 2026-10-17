@@ -867,7 +867,9 @@ export const saveVoiceRecordingsSetting = new ConfigSettingBoolean({
   label: "Save voice recordings",
   storageKey: "developer.saveVoiceRecordings",
   defaultValue: false,
-  description: "Keep a copy of captured voice audio on the phone, for debugging transcription problems.",
+  description: global.isIOS
+    ? `Keep a WAV of each voice capture on the phone (Files app > On My iPhone > ${APP_NAME} > voice-recordings), for debugging transcription problems.`
+    : "Keep a copy of captured voice audio on the phone, for debugging transcription problems.",
 });
 
 export const assistantSkipConfirmationSetting = new ConfigSettingBoolean({

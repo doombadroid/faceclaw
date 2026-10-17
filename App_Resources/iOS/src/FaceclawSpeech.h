@@ -9,6 +9,9 @@
  * recognition restarts on a fresh request, with a "pause" event after an
  * endpoint. Read on the main queue, so it may change during a capture. */
 @property(nonatomic) BOOL continuous;
+/** Keep the capture's audio as one 16 kHz mono WAV in Documents/voice-recordings,
+ * written when the capture ends (across continuous rolls). Read at start. */
+@property(nonatomic) BOOL saveRecording;
 + (NSInteger)authorizationStatus;
 + (NSInteger)microphoneAuthorizationStatus;
 + (void)requestMicrophoneAuthorization:(void (^)(NSInteger status))completion;
