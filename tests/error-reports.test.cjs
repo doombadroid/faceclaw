@@ -116,6 +116,31 @@ test('A burst of distinct errors writes at most once a second, the first at once
   assert.equal(h.stored().length, 30);
 });
 
+test('An error repeating every frame rewrites the file at counts 2, 4, 8... only, and the latest count is flushed at suspend', () => {
+  const h = harness();
+  let writes = 0;
+  const files = { set: h.files.set.bind(h.files) };
+  h.files.set = (k, v) => { if (k.endsWith('.tmp')) writes++; return files.set(k, v); };
+  h.module.reportError('IosGlassesSession.submitSurfaceFrame', new Error('surface gone'));
+  assert.equal(writes, 1, 'a new report is on disk at once');
+  // A thousand frames, the timer firing between each: a second's worth of frames or more.
+  for (let frame = 0; frame < 1000; frame++) {
+    h.now += 1000;
+    h.module.reportError('IosGlassesSession.submitSurfaceFrame', new Error('surface gone'));
+    h.flushTimers();
+  }
+  assert.equal(writes, 1 + 9, 'counts 2, 4, 8 ... 512 only');
+  assert.equal(h.stored()[0].count, 512);
+  h.module.reportError('other', new Error('new'));
+  assert.equal(writes, 11, 'a new report still saves at once');
+  assert.equal(h.stored().find(r => r.source === 'IosGlassesSession.submitSurfaceFrame').count, 1001, 'and carries the latest count');
+  h.module.reportError('IosGlassesSession.submitSurfaceFrame', new Error('surface gone'));
+  h.fire('suspend');
+  assert.equal(h.stored().find(r => r.source === 'IosGlassesSession.submitSurfaceFrame').count, 1002, 'suspend flushes a repeat-only change');
+  h.fire('exit');
+  assert.equal(writes, 12, 'nothing left to flush at exit');
+});
+
 test('A source failing with a different message every time cannot flood the reports', () => {
   const h = harness();
   const fresh = [];

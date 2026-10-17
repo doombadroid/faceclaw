@@ -38,7 +38,7 @@ let reports: ErrorReport[] | null = null
 const thisSession = new Map<string, ErrorReport>()
 const messagesPerSource = new Map<string, number>()
 const listeners = new Set<Listener>()
-let saveTimer: ReturnType<typeof setTimeout> | null = null, lastSave = 0, lifecycleHooked = false
+let saveTimer: ReturnType<typeof setTimeout> | null = null, lastSave = 0, lifecycleHooked = false, unsaved = false
 let build: string | null = null
 
 /** Record a caught error. Never throws: it is called from inside catch blocks. */
@@ -71,9 +71,12 @@ export function reportError(source: string, error: unknown, context?: Record<str
       list.push(report)
     }
     // A new error is on disk before anything else runs, unless a write just happened: a
-    // burst of distinct errors must not rewrite the file every frame. A repeat only bumps a count.
+    // burst of distinct errors must not rewrite the file every frame. A repeat only bumps a
+    // count, written at counts 2, 4, 8... (and at suspend/exit): an error every frame must not
+    // rewrite the whole file every second.
     if (isNew && new Date().getTime() - lastSave >= SAVE_INTERVAL_MS) save()
-    else scheduleSave()
+    else if (isNew || !(report.count & (report.count - 1))) scheduleSave()
+    else unsaved = true
     for (const listener of [...listeners]) {
       try { listener({ ...report }, isNew) } catch (listenerError) { console.error(`error report listener failed: ${listenerError}`) }
     }
@@ -95,6 +98,7 @@ export function clearErrorReports(): void {
   messagesPerSource.clear()
   if (saveTimer !== null) clearTimeout(saveTimer)
   saveTimer = null
+  unsaved = false
   try { for (const path of [filePath(), tmpPath()]) if (File.exists(path)) File.fromPath(path).removeSync() } catch (error) { console.error(`error-reports: could not clear: ${error}`) }
 }
 
@@ -166,7 +170,7 @@ function scheduleSave(): void {
   if (lifecycleHooked) return
   lifecycleHooked = true
   // The second after a repeat is when a force-quit or the real crash tends to come.
-  const flush = () => { if (saveTimer !== null) save() }
+  const flush = () => { if (saveTimer !== null || unsaved) save() }
   Application.on(Application.suspendEvent, flush)
   Application.on(Application.exitEvent, flush)
 }
@@ -179,6 +183,7 @@ function scheduleSave(): void {
 function save(): void {
   if (saveTimer !== null) clearTimeout(saveTimer)
   saveTimer = null
+  unsaved = false
   lastSave = new Date().getTime()
   try {
     const list = sorted(loaded())
