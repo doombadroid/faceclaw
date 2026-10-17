@@ -12,3 +12,22 @@ const SherpaOnnxOfflineRecognizer *faceclaw_sherpa_recognizer(const char *model_
 
 /** The trimmed text for n 16 kHz float samples; malloc'd (the caller frees), never NULL. */
 char *faceclaw_sherpa_recognize(const SherpaOnnxOfflineRecognizer *recognizer, const float *samples, int32_t n);
+
+/** The speaker-embedding extractor (Android's FaceclawSpeakerId settings); NULL when it will not load. */
+const SherpaOnnxSpeakerEmbeddingExtractor *faceclaw_sherpa_embedder(const char *model_path);
+
+/** Writes the raw embedding of n 16 kHz samples into out (up to capacity floats); returns
+ * its dimension, or 0 when the input is too short to embed. */
+int32_t faceclaw_sherpa_embed(const SherpaOnnxSpeakerEmbeddingExtractor *extractor, const float *samples, int32_t n,
+                              float *out, int32_t capacity);
+
+/** Offline diarization (pyannote segmentation + the embedding model + fast clustering) with
+ * Android's FaceclawDiarizer settings; clusters <= 0 lets the threshold decide. NULL when the
+ * models will not load. */
+const SherpaOnnxOfflineSpeakerDiarization *faceclaw_sherpa_diarizer(const char *segmentation_model, const char *embedding_model,
+                                                                    int32_t clusters, float threshold);
+
+/** Speaker turns of n 16 kHz samples as JSON [{"startMs":..,"endMs":..,"cluster":..}] sorted by
+ * start, malloc'd (the caller frees); NULL when it failed. A non-zero progress return stops early. */
+char *faceclaw_sherpa_diarize(const SherpaOnnxOfflineSpeakerDiarization *diarizer, const float *samples, int32_t n,
+                              SherpaOnnxOfflineSpeakerDiarizationProgressCallback progress, void *arg);

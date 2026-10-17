@@ -116,6 +116,47 @@ export function deleteFile(path: string): void {
   }
 }
 
+export type DiarizerCallbacks = {
+  /** In [0, 1]. */
+  onProgress: (fraction: number) => void;
+  /** Turns as JSON [{startMs, endMs, cluster}], sorted by start. */
+  onDone: (turnsJson: string) => void;
+  onError: (message: string) => void;
+};
+
+// Each run's listener is referenced only from Java while the diarizer works;
+// hold it here so it isn't GC'd before its callbacks.
+const activeDiarizers = new Set<any>();
+
+/** Offline re-diarization of a saved recording (FaceclawDiarizer, its own thread); throws when it cannot start. */
+export function startDiarizer(
+  segmentationModel: string,
+  embeddingModel: string,
+  audioPath: string,
+  numClusters: number,
+  threshold: number,
+  callbacks: DiarizerCallbacks,
+): void {
+  const listener = new com.faceclaw.app.FaceclawDiarizer.Listener({
+    onProgress: (progress: number) => callbacks.onProgress(Number(progress)),
+    onDone: (turnsJson: string) => {
+      activeDiarizers.delete(listener);
+      callbacks.onDone(String(turnsJson));
+    },
+    onError: (message: string) => {
+      activeDiarizers.delete(listener);
+      callbacks.onError(String(message));
+    },
+  });
+  activeDiarizers.add(listener);
+  try {
+    new com.faceclaw.app.FaceclawDiarizer(segmentationModel, embeddingModel, audioPath, numClusters, threshold, listener).start();
+  } catch (error) {
+    activeDiarizers.delete(listener);
+    throw error;
+  }
+}
+
 const RECORDING_AAC_BITRATE = 32_000;
 // Transcoder listeners are referenced only from Java while a transcode runs;
 // hold them here so they aren't GC'd before their callback.

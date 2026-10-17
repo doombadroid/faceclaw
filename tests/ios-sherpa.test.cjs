@@ -21,11 +21,12 @@ test('the ObjC shim implements every selector of the Kotlin protocols it conform
   const kotlin = read(SHERPA_KT), shim = read('App_Resources/iOS/src/FaceclawSherpa.m');
   const implemented = new Set([...shim.matchAll(/^- \([^)]*\)([^{;]+)\{/gm)].map(([, sig]) =>
     sig.trim().split(/\s+/).filter(part => part.includes(':') || !part.includes(')')).map(part => part.includes(':') ? part.split(':')[0] + ':' : part).join('')));
-  for (const [protocol, selectors] of [['IosSherpaLoader', protocolSelectors(kotlin, 'IosSherpaLoader')], ['IosPcmRecognizer', protocolSelectors(kotlin, 'IosPcmRecognizer')]]) {
+  for (const protocol of ['IosSherpaLoader', 'IosPcmRecognizer', 'IosVoicePrinter']) {
     assert.match(shim, new RegExp(`<FaceclawKit${protocol}>`), protocol);
-    for (const selector of selectors) assert.ok(implemented.has(selector), `${protocol}: ${selector}`);
+    for (const selector of protocolSelectors(kotlin, protocol)) assert.ok(implemented.has(selector), `${protocol}: ${selector}`);
   }
-  assert.deepEqual(protocolSelectors(kotlin, 'IosSherpaLoader'), ['recognizerModelDir:whisper:']);
+  assert.deepEqual(protocolSelectors(kotlin, 'IosSherpaLoader'), ['recognizerModelDir:whisper:', 'voicePrinterModelPath:']);
+  assert.deepEqual(protocolSelectors(kotlin, 'IosVoicePrinter'), ['embedSamples:', 'close']);
 });
 
 test('NativeScript sees the ObjC shim, never sherpa\'s C headers', () => {
@@ -63,4 +64,28 @@ test('the on-device STT client drives IosOnDeviceTranscriber with names the Kotl
   for (const name of Object.keys(listener.methods)) assert.ok(exported.has(name), `${name} is not exported by Kotlin`);
   listener.methods.onReady(); listener.methods.onTranscriptTextIsFinal('hi', false); listener.methods.onErrorMessage('boom');
   assert.deepEqual(events, [['s', 'Loading voice model…'], ['s', 'Listening…'], ['ready'], ['t', 'hi', false], ['e', 'boom']]);
+});
+
+test('the speaker verifier wraps IosSpeakerVerifier with exported names and starts once', async () => {
+  const calls = [];
+  let listener = null;
+  const native = new Proxy({}, { get: (_, name) => (...args) => { calls.push([name, ...args]); return native; } });
+  const stt = loader({ FaceclawSherpa: { new: () => ({ loader: true }) }, FaceclawKitIosSpeakerVerifier: { alloc: () => native },
+    FaceclawKitIosSpeakerVerifiedListener: 'verified-protocol' }, {
+    './asr-model': {}, './kotlin-data': { toData: bytes => ({ bytes: [...bytes] }) },
+    './kotlin-listener.ios': { kotlinListener: (protocol, methods) => { listener = { protocol, methods }; return methods; } },
+  })('app/native/onboard-stt.ios.ts');
+  const wearer = new Float32Array([1, 0]);
+  const verifier = stt.createSpeakerVerifier({ speakerModelPath: '/m/speaker.onnx', wearerEmbedding: wearer, threshold: 0.8 });
+  verifier.acceptPcm('pcm');
+  const first = verifier.verdict(), second = verifier.verdict();
+  assert.deepEqual(calls.map(call => call[0]), ['initWithLoaderModelPathWearerThresholdListener', 'acceptPcmChunk', 'verify']);
+  assert.deepEqual(calls[0].slice(1, 5), [{ loader: true }, '/m/speaker.onnx', { bytes: [...new Uint8Array(wearer.buffer)] }, 0.8]);
+  const exported = exportedNames(SHERPA_KT);
+  for (const [name] of calls) assert.ok(exported.has(name), `${name} is not exported by Kotlin`);
+  assert.equal(listener.protocol, 'verified-protocol');
+  for (const name of Object.keys(listener.methods)) assert.ok(exported.has(name), `${name} is not exported by Kotlin`);
+  listener.methods.onVerifiedIsWearerSimilarity(false, 0.25);
+  assert.deepEqual({ ...(await first) }, { isWearer: false, similarity: 0.25 });
+  assert.equal(await second, await first);
 });

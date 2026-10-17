@@ -2,10 +2,11 @@ import type { FrameMetaListener, RawPcmListener, VoiceControlState, VoiceTranscr
 import type { CloudSttClient, CloudSttTranscriptEvent } from './cloud-stt'
 import { createCloudSttClient, usesCloudStt, type VoiceProviderSelection } from './cloud-stt-provider'
 import { ReconnectingSttClient } from './reconnecting-stt'
-import { createOnboardSttClient, onboardModel, onboardModelError } from './onboard-stt.ios'
+import { createOnboardSttClient, createSpeakerVerifier, onboardModel, onboardModelError, type SpeakerVerifier } from './onboard-stt.ios'
 import { APP_NAME } from '../branding'
 import { FaceclawCommunicatorBridge } from './faceclaw-communicator.ios'
 import { fromData, toData } from './kotlin-data'
+import { wearerVerificationOptions } from '../apps/microphones/speakers'
 
 declare const FaceclawSpeech: any
 declare const FaceclawLc3Decoder: any
@@ -48,6 +49,10 @@ export class IosVoiceControlBridge {
   // provider was asked to finalize; it is the status shown when it does.
   private cloud: CloudSttClient | null = null
   private recognition = 'on-device'
+  // "My voice only" on a push-to-talk capture fed as PCM (a cloud provider or a
+  // downloaded model): a non-wearer's final is emptied, as on Android. Apple's
+  // recognizer gets no PCM here, so its captures are not verified.
+  private verifier: SpeakerVerifier | null = null
   private cloudEndStatus: string | null = null
   private cloudTimer: ReturnType<typeof setTimeout> | null = null
   // Android's decode-only raw tap (Microphones, EvenHub mic apps): it runs while
@@ -76,7 +81,10 @@ export class IosVoiceControlBridge {
     if (!this.native) {
       this.native = FaceclawSpeech.new()
       this.native.eventHandler = (json: string) => this.receive(JSON.parse(json))
-      this.native.pcmHandler = (pcm: NSData) => this.cloud?.acceptPcm(new Uint8Array(interop.bufferFromData(pcm)))
+      this.native.pcmHandler = (pcm: NSData) => {
+        this.verifier?.acceptPcm(pcm)
+        this.cloud?.acceptPcm(new Uint8Array(interop.bufferFromData(pcm)))
+      }
     }
     return this.native
   }
@@ -229,6 +237,9 @@ export class IosVoiceControlBridge {
     const error = String(native.startPcmCaptureWithEndpointingPhone(endpointing, phone) ?? '')
     if (error) return error
     this.cloud = cloud
+    // "My voice only" (Microphones), as Android's controller passes it (speakers.ts).
+    const verification = this.holders.has('continuous') ? null : wearerVerificationOptions()
+    this.verifier = verification ? createSpeakerVerifier(verification) : null
     cloud.start()
     return ''
   }
@@ -277,7 +288,7 @@ export class IosVoiceControlBridge {
   private clearCloud(): void {
     if (this.cloudTimer !== null) clearTimeout(this.cloudTimer)
     this.cloudTimer = null
-    this.cloud?.stop(); this.cloud = null; this.cloudEndStatus = null
+    this.cloud?.stop(); this.cloud = null; this.cloudEndStatus = null; this.verifier = null
   }
   /** The native audio has ended; have the provider finalize what it heard. */
   private finishCloud(status: string): void {
@@ -286,6 +297,7 @@ export class IosVoiceControlBridge {
     this.setStatus('Recognizing…')
     // Armed first: finish() can deliver the final synchronously.
     this.cloudTimer = setTimeout(() => this.completeCloud(), CLOUD_FINAL_TIMEOUT_MS)
+    void this.verifier?.verdict()
     this.cloud?.finish()
   }
   private completeCloud(): void {
@@ -298,6 +310,18 @@ export class IosVoiceControlBridge {
   }
   private receiveCloudTranscript(event: CloudSttTranscriptEvent): void {
     if (!this.capturing && !this.finalizing) return
+    // The verdict is pending only once the audio ended: hold the final for it.
+    const verifier = this.verifier
+    if (event.isFinal && verifier && this.cloudEndStatus !== null) {
+      const generation = this.generation
+      void verifier.verdict().then(({ isWearer, similarity }) => {
+        if (generation !== this.generation || this.verifier !== verifier) return
+        this.verifier = null
+        if (!isWearer) this.cloudEndStatus = `Ignored — not your enrolled voice (match ${Math.round(similarity * 100)}%).`
+        this.receiveCloudTranscript(isWearer ? event : { text: '', isFinal: true })
+      })
+      return
+    }
     for (const fn of [...this.transcripts]) fn(event)
     // Push-to-talk commits once, so the first final after it is the last.
     if (event.isFinal && this.cloudEndStatus !== null) this.completeCloud()

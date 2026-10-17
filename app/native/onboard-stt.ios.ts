@@ -7,7 +7,7 @@
  * transcript) over the FaceclawSherpa shim.
  */
 import type { CloudSttClient, CloudSttOptions } from "./cloud-stt";
-import type { VoiceProviderKind } from "./voice-control";
+import type { PushToTalkOptions, VoiceProviderKind } from "./voice-control";
 import { asrModelDir, isAsrModelReady, type AsrModelId } from "./asr-model";
 import { toData } from "./kotlin-data";
 import { kotlinListener } from "./kotlin-listener.ios";
@@ -15,6 +15,8 @@ import { kotlinListener } from "./kotlin-listener.ios";
 declare const FaceclawSherpa: any;
 declare const FaceclawKitIosOnDeviceTranscriber: any;
 declare const FaceclawKitIosTranscriptListener: any;
+declare const FaceclawKitIosSpeakerVerifier: any;
+declare const FaceclawKitIosSpeakerVerifiedListener: any;
 
 let loader: any = null;
 
@@ -59,4 +61,36 @@ export function createOnboardSttClient(model: AsrModelId, options: CloudSttOptio
     finish: () => transcriber.finish(),
     stop: () => transcriber.cancel(),
   } as CloudSttClient;
+}
+
+export type SpeakerVerdict = { isWearer: boolean; similarity: number };
+
+export type SpeakerVerifier = {
+  /** Capture PCM (16 kHz mono S16LE) as it arrives; the first 10 s are kept. */
+  acceptPcm(pcm: NSData): void;
+  /** Starts the check on the first call; fails open (isWearer) like Android. */
+  verdict(): Promise<SpeakerVerdict>;
+};
+
+/** "My voice only" for one capture: FaceclawKit's IosSpeakerVerifier over the voice-print model. */
+export function createSpeakerVerifier(options: NonNullable<PushToTalkOptions["speakerVerification"]>): SpeakerVerifier {
+  let resolve: (verdict: SpeakerVerdict) => void = () => {};
+  const result = new Promise<SpeakerVerdict>((done) => { resolve = done; });
+  const listener = kotlinListener(FaceclawKitIosSpeakerVerifiedListener, {
+    onVerifiedIsWearerSimilarity: (isWearer: boolean, similarity: number) => resolve({ isWearer: !!isWearer, similarity: Number(similarity) }),
+  });
+  const print = options.wearerEmbedding;
+  const native = FaceclawKitIosSpeakerVerifier.alloc().initWithLoaderModelPathWearerThresholdListener(
+    sherpaLoader(), options.speakerModelPath, toData(new Uint8Array(print.buffer.slice(print.byteOffset, print.byteOffset + print.byteLength))),
+    options.threshold, listener);
+  let started = false;
+  return {
+    listener,
+    acceptPcm: (pcm: NSData) => native.acceptPcmChunk(pcm),
+    verdict: () => {
+      if (!started) native.verify();
+      started = true;
+      return result;
+    },
+  } as SpeakerVerifier;
 }

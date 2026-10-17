@@ -21,6 +21,8 @@ function harness() {
     },
   };
   let authorization = 3, microphoneAuthorization = 3, microphoneRequests = 0, permissionRequests = 0, release, active = null, modelReady = true;
+  let verification = null;
+  const verifiers = [];
   // Stands in for onboard-stt.ios (the sherpa model as a CloudSttClient) and the reconnecting wrapper.
   const onboardStt = {
     onboardModel: p => ({ 'onboard-moonshine': 'moonshine', 'onboard-whisper': 'whisper-base-en' })[p] ?? null,
@@ -29,6 +31,11 @@ function harness() {
       const client = { model, options, pcm: [], started: false, finished: 0, stopped: false,
         start() { this.started = true; }, acceptPcm(bytes) { this.pcm.push([...bytes]); }, finish() { this.finished++; }, stop() { this.stopped = true; } };
       onboards.push(client); return client;
+    },
+    createSpeakerVerifier(options) {
+      const verifier = { options, pcm: [], asked: 0, acceptPcm(pcm) { this.pcm.push(pcm); },
+        verdict() { this.asked++; return new Promise(resolve => { this.resolve = resolve; }); } };
+      verifiers.push(verifier); return verifier;
     },
   };
   class ReconnectingSttClient {
@@ -46,6 +53,7 @@ function harness() {
     FaceclawLc3Decoder: decoder,
     require: name => ({ './cloud-stt-provider': provider, './faceclaw-communicator.ios': { FaceclawCommunicatorBridge: { getActive: () => active } },
       './onboard-stt.ios': onboardStt, './reconnecting-stt': { ReconnectingSttClient },
+      '../apps/microphones/speakers': { wearerVerificationOptions: () => verification },
       './kotlin-data': { toData: b => Buffer.from(b), fromData: d => new Uint8Array(d) } })[name] ?? {} };
   vm.runInNewContext(ts.transpileModule(fs.readFileSync('app/native/voice-control.ios.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, sandbox);
@@ -58,6 +66,7 @@ function harness() {
   } };
   const onboard = { provider: 'onboard', elevenLabsApiKey: '', openAiApiKey: '', sonioxApiKey: '' };
   return { bridge, native, session, audio, commands, text, timers, clouds, onboards, modelReady: value => { modelReady = value; },
+    verifiers, verify: value => { verification = value; },
     release: () => release(), activate: s => { active = s; },
     onboard, cloud: { ...onboard, provider: 'soniox', sonioxApiKey: 'key' },
     microphoneAuthorization: value => { microphoneAuthorization = value; }, microphoneRequests: () => microphoneRequests,
@@ -214,6 +223,34 @@ test('On-device (Whisper) runs the sherpa model on native PCM like a cloud provi
   await m.bridge.startPhoneCapture({ ...m.onboard, provider: 'onboard-moonshine' }, () => {});
   assert.equal(m.native.pcmCapture, undefined); assert.equal(m.onboards.length, 0);
   assert.match(m.bridge.statusText, /Settings > Voice/); assert.equal(ends, 1);
+});
+
+test('"My voice only" checks a PCM-fed push-to-talk capture and empties another speaker\'s final', async () => {
+  for (const isWearer of [true, false]) {
+    const h = harness(); let ends = 0; h.bridge.onSpeechEnd(() => ends++);
+    const options = { speakerModelPath: '/m/speaker.onnx', wearerEmbedding: new Float32Array([1, 0]), threshold: 0.8 };
+    h.verify(options);
+    await h.bridge.startPhoneCapture(h.cloud, () => {});
+    const verifier = h.verifiers[0], client = h.clouds[0];
+    assert.equal(verifier.options, options);
+    h.native.pcmHandler(new Uint8Array([1, 2]).buffer);
+    assert.equal(verifier.pcm.length, 1, 'the verifier hears the same PCM');
+    const completion = h.bridge.stopPushToTalk();
+    h.event({ kind: 'ended', message: 'Ready to send' });
+    assert.equal(verifier.asked, 1, 'the check starts when the audio ends');
+    client.options.onTranscript({ text: 'Delete everything.', isFinal: true });
+    assert.equal(h.text.length, 0, 'the final waits for the verdict');
+    verifier.resolve({ isWearer, similarity: isWearer ? 0.9 : 0.42 });
+    await completion;
+    assert.deepEqual(h.text, [{ text: isWearer ? 'Delete everything.' : '', isFinal: true }]);
+    assert.equal(h.bridge.statusText, isWearer ? 'Ready to send' : 'Ignored — not your enrolled voice (match 42%).');
+    assert.equal(ends, 1);
+  }
+  // Continuous capture and Apple's recognizer (no PCM) are not verified.
+  const h = harness(); h.verify({ speakerModelPath: '/m', wearerEmbedding: new Float32Array(2), threshold: 0.8 });
+  await h.bridge.startContinuousCapture(null, h.cloud, () => {});
+  await h.bridge.startPhoneCapture(h.onboard, () => {});
+  assert.equal(h.verifiers.length, 0);
 });
 
 test('glasses cloud capture streams native PCM and completes on the final after the drained audio', async () => {

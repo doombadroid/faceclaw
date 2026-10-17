@@ -144,8 +144,8 @@ private class AppleSpeechTranscriber(private val recognizer: SFSpeechRecognizer)
 /**
  * Android FaceclawCaptionEngine on iOS: the shared [CaptionSession] (segmentation, worker,
  * lifecycle) with the downloaded Moonshine model through [sherpa], or Apple's recognizer per
- * utterance when the ASR dir is [APPLE_SPEECH], and no voice-print model yet. Callbacks arrive
- * on the main queue.
+ * utterance when the ASR dir is [APPLE_SPEECH], and voice-prints from the speaker model
+ * through [sherpa]. Callbacks arrive on the main queue.
  */
 class IosCaptionEngine(private val sherpa: IosSherpaLoader?) {
     companion object {
@@ -165,7 +165,7 @@ class IosCaptionEngine(private val sherpa: IosSherpaLoader?) {
             return AppleSpeechTranscriber(recognizer)
         }
 
-        override fun loadEmbedder(modelPath: String): SpeakerEmbedder? = null
+        override fun loadEmbedder(modelPath: String): SpeakerEmbedder? = sherpa?.voicePrinter(modelPath)?.let { SherpaEmbedder(it) }
     }
 
     private val session = CaptionSession(host)
@@ -173,6 +173,8 @@ class IosCaptionEngine(private val sherpa: IosSherpaLoader?) {
     fun setListener(listener: FaceclawCaptionEngineListener?) = session.setListener(listener)
 
     fun setAsrModelDir(dir: String?) = session.setAsrModelDir(dir)
+
+    fun setSpeakerModelPath(path: String?) = session.setSpeakerModelPath(path)
 
     fun start() = session.start()
 

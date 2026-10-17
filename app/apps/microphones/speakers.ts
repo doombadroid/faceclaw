@@ -1,10 +1,7 @@
 import { conversationStore } from "../../native/mic-native";
-import { encodeBase64 } from "../../native/cloud-stt";
-import { toUint8Array } from "../../util/array-util";
+import { decodeBase64, encodeBase64 } from "../../native/cloud-stt";
 import { micModelPath } from "./mic-models";
 import { wearerCommandsOnlySetting } from "./mic-settings";
-
-declare const android: any;
 
 /**
  * Speaker voice-print registry over FaceclawConversationStore. Matching is
@@ -75,10 +72,11 @@ function parseStringArray(json: unknown): string[] {
   }
 }
 
-function decodeEmbedding(base64: string): Float32Array | null {
+/** A stored float32 voice-print; null for an empty or misaligned blob. */
+export function decodeEmbedding(base64: string): Float32Array | null {
   if (!base64) return null;
   try {
-    const bytes = toUint8Array(android.util.Base64.decode(base64, android.util.Base64.NO_WRAP));
+    const bytes = decodeBase64(base64);
     if (bytes.length < 4 || bytes.length % 4 !== 0) return null;
     return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length));
   } catch {
