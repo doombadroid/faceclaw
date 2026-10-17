@@ -10,14 +10,18 @@ function harness({ files = new Map(), failWrite = false, main = true, logThrows 
     File: {
       exists: path => h.files.has(path),
       fromPath: path => ({
-        readTextSync: () => h.files.get(path) ?? '',
+        // Like NativeScript: a read failure (say, a torn UTF-8 sequence) goes to onError, else returns undefined.
+        readTextSync: onError => {
+          if (h.failRead) { const error = new Error('unreadable'); return onError ? onError(error) : undefined; }
+          return h.files.get(path) ?? '';
+        },
         writeTextSync: text => {
           if (h.failWrite) throw new Error('disk full');
           // The process dies part way through the write.
           if (h.killAt !== undefined) { h.files.set(path, text.slice(0, h.killAt)); throw new Error('killed'); }
           h.files.set(path, text);
         },
-        removeSync: () => h.files.delete(path),
+        removeSync: onError => { if (h.failRemove) return onError?.(new Error('killed')); h.files.delete(path); },
         // Like NativeScript on both platforms: a rename never replaces an existing file.
         renameSync: (name, onError) => {
           const to = `${dir(path)}/${name}`;
@@ -26,6 +30,7 @@ function harness({ files = new Map(), failWrite = false, main = true, logThrows 
         },
       }),
     },
+    Folder: { fromPath: folder => ({ getEntitiesSync: () => [...h.files.keys()].filter(key => dir(key) === folder).map(key => ({ name: key.slice(folder.length + 1), path: key })) }) },
     knownFolders: { documents: () => ({ path: '/docs' }), ios: { library: () => ({ path: '/lib' }) } },
     path: { join: (...parts) => parts.join('/') },
     Utils: { isMainThread: () => main },
@@ -102,18 +107,22 @@ test('The same error from the same source counts up instead of adding entries', 
   assert.equal(h.logged.filter(line => line.includes('render')).length, 2);
 });
 
-test('A burst of distinct errors writes at most once a second, the first at once', () => {
+test('A new error is on disk at once, up to 5 a second; a burst past that waits for the timer', () => {
   const h = harness();
   let writes = 0;
   const files = { set: h.files.set.bind(h.files) };
   // Each save writes the .tmp once, then renames it into place.
   h.files.set = (k, v) => { if (k.endsWith('.tmp')) writes++; return files.set(k, v); };
   for (let i = 0; i < 30; i++) h.module.reportError(`burst ${i}`, `error ${i}`);
-  assert.equal(writes, 1);
-  assert.equal(h.stored()[0].message, 'error 0');
+  assert.equal(writes, 5);
+  assert.deepEqual(h.stored().map(r => r.message), ['error 0', 'error 1', 'error 2', 'error 3', 'error 4']);
   h.flushTimers();
-  assert.equal(writes, 2);
+  assert.equal(writes, 6);
   assert.equal(h.stored().length, 30);
+  h.now += 1000;
+  h.module.reportError('later', 'a second on');
+  assert.equal(writes, 7, 'the next second has its own budget');
+  assert.equal(h.stored().at(-1).message, 'a second on');
 });
 
 test('An error repeating every frame rewrites the file at counts 2, 4, 8... only, and the latest count is flushed at suspend', () => {
@@ -308,4 +317,72 @@ test('A worker forwards its report to the main thread and never writes the file'
   const [posted] = h.posted;
   assert.deepEqual({ ...posted, stack: undefined }, { type: 'error-report', source: 'worker.app', message: 'in worker', context: { app: 'pinball' }, stack: undefined });
   assert.match(posted.stack, /in worker/);
+});
+
+test('An unreadable file is moved aside and reported, never overwritten by the next save', () => {
+  const h = harness({ files: new Map([['/lib/error-reports.jsonl', 'older reports']]) });
+  h.failRead = true;
+  h.module.reportError('after', 'new');
+  h.failRead = false;
+  const aside = [...h.files.keys()].filter(key => key.startsWith('/lib/error-reports.jsonl.corrupt-'));
+  assert.deepEqual(aside, ['/lib/error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z']);
+  assert.equal(h.files.get(aside[0]), 'older reports', 'kept as it was');
+  const stored = h.stored();
+  assert.deepEqual(stored.map(r => r.source).sort(), ['after', 'error reports']);
+  const notice = stored.find(r => r.source === 'error reports');
+  assert.match(notice.message, /unreadable/);
+  assert.equal(notice.context.movedTo, 'error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z');
+});
+
+test('At most two unreadable files are kept', () => {
+  const files = new Map([['/lib/error-reports.jsonl', 'new garbage'],
+    ...['2026-10-01', '2026-10-02', '2026-10-03'].map(day => [`/lib/error-reports.jsonl.corrupt-${day}T00-00-00-000Z`, day])]);
+  const h = harness({ files });
+  h.failRead = true;
+  h.module.reportError('after', 'new');
+  assert.deepEqual([...h.files.keys()].filter(key => key.includes('.corrupt-')).sort(), [
+    '/lib/error-reports.jsonl.corrupt-2026-10-03T00-00-00-000Z', '/lib/error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z']);
+});
+
+test('An unreadable file that cannot be moved aside is not overwritten either', () => {
+  const h = harness({ files: new Map([['/lib/error-reports.jsonl', 'older reports']]) });
+  h.failRead = true; h.failRename = true;
+  h.module.reportError('after', 'new');
+  h.flushTimers();
+  assert.equal(h.files.get('/lib/error-reports.jsonl'), 'older reports');
+  assert.deepEqual(h.module.listErrorReports().map(r => r.source).sort(), ['after', 'error reports'], 'still reported in memory');
+});
+
+test('Killed after writing the .tmp but before dropping the old file: both are merged', () => {
+  const h = harness();
+  h.module.reportError('a', 'first');
+  h.now += 2000;
+  h.module.reportError('a', 'first');
+  h.flushTimers();
+  h.now += 2000;
+  h.module.reportError('a', 'first');
+  h.module.reportError('a', 'first');
+  h.failRemove = true;
+  h.module.reportError('b', 'second');
+  h.failRemove = false;
+  assert.deepEqual([...h.files.keys()].sort(), ['/lib/error-reports.jsonl', '/lib/error-reports.jsonl.tmp']);
+  const next = harness({ files: h.files });
+  const listed = next.module.listErrorReports();
+  assert.deepEqual(listed.map(r => [r.source, r.count, r.at]), [['b', 1, '2026-10-17T12:00:04.000Z'], ['a', 4, '2026-10-17T12:00:04.000Z']]);
+  next.now += 10_000;
+  next.module.reportError('c', 'third');
+  assert.deepEqual([...next.files.keys()], ['/lib/error-reports.jsonl'], 'the next save writes the merged set');
+  assert.deepEqual(next.stored().map(r => [r.source, r.count]).sort(), [['a', 4], ['b', 1], ['c', 1]]);
+});
+
+test('Merging keeps an earlier launch\'s report of the same error apart', () => {
+  const first = harness();
+  first.module.reportError('sync', 'timeout');
+  const second = harness({ files: first.files });
+  second.now += 60_000;
+  second.failRemove = true;
+  second.module.reportError('sync', 'timeout');
+  const third = harness({ files: second.files });
+  assert.deepEqual(third.module.listErrorReports().map(r => [r.message, r.at]),
+    [['timeout', '2026-10-17T12:01:00.000Z'], ['timeout', '2026-10-17T12:00:00.000Z']]);
 });

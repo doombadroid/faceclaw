@@ -5,7 +5,7 @@
  * by the main isolate only (a worker posts its reports there); the iOS shell shows them
  * under Settings > General.
  */
-import { Application, File, Utils, knownFolders, path as fsPath } from '@nativescript/core'
+import { Application, File, Folder, Utils, knownFolders, path as fsPath } from '@nativescript/core'
 import { FACECLAW_VERSION } from '../version'
 
 declare const NSBundle: any
@@ -31,6 +31,10 @@ export type WorkerErrorReport = { type: 'error-report'; source: string; message:
 
 const FILE_NAME = 'error-reports.jsonl'
 const MAX_REPORTS = 200, MAX_CHARS = 1_000_000, MAX_MESSAGE = 2_000, MAX_STACK = 16_000, SAVE_INTERVAL_MS = 1000
+/** New reports written at once per second; past it they wait for the timer (a storm of distinct errors). */
+const MAX_IMMEDIATE_SAVES = 5
+/** Unreadable report files kept aside (error-reports.jsonl.corrupt-<time>), newest first. */
+const MAX_CORRUPT = 2
 /** Distinct messages kept per source per session; past it they share one report (an error naming its frame). */
 const MAX_PER_SOURCE = 20
 const LISTENER_SOURCE = 'error report listener'
@@ -39,7 +43,10 @@ let reports: ErrorReport[] | null = null
 const thisSession = new Map<string, ErrorReport>()
 const messagesPerSource = new Map<string, number>()
 const listeners = new Set<Listener>()
-let saveTimer: ReturnType<typeof setTimeout> | null = null, lastSave = 0, lifecycleHooked = false, unsaved = false
+let saveTimer: ReturnType<typeof setTimeout> | null = null, lifecycleHooked = false, unsaved = false
+let saveWindowStart = 0, immediateSaves = 0
+/** The file could not be read nor moved aside: saving would overwrite reports nobody has seen. */
+let readOnly = false
 let build: string | null = null
 
 /** Record a caught error. Never throws: it is called from inside catch blocks. */
@@ -71,11 +78,14 @@ export function reportError(source: string, error: unknown, context?: Record<str
       thisSession.set(key, report)
       list.push(report)
     }
-    // A new error is on disk before anything else runs, unless a write just happened: a
-    // burst of distinct errors must not rewrite the file every frame. A repeat only bumps a
-    // count, written at counts 2, 4, 8... (and at suspend/exit): an error every frame must not
-    // rewrite the whole file every second.
-    if (isNew && new Date().getTime() - lastSave >= SAVE_INTERVAL_MS) save()
+    // A new error is on disk before anything else runs, up to MAX_IMMEDIATE_SAVES a second: a
+    // storm of distinct errors must not rewrite the file every frame (each source has at most
+    // MAX_PER_SOURCE + 1 reports, the file MAX_REPORTS). A repeat only bumps a count, written at
+    // counts 2, 4, 8... (and at suspend/exit): an error every frame must not rewrite the whole
+    // file every second.
+    const now = new Date().getTime()
+    if (now - saveWindowStart >= SAVE_INTERVAL_MS) { saveWindowStart = now; immediateSaves = 0 }
+    if (isNew && immediateSaves < MAX_IMMEDIATE_SAVES) { immediateSaves++; save() }
     else if (isNew || !(report.count & (report.count - 1))) scheduleSave()
     else unsaved = true
     for (const listener of [...listeners]) {
@@ -104,7 +114,11 @@ export function clearErrorReports(): void {
   if (saveTimer !== null) clearTimeout(saveTimer)
   saveTimer = null
   unsaved = false
-  try { for (const path of [filePath(), tmpPath()]) if (File.exists(path)) File.fromPath(path).removeSync() } catch (error) { console.error(`error-reports: could not clear: ${error}`) }
+  try {
+    for (const path of [filePath(), tmpPath()]) if (File.exists(path)) File.fromPath(path).removeSync((error: unknown) => { throw error })
+    // The unreadable file that kept saving off is gone.
+    readOnly = false
+  } catch (error) { console.error(`error-reports: could not clear: ${error}`) }
 }
 
 export function onErrorReport(listener: Listener): () => void {
@@ -134,9 +148,8 @@ function describe(value: unknown): string {
   try { return String(value) } catch { return '(unprintable error)' }
 }
 
-function filePath(): string {
-  return fsPath.join(global.isIOS ? knownFolders.ios.library().path : knownFolders.documents().path, FILE_NAME)
-}
+const folderPath = () => global.isIOS ? knownFolders.ios.library().path : knownFolders.documents().path
+const filePath = () => fsPath.join(folderPath(), FILE_NAME)
 const tmpPath = () => `${filePath()}.tmp`
 
 /** On a worker: the file belongs to the main isolate, whose next save would overwrite a worker's write. */
@@ -155,17 +168,67 @@ function loaded(): ErrorReport[] {
     // No file but a .tmp: save() died between dropping the old file and renaming the complete
     // new one. Put it in place now, or the next save's .tmp write would be over the only copy.
     if (!File.exists(filePath()) && File.exists(tmpPath())) File.fromPath(tmpPath()).renameSync(FILE_NAME, (error: unknown) => { throw error })
-    if (!File.exists(filePath())) return reports
-    for (const line of File.fromPath(filePath()).readTextSync().split('\n')) {
-      if (!line) continue
-      try {
-        const report = JSON.parse(line) as ErrorReport | null
-        // Anything else would break sorting, and with it every later save.
-        if (report && typeof report === 'object' && typeof report.at === 'string') reports.push(report)
-      } catch { /* a torn last line */ }
-    }
-  } catch (error) { console.error(`error-reports: could not read: ${error}`) }
+    // Both: save() died after writing the .tmp (complete or torn) but before dropping the old
+    // file. Each may hold what the other lacks; the next save writes the union.
+    reports = merge(readReports(filePath()), readReports(tmpPath()))
+  } catch (error) { quarantine(error) }
   return reports
+}
+
+function readReports(path: string): ErrorReport[] {
+  if (!File.exists(path)) return []
+  const text: unknown = File.fromPath(path).readTextSync((error: unknown) => { throw error })
+  // NativeScript returns undefined for a file it cannot decode (a torn UTF-8 sequence).
+  if (typeof text !== 'string') throw new Error(`${path} is unreadable`)
+  const list: ErrorReport[] = []
+  for (const line of text.split('\n')) {
+    if (!line) continue
+    try {
+      const report = JSON.parse(line) as ErrorReport | null
+      // Anything else would break sorting, and with it every later save.
+      if (report && typeof report === 'object' && typeof report.at === 'string') list.push(report)
+    } catch { /* a torn last line */ }
+  }
+  return list
+}
+
+/**
+ * The .tmp's copy of a report replaces the old file's (larger count, newer at and stack); each
+ * old entry is matched once, so an earlier launch's report of the same error stays its own.
+ */
+function merge(old: ErrorReport[], newer: ErrorReport[]): ErrorReport[] {
+  const merged = [...old], matched = new Set<number>()
+  for (const report of newer) {
+    const i = merged.findIndex((m, j) => !matched.has(j) && m.source === report.source && m.message === report.message)
+    if (i < 0) { merged.push(report); continue }
+    matched.add(i)
+    const had = merged[i]
+    merged[i] = { ...(had.at > report.at ? had : report), count: Math.max(had.count, report.count) }
+  }
+  return merged
+}
+
+/** The file cannot be read: keep it aside (the next save would overwrite it), say so, start fresh. */
+function quarantine(readError: unknown): void {
+  reports = []
+  const context: Record<string, string> = {}
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-'), fail = (error: unknown) => { throw error }
+    for (const [path, name] of [[filePath(), `${FILE_NAME}.corrupt-${stamp}`], [tmpPath(), `${FILE_NAME}.corrupt-${stamp}.tmp`]]) {
+      if (!File.exists(path)) continue
+      File.fromPath(path).renameSync(name, fail)
+      context[path === filePath() ? 'movedTo' : 'tmpMovedTo'] = name
+    }
+    const folder = folderPath(), prefix = `${FILE_NAME}.corrupt-`, stampOf = (name: string) => name.slice(prefix.length).replace(/\.tmp$/, '')
+    const aside = Folder.fromPath(folder).getEntitiesSync().map(entry => entry.name).filter(name => name.startsWith(prefix))
+    const keep = [...new Set(aside.map(stampOf))].sort().slice(-MAX_CORRUPT)
+    for (const name of aside) if (!keep.includes(stampOf(name))) File.fromPath(fsPath.join(folder, name)).removeSync(fail)
+  } catch (moveError) {
+    readOnly = true
+    context.notSaved = `could not move it aside (${normalizeError(moveError).message}); reports are kept in memory only this session`
+  }
+  // reports is set, so this does not come back here.
+  reportError('error reports', readError, context)
 }
 
 const sorted = (list: ErrorReport[]) => list.sort((a, b) => a.at < b.at ? -1 : a.at > b.at ? 1 : 0)
@@ -189,7 +252,7 @@ function save(): void {
   if (saveTimer !== null) clearTimeout(saveTimer)
   saveTimer = null
   unsaved = false
-  lastSave = new Date().getTime()
+  if (readOnly) return
   try {
     const list = sorted(loaded())
     const lines = list.map(report => JSON.stringify(report))
