@@ -1,12 +1,15 @@
-import { Utils } from "@nativescript/core";
-
-declare const com: any;
-declare const java: any;
+import {
+  deleteModelFiles,
+  isModelFilePresent,
+  modelsRoot,
+  startModelDownload,
+  type ModelDownload,
+} from "../../native/model-downloader";
 
 /**
  * Download management for the Microphones app's on-device models, mirroring
- * the Moonshine flow in app/native/asr-model.ts (FaceclawModelDownloader,
- * resume + pinned sha256 per file):
+ * the Moonshine flow in app/native/asr-model.ts (model-downloader, resume +
+ * pinned sha256 per file):
  *
  * - Speaker embedding (WeSpeaker CAM++ English, 512-dim): voice-prints for
  *   caption attribution, wearer recognition, and re-diarization.
@@ -74,10 +77,7 @@ export type MicModelState = {
   totalBytes: number;
 };
 
-const downloaders = new Map<MicModelId, any>();
-// Each download's listener is referenced only from Java while it runs; hold
-// it here so it isn't GC'd before its callbacks.
-const downloadListeners = new Map<MicModelId, any>();
+const downloaders = new Map<MicModelId, ModelDownload>();
 const progress = new Map<MicModelId, number>();
 const stateListeners = new Set<(id: MicModelId, state: MicModelState) => void>();
 
@@ -88,8 +88,7 @@ function model(id: MicModelId): MicModel {
 }
 
 function modelDirPath(id: MicModelId): string {
-  const context = Utils.android.getApplicationContext();
-  return `${context.getFilesDir().getAbsolutePath()}/faceclaw-mic-models/${id}`;
+  return `${modelsRoot()}/faceclaw-mic-models/${id}`;
 }
 
 function filePath(id: MicModelId, file: MicModelFile): string {
@@ -97,16 +96,10 @@ function filePath(id: MicModelId, file: MicModelFile): string {
 }
 
 function isFilePresent(id: MicModelId, file: MicModelFile): boolean {
-  try {
-    const javaFile = new java.io.File(filePath(id, file));
-    return javaFile.exists() && javaFile.length() > 0;
-  } catch {
-    return false;
-  }
+  return isModelFilePresent(filePath(id, file));
 }
 
 export function isMicModelReady(id: MicModelId): boolean {
-  if (!global.isAndroid) return false;
   return model(id).files.every((file) => isFilePresent(id, file));
 }
 
@@ -144,7 +137,7 @@ function notifyStateChanged(id: MicModelId): void {
 }
 
 export function startMicModelDownload(id: MicModelId): void {
-  if (!global.isAndroid || downloaders.has(id) || isMicModelReady(id)) return;
+  if (downloaders.has(id) || isMicModelReady(id)) return;
   progress.delete(id);
   downloadNextFile(id);
   notifyStateChanged(id);
@@ -155,44 +148,31 @@ function downloadNextFile(id: MicModelId): void {
   const nextFile = definition.files.find((file) => !isFilePresent(id, file));
   if (!nextFile) {
     downloaders.delete(id);
-    downloadListeners.delete(id);
     notifyStateChanged(id);
     return;
   }
   const completedBytes = definition.files
     .filter((file) => isFilePresent(id, file))
     .reduce((sum, file) => sum + file.sizeBytes, 0);
-  const listener = new com.faceclaw.app.FaceclawModelDownloaderListener({
-    onProgress: (bytes: number, _total: number) => {
-      progress.set(id, completedBytes + Number(bytes));
-      notifyStateChanged(id);
-    },
-    onDone: () => {
-      downloadNextFile(id);
-    },
-    onError: (message: string) => {
-      console.error(`Mic model download failed (${id}/${nextFile.name}): ${message}`);
-      downloaders.delete(id);
-      downloadListeners.delete(id);
-      notifyStateChanged(id);
-    },
-  });
-  downloadListeners.set(id, listener);
   try {
-    const downloader = new com.faceclaw.app.FaceclawModelDownloader(
-      `${definition.baseUrl}${nextFile.remoteName}`,
-      filePath(id, nextFile),
-      nextFile.sha256,
-      nextFile.sizeBytes,
-      listener,
-    );
-    downloaders.set(id, downloader);
-    downloader.start();
+    downloaders.set(id, startModelDownload(`${definition.baseUrl}${nextFile.remoteName}`, filePath(id, nextFile), nextFile.sha256, nextFile.sizeBytes, {
+      onProgress: (bytes) => {
+        progress.set(id, completedBytes + bytes);
+        notifyStateChanged(id);
+      },
+      onDone: () => {
+        downloadNextFile(id);
+      },
+      onError: (message) => {
+        console.error(`Mic model download failed (${id}/${nextFile.name}): ${message}`);
+        downloaders.delete(id);
+        notifyStateChanged(id);
+      },
+    }));
   } catch (error) {
     // Without this, a dead entry would pin the model at "downloading".
     console.error(`Mic model download failed to start (${id}/${nextFile.name}): ${String(error)}`);
     downloaders.delete(id);
-    downloadListeners.delete(id);
     notifyStateChanged(id);
   }
 }
@@ -202,19 +182,13 @@ export function cancelMicModelDownload(id: MicModelId): void {
   if (!downloader) return;
   downloader.cancel();
   downloaders.delete(id);
-  downloadListeners.delete(id);
   notifyStateChanged(id);
 }
 
 export function deleteMicModel(id: MicModelId): void {
-  if (!global.isAndroid) return;
   cancelMicModelDownload(id);
   try {
-    for (const file of model(id).files) {
-      new java.io.File(filePath(id, file)).delete();
-      new java.io.File(`${filePath(id, file)}.part`).delete();
-    }
-    new java.io.File(modelDirPath(id)).delete();
+    deleteModelFiles(modelDirPath(id), model(id).files.map((file) => file.name));
   } catch (error) {
     console.error(`Mic model delete failed: ${String(error)}`);
   }

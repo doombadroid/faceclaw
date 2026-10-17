@@ -352,7 +352,7 @@ export class ConversationViewModel extends Observable {
   // --- actions ---------------------------------------------------------------
 
   onRediarizeTap(): void {
-    if (!global.isAndroid || this.rediarizeRunning) return;
+    if (this.rediarizeRunning) return;
     this.rediarizeRunning = true;
     this.status = "Re-diarizing… 0%";
     rediarizeSession(this.sessionId, {}, {
@@ -381,10 +381,11 @@ export class ConversationViewModel extends Observable {
 
   /** iOS: the action bar's one More item in place of Android's three overflow items. */
   async onMoreTap(): Promise<void> {
-    const split = "Split speaker...", remove = "Delete conversation";
+    const rediarize = "Re-diarize", split = "Split speaker...", remove = "Delete conversation";
     const picked = await action({ cancelButtonText: "Cancel",
-      actions: [...(this.session?.speakers?.length ? [split] : []), remove] });
-    if (picked === split) await this.onSplitSpeakerTap();
+      actions: [...(this.session?.audioPath ? [rediarize] : []), ...(this.session?.speakers?.length ? [split] : []), remove] });
+    if (picked === rediarize) this.onRediarizeTap();
+    else if (picked === split) await this.onSplitSpeakerTap();
     else if (picked === remove) await this.onDeleteTap();
   }
 

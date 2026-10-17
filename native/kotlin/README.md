@@ -71,6 +71,15 @@ plus scanning and ANCS authorization), `ble/IosSessionHost`, `ble/IosGlassesSess
 TypeScript are always dispatched to the main queue. The former pure-TypeScript
 session/protocol duplicates were deleted; their coverage lives in `tests/kotlin`.
 
+sherpa-onnx on iOS (`IosSherpa.kt`): Kotlin/Native has no cinterop for it here, so the
+app target's ObjC `FaceclawSherpa` shim (`App_Resources/iOS/src`) implements the exported
+`IosSherpaLoader`, `IosPcmRecognizer` and `IosVoicePrinter` protocols over sherpa's C API,
+and `IosOnDeviceTranscriber` (dictation on the shared `SegmentedTranscript`),
+`IosSpeakerVerifier` and `IosCaptionEngine` call it from their workers. The shim's C core
+(`FaceclawSherpaCore.c`) also builds on Linux: `node tests/sherpa-host.cjs` runs it on the
+real models. The static sherpa-onnx and onnxruntime xcframeworks are fetched (sha256
+pinned) by `scripts/ios-native-deps.cjs` from the before-prepare hook.
+
 Texture rendering uses the same `GlyphAtlas`, `ImageAtlas`, `TextureCacheState`
 and `TexturePlanner` on both platforms. iOS's `IosTextureAtlas` and
 `IosTexturePlanner` expose bulk `NSData` bridges. Surface updates retain draw

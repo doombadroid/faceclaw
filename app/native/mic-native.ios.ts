@@ -1,16 +1,20 @@
 /**
  * iOS twin of mic-native.ts over FaceclawKit: the shared Kotlin store on the
- * FaceclawSqlite shim, the shared suppressor and caption session (Apple's
- * recognizer per utterance, no voice-prints), and a WAV recorder. PCM crosses
+ * FaceclawSqlite shim, the shared suppressor and caption session (the
+ * downloaded Moonshine model, else Apple's recognizer per utterance; sherpa
+ * voice-prints once the speaker model is downloaded), the re-diarizer, and a
+ * WAV recorder. PCM crosses
  * as NSData. Each object is wrapped to Android's method names.
  */
 import { knownFolders } from "@nativescript/core";
 
-import type { CaptionCallbacks } from "./mic-native";
+import type { CaptionCallbacks, DiarizerCallbacks } from "./mic-native";
 import { toData } from "./kotlin-data";
 import { kotlinListener } from "./kotlin-listener.ios";
+import { asrModelDir, isAsrModelReady } from "./asr-model";
+import { sherpaLoader } from "./onboard-stt.ios";
 
-export type { CaptionCallbacks } from "./mic-native";
+export type { CaptionCallbacks, DiarizerCallbacks } from "./mic-native";
 
 declare const FaceclawKitIosConversationStore: any;
 declare const FaceclawKitIosNoiseSuppressor: any;
@@ -19,6 +23,7 @@ declare const FaceclawKitIosWavRecorder: any;
 declare const FaceclawKitFaceclawCaptionEngineListener: any;
 declare const FaceclawSqlite: any;
 declare const FaceclawSpeech: any;
+declare const FaceclawSherpaDiarizer: any;
 
 /** Android method name -> the Kotlin export's ObjC-derived name. */
 function adapt(native: any, names: Record<string, string>): any {
@@ -79,40 +84,40 @@ export function toNativePcm(pcm: Uint8Array): any {
 }
 
 export function createCaptionEngine(): any {
-  const engine = FaceclawKitIosCaptionEngine.new();
+  const engine = FaceclawKitIosCaptionEngine.alloc().initWithSherpa(sherpaLoader());
   return {
-    ...adapt(engine, { setListener: "setListenerListener", setAsrModelDir: "setAsrModelDirDir", start: "start", stop: "stop",
-      requestStop: "requestStop", acceptPcm: "acceptPcmPcm" }),
-    // No voice-print model on iOS yet.
-    setSpeakerModelPath: () => {},
+    ...adapt(engine, { setListener: "setListenerListener", setAsrModelDir: "setAsrModelDirDir", setSpeakerModelPath: "setSpeakerModelPathPath",
+      start: "start", stop: "stop", requestStop: "requestStop", acceptPcm: "acceptPcmPcm" }),
   };
 }
 
 export function createCaptionListener(callbacks: CaptionCallbacks): any {
   return kotlinListener(FaceclawKitFaceclawCaptionEngineListener, {
-    onUtteranceTextEmbeddingStartMsEndMsPeakRms: (text: string, _embedding: unknown, startMs: number, endMs: number, peakRms: number) =>
-      callbacks.onUtterance(String(text ?? ""), null, Number(startMs), Number(endMs), Number(peakRms)),
+    onUtteranceTextEmbeddingStartMsEndMsPeakRms: (text: string, embedding: unknown, startMs: number, endMs: number, peakRms: number) =>
+      callbacks.onUtterance(String(text ?? ""), embedding ?? null, Number(startMs), Number(endMs), Number(peakRms)),
     onSpeechStartStartMs: (startMs: number) => callbacks.onSpeechStart(Number(startMs)),
     onStatusStatus: (status: string) => callbacks.onStatus(String(status ?? "")),
     onStoppedError: (error: string | null) => callbacks.onStopped(error ?? null),
   });
 }
 
-/** Apple ships the recognizer's models; any non-null dir turns recognition on. */
+/** Android's caption model (Moonshine) once downloaded; else Apple's recognizer (IosCaptionEngine.APPLE_SPEECH). */
 export function captionAsrDir(): string | null {
-  return "apple-speech";
+  return isAsrModelReady("moonshine") ? asrModelDir("moonshine") : "apple-speech";
 }
 
 /** Speech Recognition can only be granted from the foreground; the caption engine checks it per start. */
 export function prepareCaptions(): void {
-  if (FaceclawSpeech.authorizationStatus() !== 0) return;
+  if (isAsrModelReady("moonshine") || FaceclawSpeech.authorizationStatus() !== 0) return;
   if (UIApplication.sharedApplication.applicationState !== UIApplicationState.Active) return;
   FaceclawSpeech.requestAuthorization(() => {});
 }
 
-/** iOS has no voice-print model yet, so captions never carry embeddings. */
-export function embeddingToFloat32(_embedding: unknown): Float32Array {
-  return new Float32Array(0);
+/** A caption's voice-print (a KotlinFloatArray) as floats. */
+export function embeddingToFloat32(embedding: any): Float32Array {
+  const out = new Float32Array(Number(embedding?.size ?? 0));
+  for (let i = 0; i < out.length; i++) out[i] = Number(embedding.getIndex(i));
+  return out;
 }
 
 /** The bridge takes a plain function and owns its native proxy. */
@@ -165,6 +170,30 @@ export function deleteFile(path: string): void {
   } catch (error) {
     console.warn(`could not delete ${path}: ${error}`);
   }
+}
+
+const activeDiarizers = new Set<any>();
+
+/** Offline re-diarization of a saved WAV through the FaceclawSherpa shim (a background queue). */
+export function startDiarizer(
+  segmentationModel: string,
+  embeddingModel: string,
+  audioPath: string,
+  numClusters: number,
+  threshold: number,
+  callbacks: DiarizerCallbacks,
+): void {
+  const diarizer = FaceclawSherpaDiarizer.alloc()
+    .initWithSegmentationModelEmbeddingModelWavPathNumClustersThreshold(segmentationModel, embeddingModel, audioPath, numClusters, threshold);
+  activeDiarizers.add(diarizer);
+  diarizer.startWithProgressCompletion(
+    (fraction: number) => callbacks.onProgress(Number(fraction)),
+    (turnsJson: string | null, error: string | null) => {
+      activeDiarizers.delete(diarizer);
+      if (turnsJson !== null && turnsJson !== undefined) callbacks.onDone(String(turnsJson));
+      else callbacks.onError(String(error ?? "Re-diarization failed."));
+    },
+  );
 }
 
 /** ponytail: recordings stay WAV on iOS (~115 MB/hour, bounded by retention); AVAssetExportSession to M4A when disk use matters. */

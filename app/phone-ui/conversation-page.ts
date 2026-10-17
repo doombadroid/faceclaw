@@ -13,7 +13,7 @@ export function navigatingTo(args: NavigatedData): void {
     model = created;
     page.bindingContext = model;
     if (global.isIOS) {
-      // OcuSmart: its page colours, and one More menu instead of three overflow items (no re-diarizer on iOS).
+      // OcuSmart: its page colours, and one More menu instead of three overflow items.
       page.className = "os-page";
       const items = page.actionBar.actionItems;
       for (const item of items.getItems()) items.removeItem(item);

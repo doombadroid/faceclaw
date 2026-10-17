@@ -24,7 +24,7 @@ type CloudProvider = {
   create: (options: CloudSttOptions) => CloudSttClient;
 };
 
-// Providers absent here ("onboard", "onboard-whisper") transcribe on-device.
+// Providers absent here ("onboard", "onboard-moonshine", "onboard-whisper") transcribe on-device.
 const CLOUD_PROVIDERS: Partial<Record<VoiceProviderKind, CloudProvider>> = {
   elevenlabs: {
     name: "ElevenLabs",

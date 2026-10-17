@@ -1,3 +1,4 @@
+import type { AsrModelId } from "../../native/asr-model";
 import {
   anthropicApiKeySetting,
   appSwitcherPositionSetting,
@@ -90,6 +91,8 @@ export type CatalogItem =
     }
   /** Rows backed by stores other than a ConfigSetting; the phone page draws them. */
   | { kind: "notification-sources" | "input-tokens" | "ios-privacy-notice" }
+  /** Download / cancel / delete for an on-device transcription model (Settings > Voice on the glasses). */
+  | { kind: "asr-model"; model: AsrModelId }
   | { kind: "document"; fileName: string; title: string };
 
 export type CatalogSection = { header?: string; footer?: string; items: CatalogItem[] };
@@ -259,7 +262,11 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     id: "voice",
     title: "Voice & Assistant",
     sections: () => [
-      { header: "Voice", items: [item(wakeWordActionSetting), item(voiceProviderSetting)] },
+      {
+        header: "Voice",
+        footer: "On-device models transcribe on the phone, with no API key; each On-device provider needs its model downloaded here. An interrupted download resumes.",
+        items: [item(wakeWordActionSetting), item(voiceProviderSetting), { kind: "asr-model", model: "moonshine" }, { kind: "asr-model", model: "whisper-base-en" }],
+      },
       { header: "Assistant", items: [item(assistantBackendSetting), item(assistantModelSetting), item(assistantSkipConfirmationSetting)] },
       {
         header: "Agent Bridge",

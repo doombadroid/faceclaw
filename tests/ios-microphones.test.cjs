@@ -2,28 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { loader } = require('./helpers/load-typescript.cjs');
+const { exportedNames } = require('./helpers/kotlin-export.cjs');
 
-// The JavaScript names NativeScript gives Kotlin/Native's ObjC export: the function name,
-// then each parameter name capitalized (fun f(a, b) -> fA:b: -> fAB); constructors are
-// initWith + parameters. Derived from the Kotlin sources so a renamed parameter fails here,
-// not on the phone.
-function exportedNames(...files) {
-  const names = new Set();
-  const cap = s => s[0].toUpperCase() + s.slice(1);
-  const params = list => list.split(',').map(p => p.trim()).filter(Boolean).map(p => p.split(':')[0].trim().split(/\s+/).pop());
-  for (const file of files) {
-    const source = fs.readFileSync(file, 'utf8');
-    for (const [, name, list] of source.matchAll(/^\s*(?:override )?fun (\w+)\(([^)]*)\)/gm)) names.add(name + params(list).map(cap).join(''));
-    for (const [, list] of source.matchAll(/^(?:open )?class \w+\(([^)]*)\)/gm)) names.add('initWith' + params(list).map(cap).join(''));
-  }
-  return names;
-}
 const KOTLIN = 'native/kotlin/shared/src';
 const exported = exportedNames(`${KOTLIN}/commonMain/kotlin/com/faceclaw/app/audio/ConversationStoreCore.kt`,
   `${KOTLIN}/iosMain/kotlin/com/faceclaw/app/IosMicAudio.kt`,
   `${KOTLIN}/commonMain/kotlin/com/faceclaw/app/callbacks/FaceclawCaptionEngineListener.kt`);
 
-function setup({ port = true } = {}) {
+function setup({ port = true, moonshine = false } = {}) {
   const calls = [];
   // Every FaceclawKit object records the selectors called on it.
   const native = kind => {
@@ -43,10 +29,16 @@ function setup({ port = true } = {}) {
     FaceclawSpeech: { authorizationStatus: () => 0, requestAuthorization: () => calls.push(['speech']) },
     UIApplication: { sharedApplication: { applicationState: 0 } }, UIApplicationState: { Active: 0 },
     NSFileManager: { defaultManager: { removeItemAtPathError: path => calls.push(['rm', path]) } },
+    FaceclawSherpaDiarizer: { alloc: () => ({ initWithSegmentationModelEmbeddingModelWavPathNumClustersThreshold: (...args) => {
+      calls.push(['diarizer', ...args]);
+      return { startWithProgressCompletion: (progress, done) => calls.push(['diarize', progress, done]) };
+    } }) },
   }, {
     '@nativescript/core': { knownFolders: { documents: () => ({ path: '/Docs' }), ios: { library: () => ({ path: '/Lib' }) } } },
     './kotlin-data': { toData: bytes => ({ data: [...bytes] }) },
     './kotlin-listener.ios': { kotlinListener: (protocol, methods) => { listener = { protocol, methods }; return methods; } },
+    './asr-model': { isAsrModelReady: id => moonshine && id === 'moonshine', asrModelDir: id => `/Models/${id}` },
+    './onboard-stt.ios': { sherpaLoader: () => 'sherpa-loader' },
   })('app/native/mic-native.ios.ts');
   return { mic, calls, listener: () => listener };
 }
@@ -78,20 +70,50 @@ test('the iOS store opens one Library database, and a failed open stays an error
   assert.throws(() => setup({ port: false }).mic.conversationStore(), /could not open/);
 });
 
-test('caption callbacks arrive with Android types, never a voice-print, and Speech is asked for in the foreground', () => {
+test('caption callbacks arrive with Android types and their voice-print, and Speech is asked for in the foreground', () => {
   const { mic, calls, listener } = setup();
   const heard = [];
   mic.createCaptionListener({ onUtterance: (...args) => heard.push(['utterance', ...args]), onSpeechStart: ms => heard.push(['start', ms]),
     onStatus: status => heard.push(['status', status]), onStopped: error => heard.push(['stopped', error]) });
   const { protocol, methods } = listener();
   assert.equal(protocol, 'protocol');
-  methods.onUtteranceTextEmbeddingStartMsEndMsPeakRms('hello', { size: 3 }, 10, 20, 0.5);
+  const print = { size: 3, getIndex: i => [0.5, -0.25, 1][i] };
+  methods.onUtteranceTextEmbeddingStartMsEndMsPeakRms('hello', print, 10, 20, 0.5);
+  methods.onUtteranceTextEmbeddingStartMsEndMsPeakRms('no model', null, 30, 40, 0.5);
   methods.onSpeechStartStartMs(5); methods.onStatusStatus(null); methods.onStoppedError(undefined);
-  assert.deepEqual(heard, [['utterance', 'hello', null, 10, 20, 0.5], ['start', 5], ['status', ''], ['stopped', null]]);
-  assert.equal(mic.captionAsrDir() !== null, true);
+  assert.deepEqual(heard, [['utterance', 'hello', print, 10, 20, 0.5], ['utterance', 'no model', null, 30, 40, 0.5], ['start', 5], ['status', ''], ['stopped', null]]);
+  // The KotlinFloatArray becomes the Float32Array mic-session matches speakers with.
+  assert.deepEqual([...mic.embeddingToFloat32(print)], [0.5, -0.25, 1]);
+  // Without the Moonshine download, Apple's recognizer (and its permission).
+  assert.equal(mic.captionAsrDir(), 'apple-speech');
   mic.prepareCaptions();
   assert.deepEqual(calls.filter(call => call[0] === 'speech'), [['speech']]);
   assert.equal(mic.recordingsDir(), '/Docs/mic-recordings');
+});
+
+test('captions use the downloaded Moonshine model through the sherpa loader, with no Speech prompt', () => {
+  const { mic, calls } = setup({ moonshine: true });
+  mic.createCaptionEngine();
+  assert.deepEqual(calls.find(call => call[0] === 'engine'), ['engine', 'initWithSherpa', 'sherpa-loader']);
+  assert.equal(mic.captionAsrDir(), '/Models/moonshine');
+  mic.prepareCaptions();
+  assert.equal(calls.filter(call => call[0] === 'speech').length, 0);
+  // The Kotlin side tells the two apart by this sentinel.
+  assert.match(fs.readFileSync(`${KOTLIN}/iosMain/kotlin/com/faceclaw/app/IosMicAudio.kt`, 'utf8'), /const val APPLE_SPEECH = "apple-speech"/);
+});
+
+test('iOS re-diarizes a saved WAV through FaceclawSherpaDiarizer, with its selectors from the header', () => {
+  const { mic, calls } = setup();
+  const events = [];
+  mic.startDiarizer('/seg.onnx', '/emb.onnx', '/Docs/mic-recordings/a.wav', -1, 0.5, {
+    onProgress: f => events.push(['progress', f]), onDone: json => events.push(['done', json]), onError: m => events.push(['error', m]) });
+  assert.deepEqual(calls[0], ['diarizer', '/seg.onnx', '/emb.onnx', '/Docs/mic-recordings/a.wav', -1, 0.5]);
+  const [, progress, done] = calls[1];
+  progress(0.25); done('[{"startMs":0,"endMs":10,"cluster":0}]', null); done(null, 'Only 16 kHz mono recordings can be re-analyzed.');
+  assert.deepEqual(events, [['progress', 0.25], ['done', '[{"startMs":0,"endMs":10,"cluster":0}]'], ['error', 'Only 16 kHz mono recordings can be re-analyzed.']]);
+  const header = fs.readFileSync('App_Resources/iOS/src/FaceclawSherpa.h', 'utf8');
+  assert.match(header, /initWithSegmentationModel:\(NSString \*\)segmentationModel embeddingModel:\(NSString \*\)embeddingModel\s+wavPath:\(NSString \*\)wavPath numClusters:\(NSInteger\)numClusters threshold:\(float\)threshold;/);
+  assert.match(header, /- \(void\)startWithProgress:\(void \(\^\)\(double progress\)\)progress\s+completion:/);
 });
 
 test('iOS bundles the Conversations pages My Glasses and the list navigate to', () => {
@@ -148,8 +170,8 @@ test('iOS conversation detail plays its recording and offers Delete from one Mor
   assert.equal(model.transcriptRows[0].playIndicator, '⏸');
   await items[0].handlers.tap();
   await new Promise(resolve => setImmediate(resolve));
-  // No speakers on iOS yet, so no Split; Delete removes the row and goes back.
-  assert.deepEqual(calls.slice(3).map(call => JSON.stringify(call)), ['["action",["Delete conversation"]]', '["delete",4]', '["back"]']);
+  // A recording offers Re-diarize; no speakers, so no Split; Delete removes the row and goes back.
+  assert.deepEqual(calls.slice(3).map(call => JSON.stringify(call)), ['["action",["Re-diarize","Delete conversation"]]', '["delete",4]', '["back"]']);
 });
 
 test('iOS 4-mic forwarding runs through the session bridge and its capture-slot owner', () => {

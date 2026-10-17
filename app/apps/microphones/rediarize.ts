@@ -1,10 +1,6 @@
-import { conversationStore } from "../../native/mic-native";
-import { toUint8Array } from "../../util/array-util";
+import { conversationStore, startDiarizer } from "../../native/mic-native";
 import { micModelPath } from "./mic-models";
-import { SPEAKER_KNOWN_THRESHOLD, encodeEmbedding, speakerRegistry } from "./speakers";
-
-declare const com: any;
-declare const android: any;
+import { SPEAKER_KNOWN_THRESHOLD, decodeEmbedding, encodeEmbedding, speakerRegistry } from "./speakers";
 
 /**
  * Re-diarize a saved conversation: run offline speaker diarization (pyannote
@@ -31,10 +27,6 @@ type Turn = { startMs: number; endMs: number; cluster: number };
 
 const store = conversationStore;
 
-// Each run's listener is referenced only from Java while the diarizer works;
-// hold it here so it isn't GC'd before its callbacks.
-const activeListeners = new Set<any>();
-
 export function rediarizeSession(
   sessionId: number,
   options: { numSpeakers?: number; threshold?: number },
@@ -51,35 +43,20 @@ export function rediarizeSession(
     callbacks.onError("Download the re-diarization and speaker voice models first (Microphones > Voice & speakers).");
     return;
   }
-  const listener = new com.faceclaw.app.FaceclawDiarizer.Listener({
-    onProgress: (progress: number) => callbacks.onProgress(Number(progress)),
-    onDone: (turnsJson: string) => {
-      activeListeners.delete(listener);
-      try {
-        const turns = JSON.parse(String(turnsJson)) as Turn[];
-        callbacks.onDone(applyTurns(sessionId, turns));
-      } catch (error) {
-        callbacks.onError(`Applying diarization failed: ${String(error)}`);
-      }
-    },
-    onError: (message: string) => {
-      activeListeners.delete(listener);
-      callbacks.onError(String(message));
-    },
-  });
-  activeListeners.add(listener);
   try {
-    const diarizer = new com.faceclaw.app.FaceclawDiarizer(
-      segmentationModel,
-      embeddingModel,
-      audioPath,
-      options.numSpeakers ?? -1,
-      options.threshold ?? 0.5,
-      listener,
-    );
-    diarizer.start();
+    startDiarizer(segmentationModel, embeddingModel, audioPath, options.numSpeakers ?? -1, options.threshold ?? 0.5, {
+      onProgress: callbacks.onProgress,
+      onDone: (turnsJson) => {
+        try {
+          const turns = JSON.parse(turnsJson) as Turn[];
+          callbacks.onDone(applyTurns(sessionId, turns));
+        } catch (error) {
+          callbacks.onError(`Applying diarization failed: ${String(error)}`);
+        }
+      },
+      onError: callbacks.onError,
+    });
   } catch (error) {
-    activeListeners.delete(listener);
     callbacks.onError(`Re-diarization failed to start: ${String(error)}`);
   }
 }
@@ -106,7 +83,7 @@ function applyTurns(sessionId: number, turns: Turn[]): RediarizeResult {
   for (const row of JSON.parse(String(store().querySegmentEmbeddings(sessionId))) as Array<
     Record<string, unknown>
   >) {
-    const decoded = decodeBase64Floats(String(row.embeddingBase64 ?? ""));
+    const decoded = decodeEmbedding(String(row.embeddingBase64 ?? ""));
     if (decoded) embeddings.set(Number(row.id), decoded);
   }
 
@@ -197,15 +174,4 @@ function meanEmbedding(prints: Float32Array[]): Float32Array | null {
     for (let i = 0; i < mean.length; i++) mean[i] /= norm;
   }
   return mean;
-}
-
-function decodeBase64Floats(base64: string): Float32Array | null {
-  if (!base64) return null;
-  try {
-    const bytes = toUint8Array(android.util.Base64.decode(base64, android.util.Base64.NO_WRAP));
-    if (bytes.length < 4 || bytes.length % 4 !== 0) return null;
-    return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length));
-  } catch {
-    return null;
-  }
 }

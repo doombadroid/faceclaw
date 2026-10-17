@@ -3,7 +3,7 @@ TARGETED_DEVICE_FAMILY = 1;
 CODE_SIGN_STYLE = Automatic;
 
 // Set IOS_TEAM_ID in build_paths.sh (or pass --teamId) to choose the signing team.
-OTHER_LDFLAGS = $(inherited) -framework CoreBluetooth -framework CoreLocation -framework CoreText -framework Speech -framework AVFoundation -framework WebKit -framework UniformTypeIdentifiers -framework ImageIO -framework EventKit -framework Network -framework CoreMedia -framework CoreVideo -framework QuartzCore -framework UserNotifications -framework NaturalLanguage -framework Accelerate -lsqlite3 -lc++ -weak_framework AlarmKit
+OTHER_LDFLAGS = $(inherited) -framework CoreBluetooth -framework CoreLocation -framework CoreText -framework Speech -framework AVFoundation -framework WebKit -framework UniformTypeIdentifiers -framework ImageIO -framework EventKit -framework Network -framework CoreMedia -framework CoreVideo -framework QuartzCore -framework UserNotifications -framework NaturalLanguage -framework Accelerate -lsqlite3 -lc++ -framework CoreML -weak_framework AlarmKit
 
 // Language mode for src/*.swift (the runtime template says 4.2). ns build passes SWIFT_ENABLE_EXPLICIT_MODULES=NO
 // unless this file sets it; CI calls xcodebuild directly, so set it here too.
@@ -17,7 +17,9 @@ HEADER_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../../App_Resources/iOS/src/lc3"
 // NativeScript's xcconfig merge keeps only the CocoaPods HEADER_SEARCH_PATHS when the
 // generated project is rebuilt, so the vendored liblc3 include dir is also passed as a flag
 // (OTHER_CFLAGS merges like OTHER_LDFLAGS).
-OTHER_CFLAGS = $(inherited) -I"$(SRCROOT)/../../App_Resources/iOS/src/lc3"
+// sherpa-onnx's C API header for FaceclawSherpa.m, staged by scripts/ios-native-deps.cjs outside the
+// xcframeworks (whose C++ headers are stripped). CoreML above is for onnxruntime's CoreML provider.
+OTHER_CFLAGS = $(inherited) -I"$(SRCROOT)/../../App_Resources/iOS/src/lc3" -I"$(SRCROOT)/../../native/kotlin/plugin/platforms/ios/include"
 
 // FaceclawKit ships arm64 device and Apple-silicon simulator slices.
 EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64;

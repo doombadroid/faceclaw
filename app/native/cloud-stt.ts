@@ -40,6 +40,8 @@ export interface CloudSttClient {
 /** Sample rate of the PCM the G2 mic path produces, shared by all providers. */
 export const CLOUD_STT_SAMPLE_RATE = 16000;
 
+import { toUint8Array } from "../util/array-util";
+
 declare const android: any;
 
 /** Copy a Uint8Array into a Java byte[] (for binary WebSocket frames etc.). */
@@ -50,6 +52,16 @@ export function toJavaBytes(bytes: Uint8Array): any {
     javaBytes[i] = value > 127 ? value - 256 : value;
   }
   return javaBytes;
+}
+
+/** Base64 decode via the platform SDK; an empty array for an empty or invalid string. */
+export function decodeBase64(base64: string): Uint8Array {
+  if (!base64) return new Uint8Array(0);
+  if (global.isIOS) {
+    const decoded = NSData.alloc().initWithBase64EncodedStringOptions(base64, 0 as NSDataBase64DecodingOptions);
+    return decoded ? new Uint8Array(interop.bufferFromData(decoded)).slice() : new Uint8Array(0);
+  }
+  return toUint8Array(android.util.Base64.decode(base64, android.util.Base64.NO_WRAP));
 }
 
 /** Base64 for audio payloads, via the platform SDK (no JS base64 in NS core). */

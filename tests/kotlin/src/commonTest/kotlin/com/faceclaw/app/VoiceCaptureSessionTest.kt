@@ -209,13 +209,13 @@ class VoiceCaptureSessionTest {
         assertEquals("x" to false, events.transcripts.first())
         assertTrue(events.transcripts.any { it == ("x x" to false) })
         // Every segment handed to the model is at most 8 s and was peak-normalized.
-        assertTrue(transcriber.calls.all { it in 1..VoiceCaptureSession.TRANSCRIPT_SEGMENT_MAX_SAMPLES })
+        assertTrue(transcriber.calls.all { it in 1..SegmentedTranscript.TRANSCRIPT_SEGMENT_MAX_SAMPLES })
         assertTrue(logs.any { it.startsWith("I Moonshine decode final=true") }, logs.toString())
         assertEquals(1, host.recordings.size)
         assertEquals(170 * 800 * 2, host.recordings[0].size)
         assertEquals(170, events.pcmChunks.size)
-        assertEquals("x x", VoiceCaptureSession.joinTranscript("x", "x"))
-        assertEquals("x, y", VoiceCaptureSession.joinTranscript("x", ", y"))
+        assertEquals("x x", SegmentedTranscript.joinTranscript("x", "x"))
+        assertEquals("x, y", SegmentedTranscript.joinTranscript("x", ", y"))
     }
 
     @Test
