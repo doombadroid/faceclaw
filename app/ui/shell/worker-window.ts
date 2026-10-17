@@ -7,6 +7,7 @@ import { appViewportSize, type WindowHeightMode } from "./geometry";
 import * as frameTimings from "../../native/frame-timings";
 import { shell, type ShellWindow } from "./shell";
 import { publishWorkerState } from "./worker-state";
+import { reportError, type WorkerErrorReport } from "../../native/error-reports";
 
 /**
  * Messages between the shell (main thread) and an app worker. One worker
@@ -43,6 +44,7 @@ export type WorkerAppReply =
   | { type: "buzzer-sequence"; payload: number[] }
   | { type: "navigation-sensors"; request: NavigationSensorRequest }
   | { type: "open-url"; url: string }
+  | WorkerErrorReport
   | { type: "surface-frame"; surfaceId: string; width: number; height: number; pixels: string; draws?: string }
   | {
       /**
@@ -253,6 +255,11 @@ export class WorkerAppHost {
     options.worker.onmessage = (event: MessageEvent) => {
       const message = event.data as WorkerAppReply | undefined;
       if (!message) return;
+      // Before the stopping check: a report from a worker on its way out still counts.
+      if (message.type === "error-report") {
+        reportError(message.source, { message: message.message, stack: message.stack }, message.context);
+        return;
+      }
       if (this.stopping) {
         if (message.type === "worker-stopped") this.terminate();
         return;

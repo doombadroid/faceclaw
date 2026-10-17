@@ -8,6 +8,11 @@ Application.on(Application.uncaughtErrorEvent, (args) => logJsError('uncaught', 
 
 // Apply transferred preferences before settings getters or app workers load.
 FaceclawConfigPort.processPendingRequest()
+// Caught errors leave a report the owner sees (native/error-reports.ts); before anything can catch one.
+const { installKotlinErrorReports } = require('./native/kotlin-error-reports.ios') as typeof import('./native/kotlin-error-reports.ios')
+const { installErrorNotice } = require('./phone-ui/ios/error-reports-page') as typeof import('./phone-ui/ios/error-reports-page')
+// The notice listens first: registering the Kotlin listener can deliver buffered reports.
+try { installErrorNotice(); installKotlinErrorReports() } catch (error) { console.error(`error reports not installed: ${error}`) }
 require('./phone-ui/onboarding-register.ios')
 require('./phone-ui/ios/register')
 // After the transferred preferences, before anything reads the provider.
