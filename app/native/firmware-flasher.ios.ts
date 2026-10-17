@@ -5,6 +5,7 @@ import { iosBluetooth } from './ios-bluetooth'
 import { kotlinListener } from './kotlin-listener.ios'
 import type { FlashState, FlashProgress } from '../g2/firmware-types'
 import { APP_NAME } from '../branding'
+import { guardCallback } from './callback-errors.ios'
 export type { FlashState, FlashProgress } from '../g2/firmware-types'
 
 declare const FaceclawKitIosFirmwareFlasher: any, FaceclawKitFaceclawFirmwareFlasherListener: any
@@ -125,6 +126,7 @@ export class FirmwareFlasher {
 
   private emit<A extends unknown[]>(listeners: Set<(...args: A) => void>, ...args: A): void {
     const snapshot = Array.from(listeners)
-    setTimeout(() => { for (const listener of snapshot) listener(...args) }, 0)
+    // Each on its own: one throwing listener must not starve the rest.
+    setTimeout(() => { for (const listener of snapshot) guardCallback('firmware flasher listener', () => listener(...args)) }, 0)
   }
 }

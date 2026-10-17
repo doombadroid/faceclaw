@@ -1,6 +1,7 @@
 import { iosBluetooth } from './ios-bluetooth'
 import { kotlinListener } from './kotlin-listener.ios'
 import type { DeviceInfo, DeviceInfoState } from './device-info-probe'
+import { guardCallback } from './callback-errors.ios'
 export type { DeviceInfo, DeviceInfoState } from './device-info-probe'
 
 declare const FaceclawKitIosDeviceInfoProbe: any, FaceclawKitFaceclawDeviceInfoProbeListener: any
@@ -84,6 +85,7 @@ export class DeviceInfoProbe {
 
   private emit<A extends unknown[]>(listeners: Set<(...args: A) => void>, ...args: A): void {
     const snapshot = Array.from(listeners)
-    setTimeout(() => { for (const listener of snapshot) listener(...args) }, 0)
+    // Each on its own: one throwing listener must not starve the rest.
+    setTimeout(() => { for (const listener of snapshot) guardCallback('device info listener', () => listener(...args)) }, 0)
   }
 }

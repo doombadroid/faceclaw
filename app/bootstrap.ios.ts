@@ -2,9 +2,9 @@ import { Application, Frame } from '@nativescript/core'
 import { logJsError } from './native/callback-errors.ios'
 declare const FaceclawConfigPort: any
 
-// nativescript.config.ts discards uncaught JS errors instead of ending the app; keep them in the log.
-Application.on(Application.discardedErrorEvent, (args) => logJsError('uncaught', args.error))
-Application.on(Application.uncaughtErrorEvent, (args) => logJsError('uncaught', args.error))
+// nativescript.config.ts discards uncaught JS errors instead of ending the app; each becomes an error report.
+Application.on(Application.discardedErrorEvent, (args) => logJsError('uncaught JS', args.error))
+Application.on(Application.uncaughtErrorEvent, (args) => logJsError('uncaught JS', args.error))
 
 // Apply transferred preferences before settings getters or app workers load.
 FaceclawConfigPort.processPendingRequest()

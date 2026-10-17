@@ -143,7 +143,7 @@ test('settings changes propagate between iOS worker isolates once, including aft
   const store = new Map(), ticks = new Set(), tasks = [];
   const ApplicationSettings = { getString: (k, d) => store.get(k) ?? d, getBoolean: (k, d) => store.get(k) ?? d,
     setString: (k, v) => store.set(k, v), setBoolean: (k, v) => store.set(k, v), hasKey: k => store.has(k) };
-  const context = { require: () => ({ ApplicationSettings }), setTimeout: fn => tasks.push(fn),
+  const context = { require: name => name === './callback-errors.ios' ? { guardCallback: (_where, run) => run() } : { ApplicationSettings }, setTimeout: fn => tasks.push(fn),
     setInterval: fn => { ticks.add(fn); return fn; }, clearInterval: fn => ticks.delete(fn) };
   const main = load('app/native/settings-store.ios.ts', context), worker = load('app/native/settings-store.ios.ts', context);
   const seenMain = [], seenWorker = [];

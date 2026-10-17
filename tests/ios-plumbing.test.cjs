@@ -55,10 +55,16 @@ test('iOS links every system framework the port uses and declares the usage stri
   }
 });
 
+/** error-reports.ts stand-in: the reports a guard filed, as [source, message]. */
+function reportSink() {
+  const reports = [];
+  return { reports, module: { reportError: (source, error) => reports.push([source, String(error?.message ?? error)]) } };
+}
+
 test('Kotlin listeners answer to both K/N twin selector names', () => {
   let extended = null;
   const NSObject = { extend: (methods) => { extended = methods; return { new: () => methods }; } };
-  const { kotlinListener } = loader({ NSObject })('app/native/kotlin-listener.ios.ts');
+  const { kotlinListener } = loader({ NSObject }, { './error-reports': reportSink().module })('app/native/kotlin-listener.ios.ts');
   const heard = [];
   kotlinListener({}, { onTranscriptTextIsFinal: text => heard.push(text), onFailureMessage_: message => heard.push(message) });
   // K/N moves the "_" between twins by compile order; the protocol picks whichever it declares.
@@ -82,63 +88,85 @@ test('iOS release builds discard an uncaught JS error and log it instead of term
   assert.match(read('app/bootstrap.ios.ts'), /Application\.discardedErrorEvent/, 'a discarded error must still reach the log');
 });
 
-test('a Kotlin listener method that throws is logged under either twin name, not thrown into native code', () => {
+test('a Kotlin listener method that throws files an error report under either twin name, not thrown into native code', () => {
   let extended = null;
-  const logged = [];
+  const sink = reportSink();
   const { kotlinListener } = loader({
-    NSObject: { extend: (methods) => { extended = methods; return { new: () => methods }; } },
-    FaceclawLog: { log: line => logged.push(line) }, console: quietConsole,
-  })('app/native/kotlin-listener.ios.ts');
+    NSObject: { extend: (methods) => { extended = methods; return { new: () => methods }; } }, console: quietConsole,
+  }, { './error-reports': sink.module })('app/native/kotlin-listener.ios.ts');
   kotlinListener({}, { onErrorMessage_: () => { throw new Error('boom'); }, valueForKey(key) { return `${this.prefix}${key}`; } });
   assert.doesNotThrow(() => extended.onErrorMessage_('x'));
   assert.doesNotThrow(() => extended.onErrorMessage('x'));
-  assert.equal(logged.length, 2);
-  for (const line of logged) assert.match(line, /onErrorMessage_.*boom/);
+  assert.deepEqual(sink.reports, [['onErrorMessage_', 'boom'], ['onErrorMessage_', 'boom']]);
   assert.equal(extended.valueForKey.call({ prefix: 'k:' }, 'a'), 'k:a', 'return values and this pass through');
 });
 
-test('a throwing bridge listener is logged and the next listener still hears the event', async () => {
-  const logged = [];
+/** FaceclawCommunicatorBridge over a recording native session; [errors] maps a selector to the error string it returns. */
+function bridgeHarness(errors = {}) {
+  const sink = reportSink();
   const calls = [];
-  const native = new Proxy({}, { get: (_, name) => (...args) => { calls.push([name, ...args]); return true; } });
+  const native = new Proxy({}, { get: (_, name) => (...args) => { calls.push([name, ...args]); return name in errors ? errors[name] : true; } });
   const { FaceclawCommunicatorBridge: Bridge } = loader({
-    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } },
-    FaceclawLog: { log: line => logged.push(line) }, console: quietConsole,
+    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } }, console: quietConsole,
     interop: { bufferFromData: d => d.buffer }, NSData: {},
     FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
     FaceclawKitFaceclawCompassListener: {},
     FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
-  }, { '@nativescript/core': {}, './ios-graphics': {}, './ios-bluetooth': {} })('app/native/faceclaw-communicator.ios.ts');
-  const bridge = new Bridge({ right: 'r', left: 'l' });
+  }, { '@nativescript/core': {}, './ios-graphics': {}, './ios-bluetooth': {}, './error-reports': sink.module })('app/native/faceclaw-communicator.ios.ts');
+  return { bridge: new Bridge({ right: 'r', left: 'l' }), calls, reports: sink.reports };
+}
+
+test('a throwing bridge listener files a report and the next listener still hears the event', async () => {
+  const { bridge, calls, reports } = bridgeHarness();
   const heard = [];
   bridge.onSilentMode(() => { throw new Error('first'); });
   bridge.onSilentMode(silent => heard.push(silent));
   bridge.handleSilentMode(true);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(heard, [true]);
-  assert.equal(logged.length, 1); assert.match(logged[0], /first/);
+  assert.deepEqual(reports, [['bridge listener', 'first']]);
   // An ObjC protocol class calling app code directly from a Kotlin frame.
   bridge.startAudioForwarding(() => { throw new Error('packet'); });
   const forwarder = calls.find(([name]) => name === 'startG2AudioForwardingNsDataListener')[1];
   assert.doesNotThrow(() => forwarder.onAudioPacketDataArmArrivalMs_({ buffer: new Uint8Array([1]).buffer }, 'R', 7));
-  assert.match(logged.at(-1), /onAudioPacketDataArmArrivalMs.*packet/);
+  assert.deepEqual(reports.at(-1), ['onAudioPacketDataArmArrivalMs', 'packet']);
+  // The preview animation block Kotlin calls on the main queue: each listener on its own.
+  const animation = calls.find(([name]) => name === 'setPreviewAnimationListenerListener')[1];
+  const stepped = [];
+  bridge.onPreviewAnimationFrame(() => { throw new Error('step'); });
+  bridge.onPreviewAnimationFrame(() => stepped.push(1));
+  assert.doesNotThrow(() => animation());
+  assert.deepEqual(stepped, [1]);
+  assert.deepEqual(reports.at(-1), ['previewAnimation', 'step']);
   await bridge.close();
 });
 
+test('every SessionListener, AncsListener and CompassListener method guards the app code it calls', () => {
+  const { bridge, calls, reports } = bridgeHarness();
+  bridge.setRequiresAncs(true);
+  bridge.addCompassListener(() => {});
+  const proxy = selector => calls.find(([name]) => name === selector)[1];
+  const thrower = new Proxy({}, { get: () => () => { throw new Error('app code'); } });
+  let methods = 0;
+  for (const listener of [proxy('setListenerListener'), proxy('setAncsListenerListener'), proxy('addCompassListenerListener')]) {
+    listener.bridge = thrower;
+    listener.handler = () => { throw new Error('app code'); };
+    for (const name of Object.getOwnPropertyNames(Object.getPrototypeOf(listener)).filter(n => n !== 'constructor')) {
+      const before = reports.length;
+      assert.doesNotThrow(() => listener[name]({ buffer: new ArrayBuffer(1) }), name);
+      assert.equal(reports.length, before + 1, `${name} filed no report`);
+      methods++;
+    }
+  }
+  assert.ok(methods >= 13, `only ${methods} listener methods found`);
+});
+
 test('brightness, screen and wear-detection failures reject, as on Android', async () => {
-  const errors = {
+  const { bridge } = bridgeHarness({
     configureBrightnessAutoLevelMinimumMaximumCurveFadeMs: 'IosGlassesSession.configureBrightness: bad',
     setG2ScreenOnScreenOn: 'IosGlassesSession.setG2ScreenOn: bad',
     enableWearDetectionAndRequestState: 'IosGlassesSession.enableWearDetectionAndRequestState: bad',
-  };
-  const native = new Proxy({}, { get: (_, name) => () => name in errors ? errors[name] : true });
-  const { FaceclawCommunicatorBridge: Bridge } = loader({
-    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } }, console: quietConsole,
-    FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
-    FaceclawKitFaceclawCompassListener: {},
-    FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
-  }, { '@nativescript/core': {}, './ios-graphics': {}, './ios-bluetooth': {} })('app/native/faceclaw-communicator.ios.ts');
-  const bridge = new Bridge({ right: 'r', left: 'l' });
+  });
   await assert.rejects(bridge.configureBrightness({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0', fadeMs: 0 }), /configureBrightness: bad/);
   await assert.rejects(bridge.setG2ScreenOn(true), /setG2ScreenOn: bad/);
   await assert.rejects(bridge.enableWearDetectionAndRequestState(), /enableWearDetectionAndRequestState: bad/);

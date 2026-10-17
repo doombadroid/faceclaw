@@ -80,7 +80,7 @@ for (const provider of ['openai', 'anthropic']) {
 test('iOS SSE adapter forwards the Kotlin stream events once and stops after cancellation/EOF', () => {
   const instances = [], seen = [];
   const nsObject = { extend: methods => ({ new: () => ({ ...methods }) }) };
-  const listenerModule = loader({ NSObject: nsObject }, {})('app/native/kotlin-listener.ios.ts');
+  const listenerModule = loader({ NSObject: nsObject }, { './error-reports': { reportError() {} } })('app/native/kotlin-listener.ios.ts');
   const api = loader({
     FaceclawKitIosSseRequest: { alloc: () => ({ initWithUrlBodyHeadersJsonListener(url, body, headers, listener) {
       const instance = { listener, cancelled: false, cancel() { this.cancelled = true; } };

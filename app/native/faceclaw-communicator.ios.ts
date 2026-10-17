@@ -255,7 +255,7 @@ export class FaceclawCommunicatorBridge {
     this.communicator.setListenerListener(this.listenerProxy);
     // Kotlin calls this on the main queue.
     this.communicator.setPreviewAnimationListenerListener(() => {
-      for (const listener of Array.from(this.previewAnimationListeners)) listener();
+      for (const listener of Array.from(this.previewAnimationListeners)) guardCallback("previewAnimation", listener);
     });
     FaceclawCommunicatorBridge.active = this;
   }

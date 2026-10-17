@@ -52,7 +52,7 @@ function flasherFixture({ hash = 'custom', outcome = 'success', backgroundOn = '
     '@nativescript/core': { Application: app },
     '../g2/firmware/cfw-patches': { CFW_PATCH_SET: { outputSha256: 'custom', baseSha256: 'stock' } },
     './firmware-files.ios': { readFirmwareFile: () => new Uint8Array(16), firmwareSha256: () => hash },
-    './ios-bluetooth': bluetooth({ right: 'R-ID', left: 'L-ID' }, resolveError), './kotlin-listener.ios': listenerModule,
+    './ios-bluetooth': bluetooth({ right: 'R-ID', left: 'L-ID' }, resolveError), './kotlin-listener.ios': listenerModule, './callback-errors.ios': callbackErrors,
     '../branding': { APP_NAME: 'OcuSmart' },
   }, { UIApplication: { sharedApplication: native }, UIApplicationState: { Active: 0 }, FaceclawKitIosFirmwareFlasher, FaceclawKitFaceclawFirmwareFlasherListener: {} });
   const flasher = new FirmwareFlasher({ right: 'r', left: 'l' }, 'prepared.bin');
@@ -61,7 +61,8 @@ function flasherFixture({ hash = 'custom', outcome = 'success', backgroundOn = '
   const result = new Promise(resolve => flasher.onComplete((success, detail) => resolve({ success, detail })));
   return { calls, events, native, flasher, result, instances, states, progress };
 }
-const listenerModule = load('app/native/kotlin-listener.ios.ts', { './callback-errors.ios': load('app/native/callback-errors.ios.ts') }, { NSObject: nsObject });
+const callbackErrors = load('app/native/callback-errors.ios.ts', { './error-reports': { reportError() {} } });
+const listenerModule = load('app/native/kotlin-listener.ios.ts', { './callback-errors.ios': callbackErrors }, { NSObject: nsObject });
 
 test('iOS flashing checks the image hash, resolves identifiers, runs the Kotlin OTA flow and reports success', async () => {
   for (const hash of ['custom', 'stock']) {
@@ -100,7 +101,7 @@ test('iOS firmware prompt maps addresses to identifiers, forwards the Kotlin flo
     instances.push(prompt); return prompt;
   } }) };
   const { FlashPromptCommunicator } = load('app/native/flash-prompt-communicator.ios.ts', {
-    './ios-bluetooth': bluetooth(), './kotlin-listener.ios': listenerModule,
+    './ios-bluetooth': bluetooth(), './kotlin-listener.ios': listenerModule, './callback-errors.ios': callbackErrors,
   }, { FaceclawKitIosFlashPrompt, FaceclawKitFaceclawFlashPromptListener: {} });
   const prompt = new FlashPromptCommunicator({ right: 'r', left: 'l' }, 'warning', { skipPrompt: true }), states = [], results = [], batteries = [];
   prompt.onStateChange((state, detail) => states.push(`${state}:${detail}`)); prompt.onResult(approved => results.push(approved)); prompt.onBattery(b => batteries.push(b));
@@ -113,7 +114,7 @@ test('iOS firmware prompt maps addresses to identifiers, forwards the Kotlin flo
   assert.deepEqual(JSON.parse(JSON.stringify(batteries)), [{ right: 88, left: null }]); assert.deepEqual(results, [true]);
   prompt.close(); assert.equal(instances[0].closed, true);
   const unresolved = load('app/native/flash-prompt-communicator.ios.ts', {
-    './ios-bluetooth': bluetooth({}, 'Wake the glasses.'), './kotlin-listener.ios': listenerModule,
+    './ios-bluetooth': bluetooth({}, 'Wake the glasses.'), './kotlin-listener.ios': listenerModule, './callback-errors.ios': callbackErrors,
   }, { FaceclawKitIosFlashPrompt, FaceclawKitFaceclawFlashPromptListener: {} });
   const failed = new unresolved.FlashPromptCommunicator({ right: 'r', left: 'l' }, 'warning'), errors = [];
   failed.onStateChange((state, detail) => { if (state === 'error') errors.push(detail); });
@@ -242,7 +243,7 @@ test('iOS firmware probe resolves identifiers, runs the Kotlin flow and settles 
     instances.push(probe); return probe;
   } }) };
   const { DeviceInfoProbe } = load('app/native/device-info-probe.ios.ts', {
-    './ios-bluetooth': bluetooth(), './kotlin-listener.ios': listenerModule,
+    './ios-bluetooth': bluetooth(), './kotlin-listener.ios': listenerModule, './callback-errors.ios': callbackErrors,
   }, { FaceclawKitIosDeviceInfoProbe, FaceclawKitFaceclawDeviceInfoProbeListener: {} });
   const probe = new DeviceInfoProbe('r', 'l'), states = [];
   probe.onStateChange((state, detail) => states.push(`${state}:${detail}`));

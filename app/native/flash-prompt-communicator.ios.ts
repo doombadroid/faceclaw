@@ -1,6 +1,7 @@
 import { iosBluetooth } from './ios-bluetooth'
 import { kotlinListener } from './kotlin-listener.ios'
 import type { FlashPromptBattery, FlashPromptState } from './flash-prompt-communicator'
+import { guardCallback } from './callback-errors.ios'
 export type { FlashPromptBattery, FlashPromptState } from './flash-prompt-communicator'
 
 declare const FaceclawKitIosFlashPrompt: any, FaceclawKitFaceclawFlashPromptListener: any
@@ -93,6 +94,7 @@ export class FlashPromptCommunicator {
 
   private emit<A extends unknown[]>(listeners: Set<(...args: A) => void>, ...args: A): void {
     const snapshot = Array.from(listeners)
-    setTimeout(() => { for (const listener of snapshot) listener(...args) }, 0)
+    // Each on its own: one throwing listener must not starve the rest.
+    setTimeout(() => { for (const listener of snapshot) guardCallback('flash prompt listener', () => listener(...args)) }, 0)
   }
 }
