@@ -345,6 +345,21 @@ test('At most two unreadable files are kept', () => {
     '/lib/error-reports.jsonl.corrupt-2026-10-03T00-00-00-000Z', '/lib/error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z']);
 });
 
+test('A failed clean-up of old unreadable files after a good move still lets reports be saved', () => {
+  const files = new Map([['/lib/error-reports.jsonl', 'garbage'],
+    ...['2026-10-01', '2026-10-02'].map(day => [`/lib/error-reports.jsonl.corrupt-${day}T00-00-00-000Z`, day])]);
+  const h = harness({ files });
+  h.failRead = '/lib/error-reports.jsonl'; h.failRemove = true;
+  h.module.reportError('after', 'new');
+  h.failRemove = false;
+  h.module.reportError('later', 'x'); h.flushTimers();
+  assert.deepEqual(h.stored().map(r => r.source).sort(), ['after', 'error reports', 'later']);
+  const notice = h.module.listErrorReports().find(r => r.source === 'error reports');
+  assert.equal(notice.context.movedTo, 'error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z');
+  assert.equal(notice.context.notSaved, undefined);
+  assert.match(notice.context.pruneFailed, /killed/);
+});
+
 test('An unreadable file that cannot be moved aside is not overwritten either', () => {
   const h = harness({ files: new Map([['/lib/error-reports.jsonl', 'older reports']]) });
   h.failRead = true; h.failRename = true;

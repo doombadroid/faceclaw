@@ -243,13 +243,18 @@ function quarantine(paths: string[], readError: unknown): void {
       File.fromPath(path).renameSync(name, fail)
       context[tmp ? 'tmpMovedTo' : 'movedTo'] = name
     }
-    const folder = folderPath(), prefix = `${FILE_NAME}.corrupt-`, stampOf = (name: string) => name.slice(prefix.length).replace(/\.tmp$/, '')
-    const aside = Folder.fromPath(folder).getEntitiesSync().map(entry => entry.name).filter(name => name.startsWith(prefix))
-    const keep = [...new Set(aside.map(stampOf))].sort().slice(-MAX_CORRUPT)
-    for (const name of aside) if (!keep.includes(stampOf(name))) File.fromPath(fsPath.join(folder, name)).removeSync(fail)
   } catch (moveError) {
     readOnly = true
     context.notSaved = `could not move it aside (${normalizeError(moveError).message}); reports are kept in memory only this session`
+  }
+  // Moved aside already, so saving is safe: a failed clean-up only leaves extra old files.
+  try {
+    const folder = folderPath(), prefix = `${FILE_NAME}.corrupt-`, stampOf = (name: string) => name.slice(prefix.length).replace(/\.tmp$/, '')
+    const aside = Folder.fromPath(folder).getEntitiesSync().map(entry => entry.name).filter(name => name.startsWith(prefix))
+    const keep = [...new Set(aside.map(stampOf))].sort().slice(-MAX_CORRUPT)
+    for (const name of aside) if (!keep.includes(stampOf(name))) File.fromPath(fsPath.join(folder, name)).removeSync((error: unknown) => { throw error })
+  } catch (pruneError) {
+    context.pruneFailed = `could not delete older unreadable files (${normalizeError(pruneError).message})`
   }
   reportError('error reports', readError, context)
 }
