@@ -1,7 +1,8 @@
 /**
  * iOS twin of mic-native.ts over FaceclawKit: the shared Kotlin store on the
- * FaceclawSqlite shim, the shared suppressor and caption session (Apple's
- * recognizer per utterance, no voice-prints), and a WAV recorder. PCM crosses
+ * FaceclawSqlite shim, the shared suppressor and caption session (the
+ * downloaded Moonshine model, else Apple's recognizer per utterance; no
+ * voice-prints yet), and a WAV recorder. PCM crosses
  * as NSData. Each object is wrapped to Android's method names.
  */
 import { knownFolders } from "@nativescript/core";
@@ -9,6 +10,8 @@ import { knownFolders } from "@nativescript/core";
 import type { CaptionCallbacks } from "./mic-native";
 import { toData } from "./kotlin-data";
 import { kotlinListener } from "./kotlin-listener.ios";
+import { asrModelDir, isAsrModelReady } from "./asr-model";
+import { sherpaLoader } from "./onboard-stt.ios";
 
 export type { CaptionCallbacks } from "./mic-native";
 
@@ -79,7 +82,7 @@ export function toNativePcm(pcm: Uint8Array): any {
 }
 
 export function createCaptionEngine(): any {
-  const engine = FaceclawKitIosCaptionEngine.new();
+  const engine = FaceclawKitIosCaptionEngine.alloc().initWithSherpa(sherpaLoader());
   return {
     ...adapt(engine, { setListener: "setListenerListener", setAsrModelDir: "setAsrModelDirDir", start: "start", stop: "stop",
       requestStop: "requestStop", acceptPcm: "acceptPcmPcm" }),
@@ -98,14 +101,14 @@ export function createCaptionListener(callbacks: CaptionCallbacks): any {
   });
 }
 
-/** Apple ships the recognizer's models; any non-null dir turns recognition on. */
+/** Android's caption model (Moonshine) once downloaded; else Apple's recognizer (IosCaptionEngine.APPLE_SPEECH). */
 export function captionAsrDir(): string | null {
-  return "apple-speech";
+  return isAsrModelReady("moonshine") ? asrModelDir("moonshine") : "apple-speech";
 }
 
 /** Speech Recognition can only be granted from the foreground; the caption engine checks it per start. */
 export function prepareCaptions(): void {
-  if (FaceclawSpeech.authorizationStatus() !== 0) return;
+  if (isAsrModelReady("moonshine") || FaceclawSpeech.authorizationStatus() !== 0) return;
   if (UIApplication.sharedApplication.applicationState !== UIApplicationState.Active) return;
   FaceclawSpeech.requestAuthorization(() => {});
 }

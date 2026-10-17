@@ -17,6 +17,7 @@ import {
   type AssistantModel,
 } from "~/assistant/models";
 import { isLocalModelReady } from "../native/llama";
+import { isAsrModelReady } from "../native/asr-model";
 import { drawRightValueMenuItem, drawToggleMenuItem, MenuItem, openModalMenu } from "./menu";
 import { ANIMATION_SPEEDS, animationSpeedLabel, scaleAnimationDuration, type AnimationSpeed } from "./animation-speed";
 import { MENU_ANIMATION_KEY } from "./menu-animation-pref";
@@ -817,12 +818,14 @@ export const ringConnectionModeSetting = new ConfigSettingEnum<RingConnectionMod
 // runs -- see the same note in native/voice-control.ts. The "whisper" value
 // keeps its name (it's a persisted setting on real installs) but its label
 // below now says "OpenAI" to tell the two apart in the picker.
-export type VoiceProvider = "onboard" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
+// "onboard-moonshine" exists for iOS only, where "onboard" (the persisted
+// default) is Apple's recognizer; Android's "onboard" already is Moonshine, and
+// a stray "onboard-moonshine" there falls back to it.
+export type VoiceProvider = "onboard" | "onboard-moonshine" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
 
-// On iOS "onboard" is Apple's on-device recognizer, and there is no
-// "onboard-whisper" (the sherpa-onnx models are Android-only).
 const voiceProviderLabels: Record<VoiceProvider, string> = {
   onboard: global.isIOS ? "On-device (Apple)" : "On-device (Moonshine)",
+  "onboard-moonshine": "On-device (Moonshine)",
   "onboard-whisper": "On-device (Whisper)",
   elevenlabs: "ElevenLabs",
   whisper: "OpenAI (Whisper)",
@@ -834,16 +837,21 @@ export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
   label: "Transcription provider",
   storageKey: "voice.provider",
   defaultValue: "onboard",
-  values: global.isIOS ? ["onboard", "elevenlabs", "whisper", "soniox"] : ["onboard", "onboard-whisper", "elevenlabs", "whisper", "soniox"],
+  values: global.isIOS
+    ? ["onboard", "onboard-moonshine", "onboard-whisper", "elevenlabs", "whisper", "soniox"]
+    : ["onboard", "onboard-whisper", "elevenlabs", "whisper", "soniox"],
   formatValue: (value) => voiceProviderLabels[value] ?? value,
   isDisabled: (value) => {
     if (value === "elevenlabs") return elevenLabsApiKeySetting.get().trim().length === 0;
     if (value === "whisper") return openAiApiKeySetting.get().trim().length === 0;
     if (value === "soniox") return sonioxApiKeySetting.get().trim().length === 0;
+    // iOS: pickable once its model is downloaded (Android reports a missing model at capture).
+    if (global.isIOS && value === "onboard-moonshine") return !isAsrModelReady("moonshine");
+    if (global.isIOS && value === "onboard-whisper") return !isAsrModelReady("whisper-base-en");
     return false;
   },
   description: global.isIOS
-    ? "Speech-to-text engine for voice input. ElevenLabs, OpenAI, and Soniox are cloud services that need an API key (Settings > API Keys), with significantly better accuracy than on-device transcription. On-device uses your iPhone's speech language and never leaves the phone."
+    ? "Speech-to-text engine for voice input. ElevenLabs, OpenAI, and Soniox are cloud services that need an API key (Settings > API Keys), with significantly better accuracy than on-device transcription. On-device (Apple) uses your iPhone's speech language; On-device (Moonshine) and (Whisper) are English and need their voice model downloaded (below). On-device audio never leaves the phone."
     : "Speech-to-text engine for voice input. ElevenLabs, OpenAI, and Soniox are cloud services that need an API key, with significantly better accuracy than on-device transcription. The two On-device options need their voice model downloaded (below) and never leave the phone.",
 });
 

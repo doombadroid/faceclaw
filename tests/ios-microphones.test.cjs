@@ -9,7 +9,7 @@ const exported = exportedNames(`${KOTLIN}/commonMain/kotlin/com/faceclaw/app/aud
   `${KOTLIN}/iosMain/kotlin/com/faceclaw/app/IosMicAudio.kt`,
   `${KOTLIN}/commonMain/kotlin/com/faceclaw/app/callbacks/FaceclawCaptionEngineListener.kt`);
 
-function setup({ port = true } = {}) {
+function setup({ port = true, moonshine = false } = {}) {
   const calls = [];
   // Every FaceclawKit object records the selectors called on it.
   const native = kind => {
@@ -33,6 +33,8 @@ function setup({ port = true } = {}) {
     '@nativescript/core': { knownFolders: { documents: () => ({ path: '/Docs' }), ios: { library: () => ({ path: '/Lib' }) } } },
     './kotlin-data': { toData: bytes => ({ data: [...bytes] }) },
     './kotlin-listener.ios': { kotlinListener: (protocol, methods) => { listener = { protocol, methods }; return methods; } },
+    './asr-model': { isAsrModelReady: id => moonshine && id === 'moonshine', asrModelDir: id => `/Models/${id}` },
+    './onboard-stt.ios': { sherpaLoader: () => 'sherpa-loader' },
   })('app/native/mic-native.ios.ts');
   return { mic, calls, listener: () => listener };
 }
@@ -74,10 +76,22 @@ test('caption callbacks arrive with Android types, never a voice-print, and Spee
   methods.onUtteranceTextEmbeddingStartMsEndMsPeakRms('hello', { size: 3 }, 10, 20, 0.5);
   methods.onSpeechStartStartMs(5); methods.onStatusStatus(null); methods.onStoppedError(undefined);
   assert.deepEqual(heard, [['utterance', 'hello', null, 10, 20, 0.5], ['start', 5], ['status', ''], ['stopped', null]]);
-  assert.equal(mic.captionAsrDir() !== null, true);
+  // Without the Moonshine download, Apple's recognizer (and its permission).
+  assert.equal(mic.captionAsrDir(), 'apple-speech');
   mic.prepareCaptions();
   assert.deepEqual(calls.filter(call => call[0] === 'speech'), [['speech']]);
   assert.equal(mic.recordingsDir(), '/Docs/mic-recordings');
+});
+
+test('captions use the downloaded Moonshine model through the sherpa loader, with no Speech prompt', () => {
+  const { mic, calls } = setup({ moonshine: true });
+  mic.createCaptionEngine();
+  assert.deepEqual(calls.find(call => call[0] === 'engine'), ['engine', 'initWithSherpa', 'sherpa-loader']);
+  assert.equal(mic.captionAsrDir(), '/Models/moonshine');
+  mic.prepareCaptions();
+  assert.equal(calls.filter(call => call[0] === 'speech').length, 0);
+  // The Kotlin side tells the two apart by this sentinel.
+  assert.match(fs.readFileSync(`${KOTLIN}/iosMain/kotlin/com/faceclaw/app/IosMicAudio.kt`, 'utf8'), /const val APPLE_SPEECH = "apple-speech"/);
 });
 
 test('iOS bundles the Conversations pages My Glasses and the list navigate to', () => {

@@ -143,14 +143,21 @@ private class AppleSpeechTranscriber(private val recognizer: SFSpeechRecognizer)
 
 /**
  * Android FaceclawCaptionEngine on iOS: the shared [CaptionSession] (segmentation, worker,
- * lifecycle) with Apple's recognizer per utterance and no voice-print model yet. Callbacks
- * arrive on the main queue. Any non-null ASR dir enables recognition (Apple ships its models).
+ * lifecycle) with the downloaded Moonshine model through [sherpa], or Apple's recognizer per
+ * utterance when the ASR dir is [APPLE_SPEECH], and no voice-print model yet. Callbacks arrive
+ * on the main queue.
  */
-class IosCaptionEngine {
+class IosCaptionEngine(private val sherpa: IosSherpaLoader?) {
+    companion object {
+        /** The ASR dir that selects Apple's recognizer (Apple ships its models). */
+        const val APPLE_SPEECH = "apple-speech"
+    }
+
     private val host = object : CaptionHost {
         override val dispatcher = CallbackDispatcher { action -> dispatch_async(dispatch_get_main_queue()) { action() } }
 
         override fun loadTranscriber(modelDir: String): OfflineTranscriber? {
+            if (modelDir != APPLE_SPEECH) return sherpa?.recognizer(modelDir, false)?.let { SherpaTranscriber(it) }
             if (SFSpeechRecognizer.authorizationStatus() != SFSpeechRecognizerAuthorizationStatus.SFSpeechRecognizerAuthorizationStatusAuthorized) return null
             val recognizer = SFSpeechRecognizer()
             if (!recognizer.isAvailable()) return null

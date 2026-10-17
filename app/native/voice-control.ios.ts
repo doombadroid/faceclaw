@@ -1,6 +1,8 @@
 import type { FrameMetaListener, RawPcmListener, VoiceControlState, VoiceTranscriptEvent } from './voice-control'
 import type { CloudSttClient, CloudSttTranscriptEvent } from './cloud-stt'
 import { createCloudSttClient, usesCloudStt, type VoiceProviderSelection } from './cloud-stt-provider'
+import { ReconnectingSttClient } from './reconnecting-stt'
+import { createOnboardSttClient, onboardModel, onboardModelError } from './onboard-stt.ios'
 import { APP_NAME } from '../branding'
 import { FaceclawCommunicatorBridge } from './faceclaw-communicator.ios'
 import { fromData, toData } from './kotlin-data'
@@ -16,7 +18,8 @@ type CaptureHolder = 'ptt' | 'continuous'
 
 /** iOS implementation of the shared voice dialog's event bridge. Audio comes
  * from the glasses when connected, or the default phone input in preview mode,
- * and is transcribed by Apple's on-device recognizer or a cloud provider.
+ * and is transcribed by Apple's on-device recognizer, a downloaded sherpa-onnx
+ * model (Moonshine / Whisper, fed PCM like a cloud provider) or a cloud provider.
  */
 export class IosVoiceControlBridge {
   private native: any = null
@@ -44,6 +47,7 @@ export class IosVoiceControlBridge {
   // only supplies PCM. cloudEndStatus is set once the audio has ended and the
   // provider was asked to finalize; it is the status shown when it does.
   private cloud: CloudSttClient | null = null
+  private recognition = 'on-device'
   private cloudEndStatus: string | null = null
   private cloudTimer: ReturnType<typeof setTimeout> | null = null
   // Android's decode-only raw tap (Microphones, EvenHub mic apps): it runs while
@@ -77,8 +81,8 @@ export class IosVoiceControlBridge {
     return this.native
   }
   async prepare(foreground: boolean, usePhoneMic: boolean, voice: VoiceProviderSelection): Promise<boolean> {
-    // Only Apple's recognizer needs Speech Recognition; a cloud provider just needs audio.
-    if (!usesCloudStt(voice)) {
+    // Only Apple's recognizer needs Speech Recognition; a cloud provider or a downloaded model just needs audio.
+    if (!usesCloudStt(voice) && !onboardModel(voice.provider)) {
       let status = FaceclawSpeech.authorizationStatus()
       if (status === 0) {
         if (!foreground) { this.setStatus(`Open ${APP_NAME} on the phone once to allow Speech Recognition.`); return false }
@@ -182,7 +186,7 @@ export class IosVoiceControlBridge {
     this.completion = new Promise(resolve => { this.resolveCompletion = resolve })
     const startError = this.startNative(voice, endpointing, !session)
     if (startError) { this.teardown(); this.setStatus(startError); this.emitEnd(); return }
-    if (!session) { log(`Voice: phone default microphone enabled; using ${this.cloud ? 'cloud' : 'on-device'} recognition`); return }
+    if (!session) { log(`Voice: phone default microphone enabled; using ${this.recognition} recognition`); return }
     try {
       await session.setMicrophone(true, packet => {
         if (generation !== this.generation || !this.capturing) return
@@ -191,7 +195,7 @@ export class IosVoiceControlBridge {
         this.native.acceptPacket(NSData.dataWithBytesLength(interop.handleof(copy.buffer), copy.byteLength))
       })
       if (generation !== this.generation || !this.capturing) return
-      log(`Voice: glasses microphone enabled; using ${this.cloud ? 'cloud' : 'on-device'} recognition`)
+      log(`Voice: glasses microphone enabled; using ${this.recognition} recognition`)
       this.audioTimer = setTimeout(() => {
         this.audioTimer = null
         if (generation === this.generation && this.capturing && !this.packets) {
@@ -208,11 +212,18 @@ export class IosVoiceControlBridge {
     const native = this.ensureNative()
     const generation = this.generation
     const current = () => generation === this.generation
-    const cloud = createCloudSttClient(voice, {
-      onTranscript: event => { if (current()) this.receiveCloudTranscript(event) },
-      onStatus: status => { if (current()) this.setStatus(status) },
-      onError: message => { if (current()) { this.teardown(); this.setStatus(message); this.emitEnd() } },
-    }, () => this.holders.has('continuous'))
+    const callbacks = {
+      onTranscript: (event: CloudSttTranscriptEvent) => { if (current()) this.receiveCloudTranscript(event) },
+      onStatus: (status: string) => { if (current()) this.setStatus(status) },
+      onError: (message: string) => { if (current()) { this.teardown(); this.setStatus(message); this.emitEnd() } },
+    }
+    const continuous = () => this.holders.has('continuous')
+    const model = onboardModel(voice.provider)
+    if (model && onboardModelError(model)) return onboardModelError(model)
+    const cloud = model
+      ? new ReconnectingSttClient(options => createOnboardSttClient(model, options), { ...callbacks, apiKey: '' }, continuous)
+      : createCloudSttClient(voice, callbacks, continuous)
+    this.recognition = model ? `on-device ${model}` : cloud ? 'cloud' : 'on-device'
     native.continuous = this.holders.has('continuous'); native.saveRecording = !!voice.saveRecording
     if (!cloud) return String((phone ? native.startPhoneWithEndpointing(endpointing) : native.startWithEndpointing(endpointing)) ?? '')
     const error = String(native.startPcmCaptureWithEndpointingPhone(endpointing, phone) ?? '')

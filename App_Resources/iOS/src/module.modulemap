@@ -12,5 +12,6 @@ module FaceclawGraphics {
   header "FaceclawQrScanner.h"
   header "FaceclawLog.h"
   header "FaceclawSqlite.h"
+  header "FaceclawSherpa.h"
   export *
 }

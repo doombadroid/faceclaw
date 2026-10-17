@@ -28,7 +28,8 @@ export type VoiceControlState = {
 // family, not with "onboard-whisper" below, which is the on-device sherpa-onnx
 // Whisper backend added alongside "onboard" (Moonshine). Kept as-is rather than
 // renamed, since it's a persisted settings value on real installs already.
-export type VoiceProviderKind = "onboard" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
+// "onboard-moonshine" is iOS-only (see dashboard-settings.ts); here it is Moonshine like "onboard".
+export type VoiceProviderKind = "onboard" | "onboard-moonshine" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
 
 export type VoiceTranscriptEvent = CloudSttTranscriptEvent & {
   /**
