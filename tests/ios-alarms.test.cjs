@@ -17,10 +17,33 @@ const same = (actual, expected, message) => assert.deepEqual(JSON.parse(JSON.str
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 const T = 1_800_000_000_000;
-function alarms({ status = 2, alertSetting = 2, timeSensitive = 0, active = true } = {}) {
+// FaceclawAlarmKit.swift runs its calls one at a time in call order; settle() is that queue draining.
+function fakeKit({ state = 2, fail = null } = {}) {
+  const ops = [];
+  const kit = {
+    state, scheduled: new Map(), calls: [], observer: null,
+    isAvailable: () => true,
+    authorizationState: () => kit.state,
+    requestAuthorization(done) { kit.calls.push(['auth']); ops.push(() => { kit.state = 2; done(2); }); },
+    scheduleAlarmAtMsTitleCompletion(id, atMs, title, done) {
+      kit.calls.push(['schedule', id, atMs, title]);
+      ops.push(() => { if (!fail) kit.scheduled.set(id, atMs); done(fail); });
+    },
+    cancelAlarm(id) { kit.calls.push(['cancel', id]); ops.push(() => kit.scheduled.delete(id)); },
+    alarmIds: () => [...kit.scheduled.keys()].join(','),
+    observeAlarms(handler) { kit.observer = handler; },
+    settle() { while (ops.length) ops.shift()(); },
+    schedules: () => kit.calls.filter(call => call[0] === 'schedule').map(call => call.slice(1)),
+  };
+  return kit;
+}
+const KIT7 = '00000000-0000-4000-8000-000000000007';
+
+function alarms({ status = 2, alertSetting = 2, timeSensitive = 0, active = true, kit } = {}) {
   const clock = { now: T - 60_000 };
   const pending = new Map(), removedDelivered = [], opened = [], authRequests = [], store = new Map();
   const settings = { authorizationStatus: status, alertSetting, timeSensitiveSetting: timeSensitive };
+  const resume = [];
   const center = {
     delegate: null, categories: null,
     addNotificationRequestWithCompletionHandler(request) { pending.set(request.identifier, request); },
@@ -33,8 +56,10 @@ function alarms({ status = 2, alertSetting = 2, timeSensitive = 0, active = true
   class FakeDate extends Date { static now() { return clock.now; } }
   const module = load('app/native/alarms.ios.ts', {
     Date: FakeDate,
+    ...(kit ? { FaceclawAlarmKit: kit } : {}),
     require: name => ({
       '@nativescript/core': {
+        Application: { resumeEvent: 'resume', on: (event, handler) => { if (event === 'resume') resume.push(handler); } },
         ApplicationSettings: { getString: (key, fallback) => store.get(key) ?? fallback, setString: (key, value) => store.set(key, value) },
         Utils: { openUrl: url => opened.push(url), executeOnMainThread: fn => fn() },
       },
@@ -70,7 +95,7 @@ function alarms({ status = 2, alertSetting = 2, timeSensitive = 0, active = true
       { actionIdentifier, notification: { request: { identifier } } }, () => { completed = true; });
     return completed;
   };
-  return { module, clock, pending, removedDelivered, opened, authRequests, center, settings, respond };
+  return { module, clock, pending, removedDelivered, opened, authRequests, center, settings, respond, resume: () => resume.forEach(fn => fn()) };
 }
 
 test('iOS alarm: silent at T plus a sounding escalation at T+5s while the glasses can carry it', () => {
@@ -175,6 +200,141 @@ test('iOS alarm: authorization is asked when scheduling in the foreground, or fr
   await tick();
   assert.equal(foreground.module.hasPhoneAlertPermission(), true);
   same(foreground.module.checkPhoneAlarmReliability().map(issue => issue.code), ['ios-silent']);
+});
+
+test('iOS AlarmKit: the sounding stage is an AlarmKit alarm; the notification stays the silent record', () => {
+  const kit = fakeKit();
+  const { module, pending } = alarms({ kit });
+  module.setPhoneAlarmGlassesStatus(true, true, false);
+  module.schedulePhoneAlarm(7, T + 400, 'Alarm', '7:00', 'alarm', 10);
+  same([...pending.keys()], ['fc-7'], 'no sounding notification request');
+  assert.equal(pending.get('fc-7').content.sound, undefined);
+  same(kit.schedules(), [[KIT7, T + 5400, 'Alarm']]);
+  module.setPhoneAlarmGlassesStatus(true, false, false);
+  same([...pending.keys()], ['fc-7']);
+  assert.equal(pending.get('fc-7').content.sound, undefined, 'AlarmKit rings, so the record stays silent');
+  same(kit.schedules().at(-1), [KIT7, T + 400, 'Alarm'], 'rings at T when the glasses cannot carry it');
+  kit.settle();
+  same([...kit.scheduled], [[KIT7, T + 400]], 'each re-arm cancels the alarm before it');
+});
+
+test('iOS AlarmKit: delivered moves the alarm to +30s, acknowledge cancels it, nothing is journaled', () => {
+  const kit = fakeKit();
+  const { module, clock } = alarms({ kit });
+  module.setPhoneAlarmGlassesStatus(true, true, false);
+  module.schedulePhoneAlarm(7, T, 'Alarm', '7:00', 'alarm', 10);
+  kit.settle();
+  clock.now = T + 1000;
+  module.phoneAlarmDeliveredToGlasses(7);
+  kit.settle();
+  same([...kit.scheduled], [[KIT7, T + 31_000]]);
+  module.acknowledgePhoneAlarm(7);
+  kit.settle();
+  same([...kit.scheduled], []);
+  clock.now = T + 60_000;
+  kit.observer(kit.alarmIds());
+  same(module.drainPhoneAlarmJournal(), []);
+});
+
+test('iOS AlarmKit: a scheduled alarm gone after its fire time was stopped on the phone', () => {
+  const kit = fakeKit();
+  const { module, clock, pending } = alarms({ kit });
+  module.schedulePhoneAlarm(7, T, 'Alarm', '7:00', 'alarm', 10);
+  const heard = [];
+  module.onPhoneAlarmAction(event => heard.push(event));
+  kit.observer('');
+  same(heard, [], 'not yet confirmed by AlarmKit');
+  kit.settle();
+  kit.observer('');
+  same(heard, [], 'gone before its fire time is not a dismiss');
+  clock.now = T + 5000;
+  kit.observer(kit.alarmIds());
+  same(heard, [], 'still alerting');
+  kit.scheduled.clear();
+  kit.observer('');
+  same(heard, [{ id: 7, action: 'dismiss', minutes: 0, atMs: T + 5000 }]);
+  same([...pending.keys()], []);
+  kit.observer('');
+  same(module.drainPhoneAlarmJournal().length, 1, 'journaled once');
+});
+
+test('iOS AlarmKit: a Stop while the app was suspended is found on resume and at drain', () => {
+  const kit = fakeKit();
+  const { module, clock, resume } = alarms({ kit });
+  module.schedulePhoneAlarm(7, T, 'Alarm', '', 'alarm', 10);
+  module.schedulePhoneAlarm(8, T, 'Timer', '', 'timer', 5);
+  kit.settle();
+  clock.now = T + 5000;
+  kit.scheduled.delete(KIT7);
+  resume();
+  same(module.drainPhoneAlarmJournal().map(event => event.id), [7]);
+  kit.scheduled.clear();
+  same(module.drainPhoneAlarmJournal().map(event => event.id), [8]);
+});
+
+test('iOS AlarmKit: a failed schedule falls back to the sounding notification', () => {
+  const kit = fakeKit({ fail: 'AlarmError' });
+  const { module, pending } = alarms({ kit });
+  module.setPhoneAlarmGlassesStatus(true, true, false);
+  module.schedulePhoneAlarm(7, T, 'Alarm', '7:00', 'alarm', 10);
+  same([...pending.keys()], ['fc-7']);
+  kit.settle();
+  same([...pending.keys()], ['fc-7', 'fc-7-esc']);
+  assert.equal(pending.get('fc-7-esc').content.sound, 'default');
+  same(pending.get('fc-7-esc').trigger, { atMs: T + 5000 });
+});
+
+test('iOS AlarmKit: not authorized keeps the notification tier and reports a fixable issue', async () => {
+  const kit = fakeKit({ state: 1 });
+  const { module, pending, opened } = alarms({ kit });
+  module.schedulePhoneAlarm(7, T, 'Alarm', '7:00', 'alarm', 10);
+  assert.equal(pending.get('fc-7').content.sound, 'default');
+  same(kit.schedules(), []);
+  same(module.checkPhoneAlarmReliability().map(issue => [issue.code, issue.fixable]), [['ios-alarmkit', true], ['ios-silent', false]]);
+  module.openPhoneAlarmReliabilityFix('ios-alarmkit');
+  same(opened, ['app-settings:']);
+  const granted = fakeKit({ state: 2 });
+  const ready = alarms({ kit: granted, timeSensitive: 1 });
+  same(ready.module.checkPhoneAlarmReliability(), [], 'AlarmKit breaks through Silent and Focus');
+});
+
+test('iOS AlarmKit: asked once in the foreground; a grant moves armed items onto AlarmKit', async () => {
+  const kit = fakeKit({ state: 0 });
+  const { module, pending, authRequests } = alarms({ kit });
+  module.schedulePhoneAlarm(7, T, 'Alarm', '7:00', 'alarm', 10);
+  module.schedulePhoneAlarm(8, T, 'Alarm', '7:00', 'alarm', 10);
+  same([authRequests, kit.calls.filter(call => call[0] === 'auth').length], [[], 1]);
+  kit.settle();
+  same(kit.schedules().map(call => call[0]), [KIT7, '00000000-0000-4000-8000-000000000008']);
+  assert.equal(pending.get('fc-7').content.sound, undefined);
+  const fresh = alarms({ kit: fakeKit({ state: 0 }), status: 0 });
+  fresh.module.schedulePhoneAlarm(7, T, 'Alarm', '', 'alarm', 10);
+  await tick();
+  same(fresh.authRequests, [7], 'notifications first, then AlarmKit');
+});
+
+test('iOS AlarmKit: losing authorization moves armed items back on resume', () => {
+  const kit = fakeKit();
+  const { module, pending, resume } = alarms({ kit });
+  module.schedulePhoneAlarm(7, T, 'Alarm', '7:00', 'alarm', 10);
+  assert.equal(pending.get('fc-7').content.sound, undefined);
+  kit.state = 1;
+  resume();
+  assert.equal(pending.get('fc-7').content.sound, 'default');
+});
+
+test('iOS AlarmKit: every selector alarms.ios.ts calls is exported by FaceclawAlarmKit.swift', () => {
+  const swift = read('App_Resources/iOS/src/FaceclawAlarmKit.swift');
+  assert.match(swift, /@objc\(FaceclawAlarmKit\) public final class FaceclawAlarmKit: NSObject/);
+  const exported = [...swift.matchAll(/@objc\(([a-zA-Z:]+)\)\s*public static func/g)]
+    .map(([, selector]) => selector.split(':').filter(Boolean).map((part, i) => (i ? part[0].toUpperCase() + part.slice(1) : part)).join(''));
+  const called = [...new Set([...read('app/native/alarms.ios.ts').matchAll(/FaceclawAlarmKit\.(\w+)\(/g)].map(match => match[1]))];
+  assert.ok(called.length >= 6, called.join());
+  for (const name of called) assert.ok(exported.includes(name), `${name} is not in ${exported.join()}`);
+  const flags = read('App_Resources/iOS/build.xcconfig');
+  assert.match(flags, /^OTHER_LDFLAGS = .*-weak_framework AlarmKit(\s|$)/m);
+  assert.doesNotMatch(flags, /-framework AlarmKit/, 'a strong link crashes iOS 15-25 at launch');
+  assert.match(flags, /^SWIFT_VERSION = 5\.0;$/m);
 });
 
 function permissions({ speech = 0, microphone = 3, location = 0, confirm = true } = {}) {
