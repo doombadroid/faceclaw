@@ -1,7 +1,7 @@
 import { Application, ApplicationSettings, Utils } from '@nativescript/core'
 import { APP_NAME } from '../branding'
 import type { AlarmKind, AlarmReliabilityIssue, PhoneAlarmAction } from './alarms'
-import { guardCallback } from './callback-errors.ios'
+import { guardCallback, logJsError } from './callback-errors.ios'
 export type { AlarmKind, AlarmReliabilityIssue, PhoneAlarmAction } from './alarms'
 
 // Local notifications stand in for Android's alarm service. Nothing runs at fire time while
@@ -172,7 +172,7 @@ function handleResponse(identifier: string, action: string): void {
   if (action === 'snooze' && entry) arm({ ...entry, at: event.atMs + event.minutes * 60_000 })
   else saveEntry(id, null)
   for (const listener of [...actionListeners]) {
-    try { listener(event) } catch (error) { console.warn(`phone alarm action listener failed: ${error}`) }
+    try { listener(event) } catch (error) { logJsError('phone alarm action listener', error) }
   }
 }
 

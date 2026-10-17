@@ -196,6 +196,17 @@ test('iOS alarm: a delegate method that throws files a report and still calls th
   assert.ok(respond('fc-1-ring', 'dismiss'), 'a normal response still completes');
 });
 
+test('iOS alarm: an action listener that throws files a report, and the next listener still hears it', () => {
+  const { module, respond, reports } = alarms();
+  module.schedulePhoneAlarm(7, T, 'Alarm', '7:00', 'alarm', 10);
+  const heard = [];
+  module.onPhoneAlarmAction(() => { throw new Error('engine gone'); });
+  module.onPhoneAlarmAction(event => heard.push(event.action));
+  assert.ok(respond('fc-7', 'dismiss'));
+  same(heard, ['dismiss']);
+  same(reports, [['phone alarm action listener', 'engine gone']]);
+});
+
 test('iOS alarm: reliability reports denied and Time Sensitive off, and fixes open Settings', () => {
   const { module, opened } = alarms({ status: 1, timeSensitive: 1 });
   same(module.checkPhoneAlarmReliability().map(issue => [issue.code, issue.fixable]),
