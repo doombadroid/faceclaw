@@ -212,6 +212,7 @@ test('My Glasses routes rows to their pages', () => {
   assert.equal(page.find('Notifications').value, '2 of 3');
   assert.deepEqual(tap('Notifications'), ['push', 'glasses', 'ocusmart/settings-category', { category: 'notifications' }]);
   assert.deepEqual(tap('Remote & Touchpads'), ['push', 'glasses', 'ocusmart/remote']);
+  assert.deepEqual(tap('Conversations'), ['push', 'glasses', 'phone-ui/conversations-page']);
   assert.equal(page.find('Software Update').tile.symbol, 'arrow.down.circle.fill', 'the same glyph as on Settings');
   // The Set Up intro first, as from the Device page; its Back/Cancel closes the detour.
   assert.deepEqual(tap('Pair Glasses'), ['detour', 'ocusmart/setup']);

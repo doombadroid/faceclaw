@@ -1,6 +1,7 @@
 @import '@nativescript/theme/css/core.css';
 @import './phone-ui/remote-controls.css';
 @import './phone-ui/pairing.css';
+@import './phone-ui/conversations.css';
 @import './phone-ui/ios/ocusmart.css';
 @import './phone-ui/ios/onboarding.ios.css';
 

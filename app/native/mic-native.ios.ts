@@ -125,6 +125,22 @@ export function repairWavHeader(path: string, sampleRate: number, channels: numb
   return Number(FaceclawKitIosWavRecorder.companion.repairHeaderPathSampleRateChannels(path, sampleRate, channels));
 }
 
+/** AVAudioPlayer behind MediaPlayer's names. Plays under the app's current audio session (the ring/silent switch mutes it). */
+export function createRecordingPlayer(path: string, onComplete: () => void): any {
+  const player = AVAudioPlayer.alloc().initWithContentsOfURLError(NSURL.fileURLWithPath(path));
+  // The delegate is weak: the returned object holds it for the player's life.
+  const delegate = kotlinListener(AVAudioPlayerDelegate, { audioPlayerDidFinishPlayingSuccessfully: () => onComplete() });
+  player.delegate = delegate as unknown as AVAudioPlayerDelegate;
+  player.prepareToPlay();
+  return {
+    delegate,
+    seekTo: (ms: number) => { player.currentTime = ms / 1000; },
+    start: () => { player.play(); },
+    pause: () => { player.pause(); },
+    release: () => { player.stop(); },
+  };
+}
+
 export function recordingsDir(): string {
   return `${knownFolders.documents().path}/mic-recordings`;
 }

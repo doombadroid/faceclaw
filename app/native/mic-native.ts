@@ -8,6 +8,7 @@ import { Utils } from "@nativescript/core";
 import { toJavaBytes } from "./cloud-stt";
 import { isAsrModelReady } from "./asr-model";
 
+declare const android: any;
 declare const com: any;
 declare const java: any;
 
@@ -72,6 +73,19 @@ export function createWavRecorder(path: string, sampleRate: number, channels: nu
 
 export function repairWavHeader(path: string, sampleRate: number, channels: number): number {
   return Number(com.faceclaw.app.FaceclawWavRecorder.repairHeader(path, sampleRate, channels));
+}
+
+/** A recording player with MediaPlayer's seekTo(ms)/start/pause/release; onComplete runs on the main thread. */
+export function createRecordingPlayer(path: string, onComplete: () => void): any {
+  const player = new android.media.MediaPlayer();
+  player.setDataSource(path);
+  player.prepare();
+  player.setOnCompletionListener(
+    new android.media.MediaPlayer.OnCompletionListener({
+      onCompletion: () => Utils.executeOnMainThread(onComplete),
+    }),
+  );
+  return player;
 }
 
 export function recordingsDir(): string {

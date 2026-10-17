@@ -28,6 +28,7 @@ import { micChannelLabel, type MicChannelKey, type MicConfig } from "./mic-proto
 import { micSession } from "./mic-session";
 import { speakerRegistry, type SpeakerProfile } from "./speakers";
 import { formatRelativeTime } from "../../util/date-util";
+import { APP_NAME } from "../../branding";
 import {
   ancEnabledSetting,
   beamFilterSetting,
@@ -412,13 +413,16 @@ function storageMenu(): MenuLayer {
       enumSettingMenuItem(recordingsRetentionSetting),
       {
         label: "Review on phone",
-        description:
-          "Saved conversations, transcripts, speakers, and recordings are reviewed in the Faceclaw phone app: Conversations in the top-right menu.",
+        description: global.isIOS
+          ? `Saved conversations, transcripts, and recordings are reviewed in the ${APP_NAME} phone app: My Glasses > Conversations.`
+          : "Saved conversations, transcripts, speakers, and recordings are reviewed in the Faceclaw phone app: Conversations in the top-right menu.",
         onSelect: (ctx) => {
           ctx.stack.push(
             new TextPageLayer(
               "Review on phone",
-              "Open the Faceclaw app on your phone and choose Conversations from the top-right menu to search captions, filter by speaker, play linked recordings, rename/merge speakers, re-diarize sessions, and see the tone/sentiment graph of each conversation.",
+              global.isIOS
+                ? `Open the ${APP_NAME} app on your phone and choose My Glasses > Conversations to search captions, play linked recordings, and delete conversations.`
+                : "Open the Faceclaw app on your phone and choose Conversations from the top-right menu to search captions, filter by speaker, play linked recordings, rename/merge speakers, re-diarize sessions, and see the tone/sentiment graph of each conversation.",
             ),
           );
         },

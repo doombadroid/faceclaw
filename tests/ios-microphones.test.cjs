@@ -93,3 +93,61 @@ test('caption callbacks arrive with Android types, never a voice-print, and Spee
   assert.deepEqual(calls.filter(call => call[0] === 'speech'), [['speech']]);
   assert.equal(mic.recordingsDir(), '/Docs/mic-recordings');
 });
+
+test('iOS bundles the Conversations pages My Glasses and the list navigate to', () => {
+  const register = fs.readFileSync('app/phone-ui/onboarding-register.ios.ts', 'utf8');
+  for (const page of ['phone-ui/conversations-page', 'phone-ui/conversation-page']) {
+    assert.match(register, new RegExp(`registerModule\\('${page}', `), page);
+    assert.match(register, new RegExp(`registerModule\\('${page}.xml', `), `${page}.xml`);
+  }
+  assert.match(fs.readFileSync('app/phone-ui/conversations-view-model.ts', 'utf8'), /moduleName: "phone-ui\/conversation-page"/);
+  // Ask and Speakers are not bundled, so the iOS list page drops their bar items.
+  assert.doesNotMatch(register, /speakers-page|ask-page/);
+});
+
+function conversationPage() {
+  const calls = [], store = {
+    querySessions: () => JSON.stringify([{ id: 4, startedAt: 1000, endedAt: 9000, title: 'Lunch', audioPath: '/Docs/mic-recordings/a.wav',
+      audioCodec: 'wav', avgSentiment: 0, segmentCount: 1, speakers: [] }]),
+    querySegments: () => JSON.stringify([{ id: 1, speakerId: null, startedAt: 3000, endedAt: 4000, audioOffsetMs: 2500, text: 'hi',
+      lang: '', translation: '', translationLang: '', sentiment: 0, emotion: '', angle: null }]),
+    deleteSession: id => calls.push(['delete', id]),
+  };
+  class Observable { notifyPropertyChange() {} }
+  const fromObject = values => ({ ...values, get(key) { return this[key]; }, set(key, value) { this[key] = value; } });
+  class ActionItem { constructor() { this.ios = {}; this.handlers = {}; } on(event, fn) { this.handlers[event] = fn; } }
+  const load = loader({ global: { isIOS: true } }, {
+    '@nativescript/core': { Observable, fromObject, ActionItem, Utils: {}, Screen: {}, ImageSource: class {},
+      Frame: { topmost: () => ({ goBack: () => calls.push(['back']) }) },
+      action: async options => { calls.push(['action', options.actions]); return options.actions.at(-1); },
+      confirm: async () => true },
+    '../native/mic-native': { conversationStore: () => store, createRecordingPlayer: (path, done) => {
+      calls.push(['player', path]);
+      return { seekTo: ms => calls.push(['seek', ms]), start: () => calls.push(['play']), pause() {}, release() {}, done };
+    } },
+    '../apps/microphones/rediarize': {}, '../apps/microphones/sentiment': { summarize: () => ({ trend: [] }) },
+    '../apps/microphones/speakers': { speakerRegistry: { all: () => [] } },
+  });
+  return { load, calls, ActionItem };
+}
+
+test('iOS conversation detail plays its recording and offers Delete from one More item', async () => {
+  const { load, calls } = conversationPage();
+  const items = ['Re-diarize', 'Split speaker...', 'Delete conversation'];
+  const page = { actionBar: { actionItems: { getItems: () => [...items], removeItem: item => items.splice(items.indexOf(item), 1),
+    addItem: item => items.push(item) } } };
+  load('app/phone-ui/conversation-page.ts').navigatingTo({ object: page, context: { sessionId: 4 } });
+  assert.equal(page.className, 'os-page');
+  assert.equal(items.length, 1);
+  assert.equal(items[0].text, 'More');
+  assert.equal(items[0].ios.position, 'right');
+  const model = page.bindingContext;
+  assert.equal(model.emptyMessage, '');
+  model.transcriptRows[0].onRowTap();
+  assert.deepEqual(calls.slice(0, 3), [['player', '/Docs/mic-recordings/a.wav'], ['seek', 2500], ['play']]);
+  assert.equal(model.transcriptRows[0].playIndicator, '⏸');
+  await items[0].handlers.tap();
+  await new Promise(resolve => setImmediate(resolve));
+  // No speakers on iOS yet, so no Split; Delete removes the row and goes back.
+  assert.deepEqual(calls.slice(3).map(call => JSON.stringify(call)), ['["action",["Delete conversation"]]', '["delete",4]', '["back"]']);
+});

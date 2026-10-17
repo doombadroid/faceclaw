@@ -1,4 +1,4 @@
-import { EventData, NavigatedData, Page } from "@nativescript/core";
+import { ActionItem, EventData, NavigatedData, Page } from "@nativescript/core";
 
 import { ConversationViewModel } from "./conversation-view-model";
 
@@ -9,8 +9,20 @@ export function navigatingTo(args: NavigatedData): void {
   let model = page.bindingContext as ConversationViewModel | undefined;
   if (!model) {
     const context = args.context as ConversationContext;
-    model = new ConversationViewModel(context?.sessionId ?? 0);
+    const created = new ConversationViewModel(context?.sessionId ?? 0);
+    model = created;
     page.bindingContext = model;
+    if (global.isIOS) {
+      // OcuSmart: its page colours, and one More menu instead of three overflow items (no re-diarizer on iOS).
+      page.className = "os-page";
+      const items = page.actionBar.actionItems;
+      for (const item of items.getItems()) items.removeItem(item);
+      const more = new ActionItem();
+      more.text = "More";
+      more.ios.position = "right";
+      more.on("tap", () => void created.onMoreTap());
+      items.addItem(more);
+    }
   }
   model.reload();
 }
