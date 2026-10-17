@@ -12,7 +12,7 @@ function fixture() {
     '../../graphics/image': {}, './chrome-layer': { windowIcon() {} },
     '../../assistant/tool-registry': { toolRegistry: { removeAppTools() {} } },
     './geometry': { appViewportSize: () => ({ width: 576, height: 288 }) },
-    '../../native/frame-timings': {}, './worker-state': { publishWorkerState: (...args) => published.push(args) },
+    '../../native/frame-timings': {}, '../../native/error-reports': {}, './worker-state': { publishWorkerState: (...args) => published.push(args) },
     './shell': { shell: { registerWindow: w => shellWindows.set(w.windowId, w), setTrayIcon() {},
       focusWindow: id => focused.push(id), isWindowFocused: () => false } },
   });

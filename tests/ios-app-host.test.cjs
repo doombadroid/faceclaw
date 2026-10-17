@@ -47,6 +47,21 @@ test('iOS worker replies keep cached draw references paired with their baked pix
   assert.equal(received.length, 2, 'closed windows cannot deliver stale cached draws');
 });
 
+test('A worker\'s error report reaches the main isolate\'s reports, even while the worker stops', () => {
+  const reported = [], worker = {};
+  const { WorkerAppHost } = load('app/ui/shell/worker-window.ts', {
+    require: name => name === '../../native/error-reports' ? { reportError: (...args) => reported.push(args) } : {}, global: { isIOS: true },
+  });
+  const host = new WorkerAppHost({ appId: 'test', worker });
+  worker.onmessage({ data: { type: 'error-report', source: 'pinball', message: 'boom', stack: 'at frame', context: { k: 'v' } } });
+  host.stopping = true;
+  worker.onmessage({ data: { type: 'error-report', source: 'pinball', message: 'late', stack: '' } });
+  assert.deepEqual(JSON.parse(JSON.stringify(reported)), [
+    ['pinball', { message: 'boom', stack: 'at frame' }, { k: 'v' }],
+    ['pinball', { message: 'late', stack: '' }, null],
+  ]);
+});
+
 test('iOS installed apps launch, recover missing packages, and close before uninstall', async () => {
   const calls = [], app = { packageId: 'test.app', name: 'Test' };
   let present = true;

@@ -3,27 +3,40 @@ const assert = require('node:assert/strict');
 const { loader } = require('./helpers/load-typescript.cjs');
 
 /** error-reports.ts over an in-memory file system, a settable clock and the iOS log shim. */
-function harness({ files = new Map(), failWrite = false } = {}) {
-  const h = { files, failWrite, logged: [], timers: [], now: Date.parse('2026-10-17T12:00:00Z') };
+function harness({ files = new Map(), failWrite = false, main = true, logThrows = false } = {}) {
+  const h = { files, failWrite, logged: [], timers: [], posted: [], events: {}, now: Date.parse('2026-10-17T12:00:00Z') };
+  const dir = path => path.slice(0, path.lastIndexOf('/'));
   const core = {
     File: {
       exists: path => h.files.has(path),
       fromPath: path => ({
         readTextSync: () => h.files.get(path) ?? '',
-        writeTextSync: text => { if (h.failWrite) throw new Error('disk full'); h.files.set(path, text); },
+        writeTextSync: text => {
+          if (h.failWrite) throw new Error('disk full');
+          // The process dies part way through the write.
+          if (h.killAt !== undefined) { h.files.set(path, text.slice(0, h.killAt)); throw new Error('killed'); }
+          h.files.set(path, text);
+        },
         removeSync: () => h.files.delete(path),
+        // Like NativeScript on both platforms: a rename never replaces an existing file.
+        renameSync: (name, onError) => {
+          const to = `${dir(path)}/${name}`;
+          if (h.failRename || h.files.has(to)) return onError?.(new Error('rename failed'));
+          h.files.set(to, h.files.get(path)); h.files.delete(path);
+        },
       }),
     },
     knownFolders: { documents: () => ({ path: '/docs' }), ios: { library: () => ({ path: '/lib' }) } },
     path: { join: (...parts) => parts.join('/') },
-    Utils: {},
+    Utils: { isMainThread: () => main },
+    Application: { suspendEvent: 'suspend', exitEvent: 'exit', on: (name, fn) => (h.events[name] ??= []).push(fn) },
   };
   class FakeDate extends Date { constructor(...args) { super(...(args.length ? args : [h.now])); } }
   const quiet = { ...console, error: () => {} };
   h.module = loader({
-    global: { isIOS: true }, Date: FakeDate, console: quiet,
+    global: { isIOS: true, postMessage: message => h.posted.push(JSON.parse(JSON.stringify(message))) }, Date: FakeDate, console: quiet,
     setTimeout: fn => { h.timers.push(fn); return h.timers.length; }, clearTimeout: () => {},
-    FaceclawLog: { log: line => h.logged.push(line) },
+    FaceclawLog: { log: line => { if (logThrows) throw new Error('native log failed'); h.logged.push(line); } },
     NSBundle: { mainBundle: { infoDictionary: { objectForKey: key => ({ CFBundleShortVersionString: '0.8.3', CFBundleVersion: '42' })[key] } } },
   }, { '@nativescript/core': core })('app/native/error-reports.ts');
   // Plain copies: the vm context's objects and arrays fail deepEqual's prototype check.
@@ -31,6 +44,7 @@ function harness({ files = new Map(), failWrite = false } = {}) {
   h.module = { ...h.module, normalizeError: plain(h.module.normalizeError), listErrorReports: plain(h.module.listErrorReports) };
   h.stored = () => (h.files.get('/lib/error-reports.jsonl') ?? '').split('\n').filter(Boolean).map(line => JSON.parse(line));
   h.flushTimers = () => { const pending = h.timers; h.timers = []; for (const fn of pending) fn(); };
+  h.fire = name => { for (const fn of h.events[name] ?? []) fn(); };
   return h;
 }
 
@@ -92,7 +106,8 @@ test('A burst of distinct errors writes at most once a second, the first at once
   const h = harness();
   let writes = 0;
   const files = { set: h.files.set.bind(h.files) };
-  h.files.set = (k, v) => { writes++; return files.set(k, v); };
+  // Each save writes the .tmp once, then renames it into place.
+  h.files.set = (k, v) => { if (k.endsWith('.tmp')) writes++; return files.set(k, v); };
   for (let i = 0; i < 30; i++) h.module.reportError('burst', `error ${i}`);
   assert.equal(writes, 1);
   assert.equal(h.stored()[0].message, 'error 0');
@@ -178,4 +193,64 @@ test('Clearing empties the list and the file', () => {
   h.module.onErrorReport((_report, isNew) => seen.push(isNew));
   h.module.reportError('x', 'one');
   assert.deepEqual(seen, [true], 'a cleared error is new again');
+});
+
+test('A write killed part way loses no earlier report', () => {
+  const h = harness();
+  h.module.reportError('a', 'first');
+  h.now += 2000; h.killAt = 10;
+  h.module.reportError('b', 'second');
+  assert.deepEqual(harness({ files: h.files }).module.listErrorReports().map(r => r.source), ['a']);
+
+  // Killed between dropping the old file and renaming the new one into place: the new one is complete.
+  const gap = harness();
+  gap.module.reportError('a', 'first');
+  gap.now += 2000; gap.failRename = true;
+  gap.module.reportError('b', 'second');
+  assert.deepEqual(harness({ files: gap.files }).module.listErrorReports().map(r => r.source), ['b', 'a']);
+  assert.deepEqual([...gap.files.keys()], ['/lib/error-reports.jsonl'], 'the recovered copy is put in place before the next save overwrites the .tmp');
+
+  const clean = harness();
+  clean.module.reportError('a', 'first');
+  clean.now += 2000; clean.module.reportError('b', 'second');
+  assert.deepEqual([...clean.files.keys()], ['/lib/error-reports.jsonl'], 'no temporary file left behind');
+  clean.module.clearErrorReports();
+  assert.deepEqual(harness({ files: clean.files }).module.listErrorReports(), [], 'cleared stays cleared');
+});
+
+test('Reports still waiting for the timer reach disk when the app is suspended or exits', () => {
+  for (const event of ['suspend', 'exit']) {
+    const h = harness();
+    h.module.reportError('r', 'x');
+    h.module.reportError('r', 'x');
+    assert.equal(h.stored()[0].count, 1);
+    h.fire(event);
+    assert.equal(h.stored()[0].count, 2, event);
+  }
+});
+
+test('A logger that throws cannot stop the save or the listeners', () => {
+  const h = harness({ logThrows: true });
+  const seen = [];
+  h.module.onErrorReport((_report, isNew) => seen.push(isNew));
+  h.module.reportError('x', 'one');
+  assert.equal(h.stored().length, 1);
+  assert.deepEqual(seen, [true]);
+});
+
+test('Lines that are not reports are skipped, not fatal', () => {
+  const h = harness({ files: new Map([['/lib/error-reports.jsonl', 'null\n42\n"text"\n{"at":5}\n{"source":"ok","message":"m","count":1,"at":"2026-10-16T00:00:00.000Z"}\n']]) });
+  assert.deepEqual(h.module.listErrorReports().map(r => r.source), ['ok']);
+  h.module.reportError('after', 'new');
+  assert.deepEqual(h.stored().map(r => r.source), ['ok', 'after']);
+});
+
+test('A worker forwards its report to the main thread and never writes the file', () => {
+  const h = harness({ main: false });
+  h.module.reportError('worker.app', new Error('in worker'), { app: 'pinball' });
+  assert.equal(h.files.size, 0, 'the main isolate owns the file');
+  assert.equal(h.posted.length, 1);
+  const [posted] = h.posted;
+  assert.deepEqual({ ...posted, stack: undefined }, { type: 'error-report', source: 'worker.app', message: 'in worker', context: { app: 'pinball' }, stack: undefined });
+  assert.match(posted.stack, /in worker/);
 });

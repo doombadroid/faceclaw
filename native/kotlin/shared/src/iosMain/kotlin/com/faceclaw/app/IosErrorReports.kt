@@ -15,6 +15,7 @@ interface IosErrorReportListener {
 object IosErrorReports {
     private const val MAX_PENDING = 50
     private val pending = ArrayDeque<Triple<String, String, String>>()
+    private var overflowLogged = false
 
     /** Set from JS on the main thread; reports caught before then are delivered on registration. */
     var listener: IosErrorReportListener? = null
@@ -32,7 +33,12 @@ object IosErrorReports {
                 if (target != null) deliver(target, report)
                 else {
                     // ponytail: drops the oldest past 50; only a listener that never registers fills it.
-                    if (pending.size >= MAX_PENDING) pending.removeFirst()
+                    if (pending.size >= MAX_PENDING) {
+                        pending.removeFirst()
+                        // Once: the system log is then the only trace of these reports.
+                        if (!overflowLogged) runCatching { PlatformLog.e(TAG, "no error report listener; dropping the oldest of $MAX_PENDING buffered reports", null) }
+                        overflowLogged = true
+                    }
                     pending.addLast(report)
                 }
             }
@@ -45,7 +51,8 @@ object IosErrorReports {
         try {
             target.onCaughtError(report.first, report.second, report.third)
         } catch (t: Throwable) {
-            PlatformLog.e(TAG, "error report listener failed", t)
+            // Inside a main-queue block: an escaping throw would end the app.
+            runCatching { PlatformLog.e(TAG, "error report listener failed", t) }
         }
     }
 

@@ -1,4 +1,4 @@
-import { ActionItem, Dialogs, Frame, Label, StackLayout, Utils, type Page } from '@nativescript/core'
+import { ActionItem, Application, Dialogs, Frame, Label, StackLayout, Utils, type Page } from '@nativescript/core'
 import { groupedPage, section, buttonRow, customRow } from './ui-kit'
 import { presentOnTop } from './present'
 import { clearErrorReports, listErrorReports, onErrorReport, type ErrorReport } from '../../native/error-reports'
@@ -73,30 +73,53 @@ export function createPage(modal = false): Page {
   return page
 }
 
-/** The list as a sheet over whatever is on screen (the shell, a detour or onboarding). */
-export function presentErrorReports(): void {
+/**
+ * The list as a sheet over the top NativeScript page (the shell, a detour or onboarding).
+ * False when that page refused: a UIKit controller (an alert, a share sheet) is up on it.
+ */
+export function presentErrorReports(): boolean {
   const host = Frame.topmost()?.currentPage
-  if (!host) return
+  if (!host) return false
   const frame = new Frame()
   frame.navigate({ create: () => createPage(true) })
   host.showModal(frame, { fullscreen: false, closeCallback: () => {} })
+  // NativeScript only traces a refused presentation.
+  return host.modal === frame
 }
 
 const NOTICE_SECONDS = 6
-let notice: { button: UIButton; count: number; timer: ReturnType<typeof setTimeout> } | null = null
+let notice: { button: UIButton; count: number; timer: ReturnType<typeof setTimeout> | null } | null = null
+/** New errors nobody has been told about yet: no window yet, or the app is not in front. */
+let pending: { source: string; count: number } | null = null
 
 /** Once at startup: the first time each distinct error is caught in a session, say so. */
 export function installErrorNotice(): void {
-  onErrorReport((report, isNew) => { if (isNew) showNotice(report.source) })
+  onErrorReport((report, isNew) => {
+    if (!isNew) return
+    pending = { source: report.source, count: (pending?.count ?? 0) + 1 }
+    // Out of the catch block that reported it, which may be mid-layout.
+    setTimeout(() => showPendingNotice(), 0)
+  })
+  // Every activation, the first included; applicationState may still read Inactive inside it.
+  Application.on(Application.resumeEvent, () => showPendingNotice(true))
+  // The banner only counts down while someone can see it.
+  Application.on(Application.suspendEvent, () => { if (notice?.timer) { clearTimeout(notice.timer); notice.timer = null } })
+}
+
+function showPendingNotice(active = UIApplication.sharedApplication.applicationState === UIApplicationState.Active): void {
+  const window = Utils.getWindow<UIWindow>()
+  if (!window || !active) return // Kept pending until resumeEvent.
+  if (pending) { updateNotice(window, pending.source, pending.count); pending = null }
+  if (!notice) return
+  if (notice.timer) clearTimeout(notice.timer)
+  notice.timer = setTimeout(hideNotice, NOTICE_SECONDS * 1000)
 }
 
 /** A tappable banner over the window's top, not an alert: it must never block. One at a time; a burst counts up. */
-function showNotice(source: string): void {
-  const window = Utils.getWindow<UIWindow>()
-  if (!window) return // Before the first window: the report waits in the list.
-  if (notice) clearTimeout(notice.timer)
-  else {
-    const button = UIButton.buttonWithTypePrimaryAction(UIButtonType.System, UIAction.actionWithHandler(() => { hideNotice(); presentErrorReports() }))
+function updateNotice(window: UIWindow, source: string, count: number): void {
+  if (!notice) {
+    // Kept when the sheet could not open, so the tap can be tried again.
+    const button = UIButton.buttonWithTypePrimaryAction(UIButtonType.System, UIAction.actionWithHandler(() => { if (presentErrorReports()) hideNotice() }))
     button.translatesAutoresizingMaskIntoConstraints = false
     window.addSubview(button)
     const guide = window.safeAreaLayoutGuide
@@ -107,7 +130,7 @@ function showNotice(source: string): void {
     ])
     notice = { button, count: 0, timer: null }
   }
-  notice.count++
+  notice.count += count
   const text = notice.count === 1 ? `${APP_NAME} caught an error in ${source}. Tap to view.`
     : `${APP_NAME} caught ${notice.count} errors, the latest in ${source}. Tap to view.`
   const config = UIButtonConfiguration.filledButtonConfiguration()
@@ -119,12 +142,11 @@ function showNotice(source: string): void {
   // Above a detour or sheet presented since the banner went up.
   window.bringSubviewToFront(notice.button)
   UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, text)
-  notice.timer = setTimeout(hideNotice, NOTICE_SECONDS * 1000)
 }
 
 function hideNotice(): void {
   if (!notice) return
-  clearTimeout(notice.timer)
+  if (notice.timer) clearTimeout(notice.timer)
   notice.button.removeFromSuperview()
   notice = null
 }
