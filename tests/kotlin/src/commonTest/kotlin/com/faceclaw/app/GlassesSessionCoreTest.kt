@@ -326,6 +326,22 @@ class GlassesSessionCoreTest {
         assertEquals(26, core.brightnessPolicy.target) // Default curve; the previous one gives 22.
     }
 
+    /** Session-core catches log at WARN with the Throwable; on iOS that line alone is invisible. */
+    @Test fun aListenerThatThrowsFilesAReport() {
+        val s = Session()
+        s.core.setListener(object : FaceclawBleCommunicatorListener by FakeListener() {
+            override fun onStateChange(phase: String?, status: String?) = error("ui gone")
+        })
+        val reported = mutableListOf<Pair<String, String?>>()
+        val before = CaughtErrors.sink
+        CaughtErrors.sink = { source, error -> reported += source to error.message }
+        try {
+            s.core.emitState()
+            s.core.logWarn("no Throwable, nothing caught")
+        } finally { CaughtErrors.sink = before }
+        assertEquals(listOf<Pair<String, String?>>("FaceclawComm: listener onStateChange failed" to "ui gone"), reported)
+    }
+
     @Test fun brightnessConfigPrecedesFirstFrameAndSleepWakeFollowsComposites() {
         val s = Session()
         s.core.configureBrightness(false, 70, 2, 100, "0:0,1000:100", 280)

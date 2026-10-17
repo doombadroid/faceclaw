@@ -334,7 +334,11 @@ class GlassesSessionCore(
 
     internal fun logDebug(line: String) = host.log(SessionLogLevel.DEBUG, TAG, line, null)
 
-    internal fun logWarn(line: String, error: Throwable? = null) = host.log(SessionLogLevel.WARN, TAG, line, error)
+    /** With [error], a caught error: it is reported too, since the log line alone is invisible on iOS. */
+    internal fun logWarn(line: String, error: Throwable? = null) {
+        host.log(SessionLogLevel.WARN, TAG, line, error)
+        if (error != null) CaughtErrors.report("$TAG: $line", error)
+    }
 
     internal fun logError(line: String) = host.log(SessionLogLevel.ERROR, TAG, line, null)
 
@@ -660,7 +664,8 @@ class GlassesSessionCore(
                 brightnessPolicy.configure(auto, level, minimum, maximum, curve, fadeMs)
             } catch (e: IllegalArgumentException) {
                 // The curve is a saved setting; an exception here would abort the iOS app on every connect.
-                logWarn("brightness curve '$curve' rejected; using default", e)
+                // Without e: the report below names the curve, and logWarn(line, e) would file a second one.
+                logWarn("brightness curve '$curve' rejected (${e.message}); using default")
                 CaughtErrors.report("brightness", IllegalArgumentException("brightness curve '$curve' rejected (${e.message}); using the default", e))
                 brightnessPolicy.configure(auto, level, minimum, maximum, BrightnessPolicy.DEFAULT_CURVE, fadeMs)
             }
@@ -1691,7 +1696,7 @@ class GlassesSessionCore(
         try {
             listenerToCall.onAudioPacket(data.copyOf(), arm, arrivalMs)
         } catch (t: Throwable) {
-            logLine("G2 mic packet listener failed: " + safeMessage(t))
+            logWarn("G2 mic packet listener failed", t)
         }
     }
 

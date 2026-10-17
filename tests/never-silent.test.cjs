@@ -98,8 +98,9 @@ test('every catch in bootstrap files an error report; each reporter install has 
 test('Kotlin catches reach IosErrorReports', () => {
   const ios = sources.find(s => s.file.endsWith('iosMain/kotlin/com/faceclaw/app/PlatformUtil.ios.kt')).text;
   assert.match(ios, /platformCaughtErrorSink[^=\n]*= IosErrorReports::record/);
-  const host = sources.find(s => s.file.endsWith('IosSessionHost.kt')).text;
-  assert.match(host, /SessionLogLevel\.ERROR -> \{[^}]*IosErrorReports\.record\(/);
+  // Session-core catches log through logWarn(line, t); behaviour: GlassesSessionCoreTest.aListenerThatThrowsFilesAReport.
+  const core = sources.find(s => s.file.endsWith('session/GlassesSessionCore.kt')).text;
+  assert.match(core, /fun logWarn\(line: String, error: Throwable\? = null\) \{[^}]*if \(error != null\) CaughtErrors\.report\(/);
   // The reporter's own catches are its last resort: reporting from there would re-enter it.
   const reporter = definition(/^object IosErrorReports \{/gm).body;
   assert.doesNotMatch(reporter, /\bboundary(?:Error)?\(|CaughtErrors\.report\(/);
