@@ -1,3 +1,5 @@
+import { guardCallback } from './callback-errors.ios'
+
 /**
  * Implements a FaceclawKit (Kotlin) listener protocol with plain JavaScript methods.
  * NativeScript maps the method names to the protocol's selectors by camel-casing the
@@ -9,10 +11,17 @@
  * FaceclawVoiceControllerListener.onTranscript(String?, ...) -> `onTranscriptText:isFinal_:`),
  * and which twin gets it depends on compile order (build 37 crashed on a missed one). So every
  * method is also offered under its twin name; NativeScript registers only the name the protocol
- * declares and leaves the other a plain JS property.
+ * declares and leaves the other a plain JS property. A method that throws is logged, not thrown
+ * into the Kotlin frame (see guardCallback).
  */
 export function kotlinListener<T extends object>(protocol: unknown, methods: T): T {
-  const NativeListener = (NSObject as any).extend(withSelectorTwins(methods), { protocols: [protocol] })
+  const guarded: Record<string, unknown> = {}
+  for (const [name, method] of Object.entries(methods)) {
+    guarded[name] = typeof method === 'function'
+      ? function (this: unknown, ...args: unknown[]) { return guardCallback(name, () => method.apply(this, args)) }
+      : method
+  }
+  const NativeListener = (NSObject as any).extend(withSelectorTwins(guarded), { protocols: [protocol] })
   return NativeListener.new() as T
 }
 

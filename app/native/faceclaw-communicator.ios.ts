@@ -4,6 +4,7 @@ import { REQUIRED_FACECLAW_FIRMWARE_VERSION, type FirmwareInfo } from "../g2/fir
 import { type CompassEvent } from "./compass-types";
 import { type ImuReading } from "./imu-types";
 import { kotlinListener } from "./kotlin-listener.ios";
+import { guardCallback } from "./callback-errors.ios";
 import { fromData, fromKotlinBytes, throwIfError, toData } from "./kotlin-data";
 import { previewPixels } from "./ios-graphics";
 import { iosBluetooth } from "./ios-bluetooth";
@@ -120,31 +121,38 @@ export function ensureIosBluetoothReady(): Promise<void> {
   return iosBluetooth().ensureReady();
 }
 
+// Every method body runs under guardCallback: a JS error unwinding into the Kotlin caller ends the app.
 @NativeClass()
 class SessionListener extends NSObject {
   static ObjCProtocols = [FaceclawKitFaceclawBleCommunicatorListener];
   bridge!: FaceclawCommunicatorBridge;
-  onStateChangePhaseStatus(phase: string, status: string): void { this.bridge.handleStateChange(String(phase ?? ""), String(status ?? "")); }
+  onStateChangePhaseStatus(phase: string, status: string): void {
+    guardCallback("onStateChange", () => this.bridge.handleStateChange(String(phase ?? ""), String(status ?? "")));
+  }
   onRingEventKindContainerNameEventTypeEventSourceSystemExitReasonCodeFrameIdRingTickRingTypeRingAuxRingSpeed(
     kind: string, containerName: string, eventType: number, eventSource: number, systemExitReasonCode: number,
     frameId: number, ringTick: number, ringType: number, ringAux: number, ringSpeed: number,
   ): void {
-    this.bridge.handleRingEvent(String(kind ?? ""), String(containerName ?? ""), Number(eventType), Number(eventSource),
-      Number(systemExitReasonCode), Number(frameId), Number(ringTick), Number(ringType), Number(ringAux), Number(ringSpeed));
+    guardCallback("onRingEvent", () => this.bridge.handleRingEvent(String(kind ?? ""), String(containerName ?? ""), Number(eventType),
+      Number(eventSource), Number(systemExitReasonCode), Number(frameId), Number(ringTick), Number(ringType), Number(ringAux), Number(ringSpeed)));
   }
   onBatteryStateHeadsetBatteryHeadsetChargingRingBatteryRingCharging(headsetBattery: number, headsetCharging: number, ringBattery: number, ringCharging: number): void {
-    this.bridge.handleBatteryState(Number(headsetBattery), Number(headsetCharging), Number(ringBattery), Number(ringCharging));
+    guardCallback("onBatteryState", () => this.bridge.handleBatteryState(Number(headsetBattery), Number(headsetCharging), Number(ringBattery), Number(ringCharging)));
   }
-  onSilentModeSilent(silent: boolean): void { this.bridge.handleSilentMode(Boolean(silent)); }
-  onWearStateWearing(wearing: boolean): void { this.bridge.handleWearState(Boolean(wearing)); }
-  onPhoneLockStateLocked(locked: boolean): void { this.bridge.handlePhoneLockState(Boolean(locked)); }
-  onEvenAppConflictMessage(message: string): void { this.bridge.handleEvenAppConflict(String(message ?? "")); }
+  onSilentModeSilent(silent: boolean): void { guardCallback("onSilentMode", () => this.bridge.handleSilentMode(Boolean(silent))); }
+  onWearStateWearing(wearing: boolean): void { guardCallback("onWearState", () => this.bridge.handleWearState(Boolean(wearing))); }
+  onPhoneLockStateLocked(locked: boolean): void { guardCallback("onPhoneLockState", () => this.bridge.handlePhoneLockState(Boolean(locked))); }
+  onEvenAppConflictMessage(message: string): void {
+    guardCallback("onEvenAppConflict", () => this.bridge.handleEvenAppConflict(String(message ?? "")));
+  }
   onFrameMetricsPaintMsTransmitMsTileCount(paintMs: number, transmitMs: number, tileCount: number): void {
-    this.bridge.handleFrameMetrics(Number(paintMs), Number(transmitMs), Number(tileCount));
+    guardCallback("onFrameMetrics", () => this.bridge.handleFrameMetrics(Number(paintMs), Number(transmitMs), Number(tileCount)));
   }
-  onFrameFinishedFrameIdOutcome(frameId: number, outcome: string): void { this.bridge.handleFrameFinished(Number(frameId), String(outcome ?? "")); }
+  onFrameFinishedFrameIdOutcome(frameId: number, outcome: string): void {
+    guardCallback("onFrameFinished", () => this.bridge.handleFrameFinished(Number(frameId), String(outcome ?? "")));
+  }
   onFirmwareInfoLeftVersionRightVersionExtension(leftVersion: string, rightVersion: string, extension: string): void {
-    this.bridge.handleFirmwareInfo(String(leftVersion ?? ""), String(rightVersion ?? ""), String(extension ?? ""));
+    guardCallback("onFirmwareInfo", () => this.bridge.handleFirmwareInfo(String(leftVersion ?? ""), String(rightVersion ?? ""), String(extension ?? "")));
   }
 }
 
@@ -152,8 +160,10 @@ class SessionListener extends NSObject {
 class AncsListener extends NSObject {
   static ObjCProtocols = [FaceclawKitIosAncsListener];
   bridge!: FaceclawCommunicatorBridge;
-  onAncsAuthorizationAuthorized(authorized: boolean): void { this.bridge.handleAncsAuthorization(Boolean(authorized)); }
-  onRelayFrameData(data: NSData): void { this.bridge.handleAncsRelayFrame(fromData(data)); }
+  onAncsAuthorizationAuthorized(authorized: boolean): void {
+    guardCallback("onAncsAuthorization", () => this.bridge.handleAncsAuthorization(Boolean(authorized)));
+  }
+  onRelayFrameData(data: NSData): void { guardCallback("onRelayFrame", () => this.bridge.handleAncsRelayFrame(fromData(data))); }
 }
 
 @NativeClass()
@@ -164,7 +174,7 @@ class AudioPacketListener extends NSObject {
   // unmangled selector); build 37 lacked it and crashed on the first glasses-mic packet. The unmangled
   // name stays in case a compile-order change moves the "_" (see kotlinListener).
   onAudioPacketDataArmArrivalMs_(data: NSData, arm: string, arrivalMs: number): void {
-    this.handler(fromData(data), String(arm ?? ""), Number(arrivalMs));
+    guardCallback("onAudioPacketDataArmArrivalMs", () => this.handler(fromData(data), String(arm ?? ""), Number(arrivalMs)));
   }
   onAudioPacketDataArmArrivalMs(data: NSData, arm: string, arrivalMs: number): void {
     this.onAudioPacketDataArmArrivalMs_(data, arm, arrivalMs);
@@ -179,13 +189,13 @@ class CompassListener extends NSObject {
     command: number, headingDegrees: number, magneticAccuracy: number, magneticAnomalies: number,
     orientationSource: number, diagnosticFlags: number, sampleTimeMs: number,
   ): void {
-    this.handler({
+    guardCallback("onCompassEvent", () => this.handler({
       command: Number(command), headingDegrees: Number(headingDegrees),
       diagnostics: diagnosticFlags >= 0 ? {
         magneticAccuracy: Number(magneticAccuracy), magneticAnomalies: Number(magneticAnomalies),
         orientationSource: Number(orientationSource), flags: Number(diagnosticFlags), sampleTimeMs: Number(sampleTimeMs),
       } : undefined,
-    });
+    }));
   }
 }
 
@@ -316,7 +326,8 @@ export class FaceclawCommunicatorBridge {
   private emitAsync<T>(listeners: Set<(value: T) => void>, value: T): void {
     const snapshot = Array.from(listeners);
     setTimeout(() => {
-      for (const listener of snapshot) listener(value);
+      // Each on its own: one throwing listener must not starve the rest.
+      for (const listener of snapshot) guardCallback("bridge listener", () => listener(value));
     }, 0);
   }
 
