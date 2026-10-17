@@ -84,6 +84,17 @@ test('the JS callback paths native code calls go through guardCallback', () => {
   }
 });
 
+test('every catch in bootstrap files an error report; each reporter install has its own try', () => {
+  const bootstrap = sources.find(s => s.file === 'app/bootstrap.ios.ts').text;
+  const found = catches(bootstrap);
+  assert.ok(found.length >= 3, `only ${found.length} catches in bootstrap`);
+  for (const c of found) assert.match(c, /\b(?:reportError|logJsError)\(/, `bootstrap: a catch only logs:\n${c}`);
+  // One try for both: installErrorNotice throwing would leave the Kotlin listener unregistered.
+  for (const install of ['installErrorNotice', 'installKotlinErrorReports']) {
+    assert.match(bootstrap, new RegExp(`try \\{ ${install}\\(\\) \\} catch`), install);
+  }
+});
+
 test('Kotlin catches reach IosErrorReports', () => {
   const ios = sources.find(s => s.file.endsWith('iosMain/kotlin/com/faceclaw/app/PlatformUtil.ios.kt')).text;
   assert.match(ios, /platformCaughtErrorSink[^=\n]*= IosErrorReports::record/);
