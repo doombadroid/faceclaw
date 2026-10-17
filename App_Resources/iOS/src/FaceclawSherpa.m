@@ -3,6 +3,9 @@
 #import <AVFoundation/AVFoundation.h>
 #import <FaceclawKit/FaceclawKit.h>
 #include "FaceclawSherpaCore.h"
+// FaceclawParakeet.swift. The header is named after the product, which NativeScript names after the
+// checkout folder: CI checks out to faceclaw (faceclaw-ios-build's build.yml).
+#import "faceclaw-Swift.h"
 
 /** One offline recognizer; the C object is freed on close or dealloc. */
 @interface FaceclawSherpaRecognizer : NSObject <FaceclawKitIosPcmRecognizer>
@@ -38,6 +41,31 @@
 
 - (void)dealloc {
     [self close];
+}
+
+@end
+
+/** FluidAudio's Parakeet (FaceclawParakeet.swift) as a recognizer. The model stays loaded for the
+ * app, so close does nothing: IosOnDeviceTranscriber closes its recognizer after every capture. */
+@interface FaceclawParakeetRecognizer : NSObject <FaceclawKitIosPcmRecognizer>
+- (instancetype)initWithModelDir:(NSString *)modelDir;
+@end
+
+@implementation FaceclawParakeetRecognizer {
+    NSString *_modelDir;
+}
+
+- (instancetype)initWithModelDir:(NSString *)modelDir {
+    if (!(self = [super init])) return nil;
+    _modelDir = [modelDir copy];
+    return self;
+}
+
+- (NSString *)recognizeSamples:(NSData *)samples {
+    return [FaceclawParakeet recognizeSamples:samples dir:_modelDir];
+}
+
+- (void)close {
 }
 
 @end
@@ -85,6 +113,12 @@
 @implementation FaceclawSherpa
 
 - (id<FaceclawKitIosPcmRecognizer>)recognizerModelDir:(NSString *)modelDir whisper:(BOOL)whisper {
+    // Called on FaceclawKit's worker thread, so the (blocking) model load is fine here.
+    if ([FaceclawParakeet isParakeetDir:modelDir]) {
+        if ([FaceclawParakeet loadDir:modelDir]) return [[FaceclawParakeetRecognizer alloc] initWithModelDir:modelDir];
+        [FaceclawLog log:[NSString stringWithFormat:@"FaceclawSherpa: the Parakeet model in %@ did not load", modelDir]];
+        return nil;
+    }
     const SherpaOnnxOfflineRecognizer *recognizer = faceclaw_sherpa_recognizer(modelDir.fileSystemRepresentation, whisper ? 1 : 0);
     if (!recognizer) {
         [FaceclawLog log:[NSString stringWithFormat:@"FaceclawSherpa: no %@ model in %@", whisper ? @"Whisper" : @"Moonshine", modelDir]];
