@@ -190,6 +190,27 @@ test('iOS forwarding and the voice mic share one capture slot: STT wins and neit
   assert.deepEqual(names().slice(3), ['stopG2AudioCapture', 'startG2AudioForwardingNsDataListener', 'stopG2AudioForwarding']);
 });
 
+test('an enable superseded while it waits for the native queue never takes the slot from forwarding', async () => {
+  const { calls, native } = nativeSession({ startG2AudioForwardingNsDataListener: true, isSessionReady: true,
+    startG2AudioCaptureNsDataListener: true });
+  const { FaceclawCommunicatorBridge: Bridge } = loader({
+    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } },
+    FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
+    FaceclawKitFaceclawCompassListener: {},
+    FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
+  }, { '@nativescript/core': {}, './ios-graphics': {}, './ios-bluetooth': {}, './kotlin-listener.ios': { kotlinListener } })(
+    'app/native/faceclaw-communicator.ios.ts');
+  const bridge = new Bridge({ right: 'r', left: 'l' });
+  const enable = bridge.setMicrophone(true, () => {});
+  // Past the token check, parked on the native call timer.
+  for (let i = 0; i < 20; i++) await null;
+  const disable = bridge.setMicrophone(false);
+  assert.equal(bridge.startAudioForwarding(() => {}), true);
+  await enable; await disable;
+  const names = calls.map(([name]) => name).filter(name => /Audio(Capture|Forwarding)/.test(name));
+  assert.deepEqual(names, ['startG2AudioForwardingNsDataListener'], 'the stale enable stays off the glasses');
+});
+
 test('iOS audio monitor follows the active bridge and maps arms', () => {
   let active = null;
   const calls = [];

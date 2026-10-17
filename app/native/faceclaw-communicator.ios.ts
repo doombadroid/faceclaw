@@ -718,7 +718,9 @@ export class FaceclawCommunicatorBridge {
       const proxy = AudioPacketListener.new() as AudioPacketListener;
       proxy.handler = (packet) => { if (token === this.microphoneToken && listener) listener(packet); };
       this.audioListener = proxy;
-      const started = await this.enqueueNativeCall(() => Boolean(this.communicator.startG2AudioCaptureNsDataListener(proxy)));
+      // A later setMicrophone (or forwarding after a disable) may own the slot by the time the queue runs this.
+      const started = await this.enqueueNativeCall(() => token === this.microphoneToken && Boolean(this.communicator.startG2AudioCaptureNsDataListener(proxy)));
+      if (token !== this.microphoneToken) return;
       if (!started) throw fail("The glasses did not enable their microphone. Reconnect and try again.");
     });
     this.microphoneWork = work;
