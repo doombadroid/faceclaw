@@ -410,6 +410,15 @@ test('A torn .tmp next to an intact file: only the .tmp is moved aside, the file
   assert.equal(tmp.files.get('/lib/error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z'), 'garbage');
 });
 
+test('A Clear that cannot delete the file files a report instead of only logging', () => {
+  const h = harness();
+  h.module.reportError('x', 'one');
+  h.failRemove = true;
+  h.module.clearErrorReports();
+  h.failRemove = false;
+  assert.deepEqual(h.module.listErrorReports().map(r => [r.source, r.context && r.context.while]), [['error reports', 'clearing']]);
+});
+
 test('Clearing also resets Kotlin\'s repeat filter, so an error that keeps happening is new again at once', () => {
   const h = harness();
   h.module.reportError('x', 'one');

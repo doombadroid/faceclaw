@@ -127,7 +127,10 @@ export function clearErrorReports(): void {
     for (const path of [filePath(), tmpPath()]) if (File.exists(path)) File.fromPath(path).removeSync((error: unknown) => { throw error })
     // The unreadable file that kept saving off is gone.
     readOnly = false
-  } catch (error) { console.error(`error-reports: could not clear: ${error}`) }
+  } catch (error) {
+    // reports is already empty, so this cannot loop; the files left behind come back next launch.
+    reportError('error reports', error, { while: 'clearing' })
+  }
   // Kotlin's repeat filter too: a Kotlin error that keeps happening would otherwise next be
   // forwarded only at its next power of two, unseen until then.
   try {
