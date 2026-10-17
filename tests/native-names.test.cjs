@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { run, jsNameOf } = require('../scripts/check-native-names.cjs');
+const { run, jsNameOf, kotlinSourcesHash } = require('../scripts/check-native-names.cjs');
 
 // The shape Kotlin/Native emits, including build 37's mangled audio-listener selector.
 const HEADER = `
@@ -118,9 +118,17 @@ test('a declared native name missing from the headers is an error', () => {
   assert.match(errors[0], /FaceclawKitIosGoneAway is not declared/);
 });
 
-test('the iOS sources match the ObjC and Swift shims (and FaceclawKit.h when its snapshot exists)', () => {
+test('the iOS sources match FaceclawKit.h and the ObjC and Swift shims', () => {
+  // Without the header every Kotlin name (build 37's crash) goes unchecked, so it is required.
   const snapshot = path.join(__dirname, '..', 'native/kotlin/FaceclawKit.h.snapshot');
-  const result = run({ kotlinHeader: fs.existsSync(snapshot) ? snapshot : null });
+  assert.ok(fs.existsSync(snapshot), 'native/kotlin/FaceclawKit.h.snapshot is missing');
+  const result = run({ kotlinHeader: snapshot });
   assert.deepEqual(result.errors, []);
-  assert.ok(result.checked > 50, `only ${result.checked} names checked`);
+  assert.ok(result.types > 300, `only ${result.types} native types loaded`);
+  assert.ok(result.checked > 250, `only ${result.checked} names checked`);
+});
+
+test('the FaceclawKit.h snapshot was generated from the current Kotlin sources', () => {
+  const recorded = fs.readFileSync(path.join(__dirname, '..', 'native/kotlin/FaceclawKit.h.sources'), 'utf8').trim();
+  assert.equal(recorded, kotlinSourcesHash(), 'the Kotlin changed since the header snapshot: run `npm run kotlin-header`');
 });

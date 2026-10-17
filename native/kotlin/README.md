@@ -123,3 +123,12 @@ startup checks real NativeScript metadata and bidirectional callbacks, logging
 
 These checks require no BLE hardware. Physical glasses/ring behavior still
 needs device testing, particularly sustained rendering and microphone traffic.
+
+## FaceclawKit.h and the iOS JavaScript
+
+The iOS JavaScript reaches FaceclawKit by ObjC selector with no compiler in between, and
+Kotlin/Native renames some selectors (a `_` suffix when two interfaces share a method name with
+different signatures). `scripts/check-native-names.cjs` checks every name the `.ios.ts` files use
+against `FaceclawKit.h.snapshot`, the real generated header. After changing Kotlin, run
+`npm run kotlin-header` (seconds, on Linux) to regenerate it; `npm test` fails until you do,
+and CI fails when the committed snapshot differs from the header it builds.

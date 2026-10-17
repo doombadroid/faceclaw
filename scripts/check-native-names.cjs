@@ -397,7 +397,18 @@ function run({ kotlinHeader, files } = {}) {
     types: model.size, unparsedSwift };
 }
 
-module.exports = { run, parseHeader, jsNameOf, parseMethod };
+/** The hash of what FaceclawKit.h is generated from (iOS and common Kotlin, and the build script). */
+function kotlinSourcesHash() {
+  const hash = require('node:crypto').createHash('sha256');
+  const shared = path.join(ROOT, 'native/kotlin/shared');
+  const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))
+    .flatMap(entry => (entry.isDirectory() ? walk(path.join(dir, entry.name)) : entry.name.endsWith('.kt') ? [path.join(dir, entry.name)] : []));
+  const files = [path.join(shared, 'build.gradle.kts'), ...['commonMain', 'iosMain'].flatMap(set => walk(path.join(shared, 'src', set)))];
+  for (const file of files) hash.update(path.relative(shared, file)).update('\0').update(fs.readFileSync(file)).update('\0');
+  return hash.digest('hex');
+}
+
+module.exports = { run, parseHeader, jsNameOf, parseMethod, kotlinSourcesHash };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
