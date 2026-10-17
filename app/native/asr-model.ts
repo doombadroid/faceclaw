@@ -1,13 +1,17 @@
-import { Utils } from "@nativescript/core";
-
-declare const com: any;
-declare const java: any;
+import {
+  deleteModelFiles,
+  isModelFilePresent,
+  modelsRoot,
+  startModelDownload,
+  type ModelDownload,
+} from "./model-downloader";
 
 /**
  * Download management for the on-device transcription models (sherpa-onnx
- * offline recognizers). Models are fetched on demand into filesDir rather
- * than bundled in the APK; FaceclawVoiceController reads the files from the
- * directory each model's `dirName` names.
+ * offline recognizers). Models are fetched on demand into modelsRoot()
+ * (Android: filesDir; iOS: Library/Application Support/models) rather than
+ * bundled in the app; the recognizers read the files from the directory each
+ * model's `dirName` names (asrModelDir).
  *
  * Two models, same shape:
  *  - "moonshine": the original on-device option (three files). The model is
@@ -31,7 +35,7 @@ declare const java: any;
  *
  * Mirrors the on-phone assistant model flow in llama.ts, except each model
  * here is multiple files rather than one; they download sequentially through
- * FaceclawModelDownloader (resume + pinned sha256 per file).
+ * model-downloader (resume + pinned sha256 per file).
  */
 
 export type AsrModelId = "moonshine" | "whisper-base-en";
@@ -114,7 +118,7 @@ export type AsrModelState = {
 };
 
 type ModelRuntime = {
-  downloader: any;
+  downloader: ModelDownload | null;
   // Bytes of files already fully downloaded in this run, plus progress within
   // the file currently downloading; drives the aggregate percentage.
   completedBytes: number;
@@ -131,26 +135,20 @@ const runtimes: Record<AsrModelId, ModelRuntime> = {
   "whisper-base-en": freshRuntime(),
 };
 
-function modelDirPath(id: AsrModelId): string {
-  const context = Utils.android.getApplicationContext();
-  return `${context.getFilesDir().getAbsolutePath()}/faceclaw-voice-asr/${ASR_MODELS[id].dirName}`;
+/** The directory the recognizer loads the model's files from. */
+export function asrModelDir(id: AsrModelId): string {
+  return `${modelsRoot()}/faceclaw-voice-asr/${ASR_MODELS[id].dirName}`;
 }
 
 function filePath(id: AsrModelId, file: AsrModelFile): string {
-  return `${modelDirPath(id)}/${file.name}`;
+  return `${asrModelDir(id)}/${file.name}`;
 }
 
 function isFilePresent(id: AsrModelId, file: AsrModelFile): boolean {
-  try {
-    const javaFile = new java.io.File(filePath(id, file));
-    return javaFile.exists() && javaFile.length() > 0;
-  } catch {
-    return false;
-  }
+  return isModelFilePresent(filePath(id, file));
 }
 
 export function isAsrModelReady(id: AsrModelId): boolean {
-  if (!global.isAndroid) return false;
   return ASR_MODELS[id].files.every((file) => isFilePresent(id, file));
 }
 
@@ -184,7 +182,7 @@ function notifyStateChanged(id: AsrModelId): void {
 
 export function startAsrModelDownload(id: AsrModelId): void {
   const runtime = runtimes[id];
-  if (!global.isAndroid || runtime.downloader || isAsrModelReady(id)) return;
+  if (runtime.downloader || isAsrModelReady(id)) return;
   runtime.completedBytes = ASR_MODELS[id].files
     .filter((file) => isFilePresent(id, file))
     .reduce((sum, f) => sum + f.sizeBytes, 0);
@@ -202,9 +200,9 @@ function downloadNextFile(id: AsrModelId): void {
     return;
   }
   runtime.currentFileBytes = 0;
-  const listener = new com.faceclaw.app.FaceclawModelDownloaderListener({
-    onProgress: (bytes: number, _total: number) => {
-      runtime.currentFileBytes = Number(bytes);
+  runtime.downloader = startModelDownload(`${def.baseUrl}${nextFile.name}`, filePath(id, nextFile), nextFile.sha256, nextFile.sizeBytes, {
+    onProgress: (bytes) => {
+      runtime.currentFileBytes = bytes;
       notifyStateChanged(id);
     },
     onDone: () => {
@@ -212,20 +210,12 @@ function downloadNextFile(id: AsrModelId): void {
       runtime.currentFileBytes = 0;
       downloadNextFile(id);
     },
-    onError: (message: string) => {
+    onError: (message) => {
       console.error(`Voice model download failed (${id}/${nextFile.name}): ${message}`);
       runtime.downloader = null;
       notifyStateChanged(id);
     },
   });
-  runtime.downloader = new com.faceclaw.app.FaceclawModelDownloader(
-    `${def.baseUrl}${nextFile.name}`,
-    filePath(id, nextFile),
-    nextFile.sha256,
-    nextFile.sizeBytes,
-    listener,
-  );
-  runtime.downloader.start();
 }
 
 /** Stops the download; already-fetched bytes are kept and resumed next time. */
@@ -238,14 +228,9 @@ export function cancelAsrModelDownload(id: AsrModelId): void {
 }
 
 export function deleteAsrModel(id: AsrModelId): void {
-  if (!global.isAndroid) return;
   cancelAsrModelDownload(id);
   try {
-    for (const file of ASR_MODELS[id].files) {
-      new java.io.File(filePath(id, file)).delete();
-      new java.io.File(`${filePath(id, file)}.part`).delete();
-    }
-    new java.io.File(modelDirPath(id)).delete();
+    deleteModelFiles(asrModelDir(id), ASR_MODELS[id].files.map((file) => file.name));
   } catch (error) {
     console.error(`Voice model delete failed (${id}): ${String(error)}`);
   }

@@ -11,6 +11,7 @@ import { PERMISSIONS, type Permission } from '../../remote/protocol'
 import { isTunnelInterface } from '../../remote/listeners'
 import { copyRemoteToken, remoteInterfaces } from '../../native/remote-input'
 import { IOS_PRIVACY_NOTICE } from '../../analytics/privacy-disclosure'
+import { ASR_MODELS, asrModelState, cancelAsrModelDownload, deleteAsrModel, onAsrModelStateChanged, startAsrModelDownload, type AsrModelId } from '../../native/asr-model'
 
 // The controller's iOS text-setting prompt (Dialogs.prompt, re-asks on a
 // validation error). It is private on IosPreviewController; the glasses reach
@@ -69,7 +70,31 @@ export function settingRows(item: CatalogItem, open: (entry: NavigationEntry) =>
       } })]
     case 'document':
       return [navRow({ title: item.title, onTap: () => open({ create: () => documentPage(item.fileName, item.title) }) })]
+    case 'asr-model':
+      return [navRow({ title: asrModelTitle(item.model), value: asrModelValue(item.model), onTap: () => { void manageAsrModel(item.model) } })]
   }
+}
+
+const asrModelTitle = (id: AsrModelId) => `${ASR_MODELS[id].label} Model`
+const asrModelMb = (id: AsrModelId) => `${Math.round(ASR_MODELS[id].totalBytes / 1e6)} MB`
+
+function asrModelValue(id: AsrModelId): string {
+  const state = asrModelState(id)
+  if (state.status === 'ready') return 'Downloaded'
+  if (state.status === 'downloading') return `${state.totalBytes > 0 ? Math.floor(state.bytesDownloaded / state.totalBytes * 100) : 0}%`
+  return asrModelMb(id)
+}
+
+/** The glasses menu's Download / Cancel / Delete, as an action sheet. */
+async function manageAsrModel(id: AsrModelId): Promise<void> {
+  const status = asrModelState(id).status
+  const choice = status === 'downloading' ? 'Cancel Download' : status === 'ready' ? 'Delete Model' : `Download (${asrModelMb(id)})`
+  const picked = await Dialogs.action({ title: asrModelTitle(id), message: 'Transcribes voice input on the phone itself, with no API key or cloud service.',
+    cancelButtonText: 'Close', actions: [choice] })
+  if (picked !== choice) return
+  if (status === 'downloading') cancelAsrModelDownload(id)
+  else if (status === 'ready') deleteAsrModel(id)
+  else startAsrModelDownload(id)
 }
 
 function sectionFooter(entry: CatalogSection): string | undefined {
@@ -88,6 +113,7 @@ export function categoryKey(category: SettingsCategory | null): string {
       case 'notification-sources': return [readNotificationSources(), isNotificationListenerEnabled()]
       case 'input-tokens': return [remoteTokens.list().map(record => [record.id, record.name, record.permissions]), remoteInterfaceSelection()]
       case 'ios-privacy-notice': case 'document': return item.kind
+      case 'asr-model': return asrModelValue(item.model)
     }
   })]))
 }
@@ -117,7 +143,8 @@ export function createPage(): Page {
     const update = () => { if (categoryKey(category) !== shown) refresh() }
     // Glasses-side changes, the rows that depend on other settings, and the
     // ANCS session state behind the Notifications footer (not a stored setting).
-    offs = [onAnySettingChanged(update), onAndroidNotificationsChanged(update)]
+    offs = [onAnySettingChanged(update), onAndroidNotificationsChanged(update),
+      ...(Object.keys(ASR_MODELS) as AsrModelId[]).map(id => onAsrModelStateChanged(id, update))]
     update()
   })
   page.on('unloaded', () => { for (const off of offs) off(); offs = [] })

@@ -7,7 +7,7 @@ import { Utils } from "@nativescript/core";
 
 import { toJavaBytes } from "./cloud-stt";
 import { toUint8Array } from "../util/array-util";
-import { isAsrModelReady } from "./asr-model";
+import { asrModelDir, isAsrModelReady } from "./asr-model";
 
 declare const android: any;
 declare const com: any;
@@ -53,9 +53,7 @@ export function createCaptionListener(callbacks: CaptionCallbacks): any {
  * leaves the engine without ASR.
  */
 export function captionAsrDir(): string | null {
-  if (!isAsrModelReady("moonshine")) return null;
-  const context = Utils.android.getApplicationContext();
-  return `${context.getFilesDir().getAbsolutePath()}/faceclaw-voice-asr/sherpa-onnx-moonshine-base-en-quantized-2026-02-27`;
+  return isAsrModelReady("moonshine") ? asrModelDir("moonshine") : null;
 }
 
 /** Ask for what captions need while the phone is in front of the user (nothing on Android). */

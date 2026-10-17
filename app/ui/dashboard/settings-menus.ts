@@ -238,9 +238,6 @@ function settingsSections(): SettingsSection[] {
       toggleSettingMenuItem(saveVoiceRecordingsSetting), toggleSettingMenuItem(firmwareDebugFlagsSetting),
       toggleSettingMenuItem(suspendEvenHubWhenScreenOffSetting),
       ...(iosAppUnavailableReason("microphones") ? [] : [toggleSettingMenuItem(useMicControlSetting)]), toggleSettingMenuItem(showBleBandwidthSetting)] };
-    // No downloadable on-device models: iOS's on-device option is Apple's recognizer.
-    if (section.label === "Voice") return { label: "Voice", items: [enumSettingMenuItem(wakeWordActionSetting),
-      enumSettingMenuItem(voiceProviderSetting)] };
     if (deferred.has(section.label)) return { label: section.label, items: [{
       label: "Not available on iOS yet", disabled: true, onSelect: () => {},
       description: `${section.label} integration has not been ported to iOS.`,

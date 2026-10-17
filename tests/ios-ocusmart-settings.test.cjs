@@ -31,6 +31,7 @@ function harness() {
   // Menu builders that remember their setting, so the glasses tree can be walked.
   const menuItem = setting => ({ label: setting.label, setting });
   const calls = [], messages = [], unavailable = new Set(['microphones']);
+  const asr = { states: {}, calls: [], listeners: new Set() };
   const mocks = {
     '../../apps/ios-availability': { iosAppUnavailableReason: id => unavailable.has(id) ? 'not yet' : null },
     '../dashboard-settings': { ...settings, enumSettingMenuItem: menuItem, toggleSettingMenuItem: menuItem, textSettingMenuItem: menuItem },
@@ -44,7 +45,11 @@ function harness() {
       Dialogs: { confirm: async options => { calls.push(['confirm', options.title]); messages.push(options.message); return true; } } },
     '../../graphics/ui-fonts': {}, '../../graphics/logo': {}, '../../graphics/textwrap': {}, '../../version': { FACECLAW_VERSION: 'test' },
     '../../native/llama': { LOCAL_MODEL: { sizeBytes: 1e9, label: 'local' } },
-    '../../native/asr-model': { ASR_MODELS: { moonshine: { totalBytes: 1e6, label: 'Moonshine' }, 'whisper-base-en': { totalBytes: 1e6, label: 'Whisper' } } },
+    '../../native/asr-model': { ASR_MODELS: { moonshine: { totalBytes: 1e6, label: 'Moonshine' }, 'whisper-base-en': { totalBytes: 1e6, label: 'Whisper' } },
+      asrModelState: id => asr.states[id] || { status: 'absent', bytesDownloaded: 0, totalBytes: 1e6 },
+      onAsrModelStateChanged: (_id, fn) => { asr.listeners.add(fn); return () => asr.listeners.delete(fn); },
+      startAsrModelDownload: id => asr.calls.push(['start', id]), cancelAsrModelDownload: id => asr.calls.push(['cancel', id]),
+      deleteAsrModel: id => asr.calls.push(['delete', id]) },
     '../../apps/files/text-viewer': { TextViewerLayer: class {} },
     '../../analytics/privacy-disclosure': { IOS_PRIVACY_NOTICE: 'notice' },
     '../shell/shell': { shell: {} }, '../../native/wear-bridge': { wearBridge: {} },
@@ -58,7 +63,7 @@ function harness() {
     '../../native/notification-sources': { readNotificationSources: () => [], setNotificationSourceEnabled() {} },
   };
   const load = loader({ global: { isIOS: true } }, mocks);
-  return { settings, mocks, load, calls, messages, unavailable };
+  return { settings, mocks, load, calls, messages, unavailable, asr };
 }
 
 /** Every setting the glasses Settings app reaches on iOS, opening each submenu. */
@@ -266,6 +271,42 @@ test('category rows: bool → switch, enum → choice page, string → the contr
   rows(privacy).find(row => row.title === 'Privacy Policy').onTap();
   assert.equal(privacy.navigations[0].moduleName, undefined);
   assert.match(privacy.navigations[0].create().container.children[0].text, /PRIVACY is missing/);
+});
+
+test('iOS lists the on-device model downloads on the glasses and the phone, and the phone row follows the download', async () => {
+  const { load, mocks, asr } = harness();
+  const glasses = load('app/ui/dashboard/settings-menus.ts').createSettingsPanelLayer().sections.find(section => section.label === 'Voice');
+  assert.deepEqual([...glasses.items].map(item => item.label).slice(2), ['On-device model: Moonshine', 'On-device model: Whisper']);
+  const actions = [];
+  let pick = null;
+  mocks['@nativescript/core'].Label = class {};
+  mocks['@nativescript/core'].Dialogs.action = async options => { actions.push([...options.actions]); return pick ?? options.actions[0]; };
+  Object.assign(mocks, { './ui-kit': uiKit(), './runtime': { getRuntime: () => ({ controller: {} }) },
+    '../../native/notification-access': { isNotificationListenerEnabled: () => false, notificationEmptyMessage: () => '' },
+    '../../native/notification-icons': { onAndroidNotificationsChanged: () => () => {} },
+    '../../remote/service': { remoteTokens: { list: () => [] }, remoteInterfaceSelection: () => 'tailscale' },
+    '../../remote/listeners': { isTunnelInterface: () => true }, '../../native/remote-input': { remoteInterfaces: () => [] } });
+  const page = load('app/phone-ui/ios/settings-category-page.ts').createPage();
+  page.emit('navigatingTo', { context: { category: 'voice' } });
+  page.emit('loaded');
+  const row = () => rows(page).find(r => r.title === 'Moonshine Model');
+  assert.equal(row().value, '1 MB');
+  assert.ok(rows(page).find(r => r.title === 'Whisper Model'));
+  row().onTap(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(asr.calls, [['start', 'moonshine']]);
+  // Progress repaints the row without a settings change.
+  asr.states.moonshine = { status: 'downloading', bytesDownloaded: 5e5, totalBytes: 1e6 };
+  for (const fn of asr.listeners) fn(asr.states.moonshine);
+  assert.equal(row().value, '50%');
+  row().onTap(); await new Promise(resolve => setImmediate(resolve));
+  asr.states.moonshine = { status: 'ready', bytesDownloaded: 0, totalBytes: 1e6 };
+  for (const fn of asr.listeners) fn(asr.states.moonshine);
+  assert.equal(row().value, 'Downloaded');
+  pick = 'Close'; row().onTap(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(asr.calls, [['start', 'moonshine'], ['cancel', 'moonshine']]);
+  assert.deepEqual(actions, [['Download (1 MB)'], ['Cancel Download'], ['Delete Model']]);
+  page.emit('unloaded');
+  assert.equal(asr.listeners.size, 0);
 });
 
 test('choice rows honour isDisabled and unavailable values, and run the catalog onChange', () => {
