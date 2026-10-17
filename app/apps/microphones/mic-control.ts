@@ -2,6 +2,7 @@ import { getStringSetting, setStringSetting } from "../../native/settings-store"
 import { useMicControlSetting } from "../../ui/dashboard-settings";
 import { toJavaBytes } from "../../native/cloud-stt";
 import { toUint8Array } from "../../util/array-util";
+import { audioMonitorCommunicator } from "../../native/audio-monitor";
 import {
   MIC_LEASE_MS,
   decodeMicStatus,
@@ -29,15 +30,6 @@ const CONFIG_SETTING_KEY = "microphones.array-config";
 const LEASE_RENEW_MS = Math.floor(MIC_LEASE_MS / 3);
 
 export type MicArrayStatuses = { left: MicStatus | null; right: MicStatus | null };
-
-function activeCommunicator(): any {
-  if (!global.isAndroid) return null;
-  try {
-    return com.faceclaw.app.FaceclawBleCommunicator.getActive();
-  } catch {
-    return null;
-  }
-}
 
 /**
  * True when the "Use microphone control" developer setting is on. With the
@@ -71,8 +63,9 @@ export function saveMicConfig(config: MicConfig): void {
 class MicArrayController {
   private readonly statusListeners = new Set<(statuses: MicArrayStatuses) => void>();
   private statuses: MicArrayStatuses = { left: null, right: null };
-  // The Java listener proxy must stay referenced or it gets GC'd.
-  private statusProxy: any = null;
+  // Unsubscribes the status listener; on Android its closure also keeps the
+  // Java proxy referenced so it is not GC'd.
+  private statusOff: (() => void) | null = null;
   private proxyCommunicator: any = null;
   private leaseTimer: ReturnType<typeof setInterval> | null = null;
   private armed = false;
@@ -158,39 +151,44 @@ class MicArrayController {
     rightTemple = true,
     leftTemple = true,
   ): boolean {
-    const communicator = activeCommunicator();
+    // Android's native communicator, or the iOS session bridge (which takes a Uint8Array).
+    const communicator = audioMonitorCommunicator();
     if (!communicator) return false;
     try {
-      this.ensureStatusProxy(communicator);
+      this.ensureStatusListener(communicator);
       const record = encodeMicControl(op, config);
       // False when the session wasn't ready and nothing was queued.
-      return communicator.sendFaceclawMicControl(toJavaBytes(record), label, rightTemple, leftTemple) !== false;
+      return communicator.sendFaceclawMicControl(global.isIOS ? record : toJavaBytes(record), label, rightTemple, leftTemple) !== false;
     } catch (error) {
       console.warn(`mic control ${label} failed: ${error}`);
       return false;
     }
   }
 
-  private ensureStatusProxy(communicator: any): void {
-    if (this.statusProxy && this.proxyCommunicator === communicator) return;
-    if (this.statusProxy && this.proxyCommunicator) {
-      try {
-        this.proxyCommunicator.removeMicStatusListener(this.statusProxy);
-      } catch {
-        // The old communicator instance may be gone after a reconnect.
-      }
+  private ensureStatusListener(communicator: any): void {
+    if (this.statusOff && this.proxyCommunicator === communicator) return;
+    try {
+      this.statusOff?.();
+    } catch {
+      // The old communicator instance may be gone after a reconnect.
     }
-    this.statusProxy = new com.faceclaw.app.FaceclawMicStatusListener({
-      onMicStatus: (body: any, arm: string) => {
-        const status = decodeMicStatus(toUint8Array(body));
-        if (!status) return;
-        const side: MicSide = String(arm) === "L" ? "left" : "right";
-        this.statuses = { ...this.statuses, [side]: { ...status, side } };
-        this.statusListeners.forEach((listener) => listener(this.statuses));
-      },
-    });
+    const receive = (body: Uint8Array, arm: string) => {
+      const status = decodeMicStatus(body);
+      if (!status) return;
+      const side: MicSide = arm === "L" ? "left" : "right";
+      this.statuses = { ...this.statuses, [side]: { ...status, side } };
+      this.statusListeners.forEach((listener) => listener(this.statuses));
+    };
     this.proxyCommunicator = communicator;
-    communicator.addMicStatusListener(this.statusProxy);
+    if (global.isIOS) {
+      this.statusOff = communicator.addMicStatusListener(receive);
+      return;
+    }
+    const proxy = new com.faceclaw.app.FaceclawMicStatusListener({
+      onMicStatus: (body: any, arm: string) => receive(toUint8Array(body), String(arm)),
+    });
+    communicator.addMicStatusListener(proxy);
+    this.statusOff = () => communicator.removeMicStatusListener(proxy);
   }
 
   private syncLeaseTimer(): void {

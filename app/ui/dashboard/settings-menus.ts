@@ -85,6 +85,7 @@ import { wearBridge } from "../../native/wear-bridge";
 import { openSettingsSubMenu, SettingsPanelLayer, type SettingsSection } from "./settings-panel";
 import { uiFontPickerMenuItem } from "../font-picker";
 import { APP_NAME } from "../../branding";
+import { iosAppUnavailableReason } from "../../apps/ios-availability";
 
 /** The Settings app's master-detail panel (sections on the left, contents on the right). */
 export function createSettingsPanelLayer(): SettingsPanelLayer {
@@ -232,9 +233,10 @@ function settingsSections(): SettingsSection[] {
   if (!global.isIOS) return sections;
   const deferred = new Set(["Watch"]);
   return sections.map(section => {
-    // EvenHub suspend and mic control have no iOS runtime yet.
+    // EvenHub suspend has no iOS runtime yet; mic control only drives the Microphones app.
     if (section.label === "Developer") return { ...section, items: [enumSettingMenuItem(ringConnectionModeSetting),
-      toggleSettingMenuItem(saveVoiceRecordingsSetting), toggleSettingMenuItem(firmwareDebugFlagsSetting), toggleSettingMenuItem(showBleBandwidthSetting)] };
+      toggleSettingMenuItem(saveVoiceRecordingsSetting), toggleSettingMenuItem(firmwareDebugFlagsSetting),
+      ...(iosAppUnavailableReason("microphones") ? [] : [toggleSettingMenuItem(useMicControlSetting)]), toggleSettingMenuItem(showBleBandwidthSetting)] };
     // No downloadable on-device models: iOS's on-device option is Apple's recognizer.
     if (section.label === "Voice") return { label: "Voice", items: [enumSettingMenuItem(wakeWordActionSetting),
       enumSettingMenuItem(voiceProviderSetting)] };

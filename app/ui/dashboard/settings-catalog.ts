@@ -31,6 +31,7 @@ import {
   screenFadeSetting,
   screenTimeoutSetting,
   showBleBandwidthSetting,
+  useMicControlSetting,
   sonioxApiKeySetting,
   statusBarPositionSetting,
   statusBarVisibilitySetting,
@@ -44,6 +45,7 @@ import {
   type ConfigSettingString,
 } from "../dashboard-settings";
 import { shell } from "../shell/shell";
+import { iosAppUnavailableReason } from "../../apps/ios-availability";
 import {
   clearConflictingSlots,
   glanceboardEnabledSetting,
@@ -300,6 +302,8 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
       { footer: ringConnectionModeSetting.description, items: [item(ringConnectionModeSetting)] },
       { footer: saveVoiceRecordingsSetting.description, items: [item(saveVoiceRecordingsSetting)] },
       { footer: firmwareDebugFlagsSetting.description, items: [item(firmwareDebugFlagsSetting)] },
+      // Shown with the Microphones app, the only thing it drives.
+      ...(iosAppUnavailableReason("microphones") ? [] : [{ footer: useMicControlSetting.description, items: [item(useMicControlSetting)] }]),
       { footer: showBleBandwidthSetting.description, items: [item(showBleBandwidthSetting)] },
     ],
   },

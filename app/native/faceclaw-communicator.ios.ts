@@ -768,6 +768,11 @@ export class FaceclawCommunicatorBridge {
     return () => { this.communicator.removeMicStatusListenerListener(proxy); };
   }
 
+  /** Queue one CFW mic_control record to the chosen temples; false when the session is not ready. */
+  sendFaceclawMicControl(record: Uint8Array, label: string, rightTemple: boolean, leftTemple: boolean): boolean {
+    return Boolean(this.communicator.sendFaceclawMicControlRecordLabelRightTempleLeftTemple(toData(record), label, rightTemple, leftTemple));
+  }
+
   /** Ask CoreBluetooth for ANCS on the right arm's next connection (call before start()). */
   setRequiresAncs(required: boolean): void {
     this.communicator.setRequiresAncsRequired(Boolean(required));
