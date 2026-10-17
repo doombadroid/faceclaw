@@ -14,3 +14,6 @@
 .ns-dark .os-device-art { background-color: #2C2C2E; }
 .ns-dark .os-device-title,
 .ns-dark .os-about-name { color: #FFFFFF; }
+
+.os-error-row { padding: 11 16; }
+.os-error-stack { font-family: monospace; font-size: 11; margin-top: 8; }
