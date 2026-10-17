@@ -818,13 +818,17 @@ export const ringConnectionModeSetting = new ConfigSettingEnum<RingConnectionMod
 // runs -- see the same note in native/voice-control.ts. The "whisper" value
 // keeps its name (it's a persisted setting on real installs) but its label
 // below now says "OpenAI" to tell the two apart in the picker.
-// "onboard-moonshine" exists for iOS only, where "onboard" (the persisted
-// default) is Apple's recognizer; Android's "onboard" already is Moonshine, and
-// a stray "onboard-moonshine" there falls back to it.
-export type VoiceProvider = "onboard" | "onboard-moonshine" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
+// "onboard-moonshine" exists for iOS only, where "onboard" is Apple's
+// recognizer; Android's "onboard" already is Moonshine, and a stray
+// "onboard-moonshine" there falls back to it. "onboard-parakeet" (FluidAudio's
+// Parakeet, iOS only) is the iOS default: it never touches Apple's
+// SFSpeechRecognizer, and until its model is downloaded and warmed up its
+// captures use Apple's recognizer (onboard-stt.ios.ts onboardModel).
+export type VoiceProvider = "onboard" | "onboard-parakeet" | "onboard-moonshine" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
 
 const voiceProviderLabels: Record<VoiceProvider, string> = {
   onboard: global.isIOS ? "On-device (Apple)" : "On-device (Moonshine)",
+  "onboard-parakeet": "On-device (Parakeet)",
   "onboard-moonshine": "On-device (Moonshine)",
   "onboard-whisper": "On-device (Whisper)",
   elevenlabs: "ElevenLabs",
@@ -836,9 +840,9 @@ export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
   id: "voice-provider",
   label: "Transcription provider",
   storageKey: "voice.provider",
-  defaultValue: "onboard",
+  defaultValue: global.isIOS ? "onboard-parakeet" : "onboard",
   values: global.isIOS
-    ? ["onboard", "onboard-moonshine", "onboard-whisper", "elevenlabs", "whisper", "soniox"]
+    ? ["onboard-parakeet", "onboard", "onboard-moonshine", "onboard-whisper", "elevenlabs", "whisper", "soniox"]
     : ["onboard", "onboard-whisper", "elevenlabs", "whisper", "soniox"],
   formatValue: (value) => voiceProviderLabels[value] ?? value,
   isDisabled: (value) => {
@@ -851,9 +855,20 @@ export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
     return false;
   },
   description: global.isIOS
-    ? "Speech-to-text engine for voice input. ElevenLabs, OpenAI, and Soniox are cloud services that need an API key (Settings > API Keys), with significantly better accuracy than on-device transcription. On-device (Apple) uses your iPhone's speech language; On-device (Moonshine) and (Whisper) are English and need their voice model downloaded (below). On-device audio never leaves the phone."
+    ? "Speech-to-text engine for voice input. ElevenLabs, OpenAI, and Soniox are cloud services that need an API key (Settings > API Keys), with significantly better accuracy than on-device transcription. On-device (Parakeet) covers English and 24 European languages; until its 483 MB model is downloaded (below) and prepared (a few minutes after each app update), it uses On-device (Apple), which follows your iPhone's speech language. On-device (Moonshine) and (Whisper) are English and need their voice model downloaded (below). On-device audio never leaves the phone."
     : "Speech-to-text engine for voice input. ElevenLabs, OpenAI, and Soniox are cloud services that need an API key, with significantly better accuracy than on-device transcription. The two On-device options need their voice model downloaded (below) and never leave the phone.",
 });
+
+/**
+ * iOS installs still on the old default, On-device (Apple), move to On-device (Parakeet) once:
+ * it uses Apple's recognizer until its model is ready, so nothing changes before the download.
+ * Picking Apple again afterwards sticks.
+ */
+export function migrateIosVoiceProvider(): void {
+  if (!global.isIOS || getBooleanSetting("voice.parakeetDefaultMigrated", false)) return;
+  if (getStringSetting("voice.provider", "") === "onboard") voiceProviderSetting.set("onboard-parakeet");
+  setBooleanSetting("voice.parakeetDefaultMigrated", true);
+}
 
 const wakeWordActionLabels: Record<WakeWordAction, string> = {
   "voice-input": "Voice Input",

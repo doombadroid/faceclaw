@@ -9,7 +9,7 @@ const exported = exportedNames(`${KOTLIN}/commonMain/kotlin/com/faceclaw/app/aud
   `${KOTLIN}/iosMain/kotlin/com/faceclaw/app/IosMicAudio.kt`,
   `${KOTLIN}/commonMain/kotlin/com/faceclaw/app/callbacks/FaceclawCaptionEngineListener.kt`);
 
-function setup({ port = true, moonshine = false } = {}) {
+function setup({ port = true, moonshine = false, parakeet = false } = {}) {
   const calls = [];
   // Every FaceclawKit object records the selectors called on it.
   const native = kind => {
@@ -37,7 +37,8 @@ function setup({ port = true, moonshine = false } = {}) {
     '@nativescript/core': { knownFolders: { documents: () => ({ path: '/Docs' }), ios: { library: () => ({ path: '/Lib' }) } } },
     './kotlin-data': { toData: bytes => ({ data: [...bytes] }) },
     './kotlin-listener.ios': { kotlinListener: (protocol, methods) => { listener = { protocol, methods }; return methods; } },
-    './asr-model': { isAsrModelReady: id => moonshine && id === 'moonshine', asrModelDir: id => `/Models/${id}` },
+    './asr-model': { isAsrModelReady: id => moonshine && id === 'moonshine', isAsrModelWarm: id => parakeet && id === 'parakeet-v3',
+      asrModelDir: id => `/Models/${id}` },
     './onboard-stt.ios': { sherpaLoader: () => 'sherpa-loader' },
   })('app/native/mic-native.ios.ts');
   return { mic, calls, listener: () => listener };
@@ -100,6 +101,13 @@ test('captions use the downloaded Moonshine model through the sherpa loader, wit
   assert.equal(calls.filter(call => call[0] === 'speech').length, 0);
   // The Kotlin side tells the two apart by this sentinel.
   assert.match(fs.readFileSync(`${KOTLIN}/iosMain/kotlin/com/faceclaw/app/IosMicAudio.kt`, 'utf8'), /const val APPLE_SPEECH = "apple-speech"/);
+});
+
+test('captions prefer Parakeet once it is warm, through the same sherpa loader, with no Speech prompt', () => {
+  const { mic, calls } = setup({ moonshine: true, parakeet: true });
+  assert.equal(mic.captionAsrDir(), '/Models/parakeet-v3');
+  mic.prepareCaptions();
+  assert.equal(calls.filter(call => call[0] === 'speech').length, 0);
 });
 
 test('iOS re-diarizes a saved WAV through FaceclawSherpaDiarizer, with its selectors from the header', () => {

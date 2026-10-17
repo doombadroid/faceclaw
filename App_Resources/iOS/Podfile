@@ -1,4 +1,4 @@
-platform :ios, '15.1'
+platform :ios, '17.0'
 pod 'SVGKit', '3.0.0'
 
 # SVGKit 3's physical-DPI lookup asserts on arm64 simulators. Our icons use

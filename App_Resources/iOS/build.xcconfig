@@ -1,4 +1,6 @@
-IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+// 17.0: FluidAudio (the Parakeet speech model, SPMPackages in nativescript.config.ts) declares iOS 17;
+// Podfile and the CI build's command-line override must say the same.
+IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 TARGETED_DEVICE_FAMILY = 1;
 CODE_SIGN_STYLE = Automatic;
 
@@ -7,7 +9,7 @@ OTHER_LDFLAGS = $(inherited) -framework CoreBluetooth -framework CoreLocation -f
 
 // Language mode for src/*.swift (the runtime template says 4.2). ns build passes SWIFT_ENABLE_EXPLICIT_MODULES=NO
 // unless this file sets it; CI calls xcodebuild directly, so set it here too.
-// AlarmKit (iOS 26+) is weak-linked above so iOS 15-25 still launch.
+// AlarmKit (iOS 26+) is weak-linked above so iOS 17-25 still launch.
 SWIFT_VERSION = 5.0;
 SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 

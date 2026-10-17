@@ -7,6 +7,7 @@ import {
   type InProcessWindow,
 } from "../../ui/shell/in-process-window";
 import { shell } from "../../ui/shell/shell";
+import { parakeetMenuItems, takeParakeetNotice } from "./parakeet-offer";
 
 export const TRANSCRIBE_WINDOW_ID = "transcribe";
 export const TRANSCRIBE_SURFACE_ID = "window:transcribe";
@@ -63,7 +64,10 @@ export function createTranscribeAppWindow(options: TranscribeAppOptions): InProc
         ctx.stack.pop();
         layer.saveTranscript();
       },
-    }],
+    }, ...parakeetMenuItems(() => {
+      layer.notice = "Downloading Parakeet (Settings > Voice shows progress). Apple speech recognition is used until it is ready.";
+      app.requestRender();
+    })],
     submitFrame: options.submitFrame,
     setSurfaceVisible: options.setSurfaceVisible,
     removeSurface: options.removeSurface,
@@ -76,6 +80,7 @@ export function createTranscribeAppWindow(options: TranscribeAppOptions): InProc
   });
   // Wire async state changes to this window's renderer, rather than the
   // controller action from which the window-specific actions were derived.
+  layer.notice = takeParakeetNotice();
   layer.start(app.requestRender);
   options.startContinuousVoiceCapture();
   shell.setTrayIcon(TRAY_ICON_ID, MIC_ICON);

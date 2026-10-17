@@ -2,7 +2,8 @@
 NS_ASSUME_NONNULL_BEGIN
 /** sherpa-onnx's model loader for FaceclawKit (conforms to FaceclawKitIosSherpaLoader, declared in
  * the .m): on-device Moonshine / Whisper recognizers and the speaker-embedding (voice-print)
- * extractor over the C API. One instance serves the app. */
+ * extractor over the C API, and FluidAudio's Parakeet (FaceclawParakeet.swift) for its model folder.
+ * One instance serves the app. */
 @interface FaceclawSherpa : NSObject
 @end
 

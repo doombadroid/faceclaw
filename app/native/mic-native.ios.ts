@@ -11,7 +11,7 @@ import { knownFolders } from "@nativescript/core";
 import type { CaptionCallbacks, DiarizerCallbacks } from "./mic-native";
 import { toData } from "./kotlin-data";
 import { kotlinListener } from "./kotlin-listener.ios";
-import { asrModelDir, isAsrModelReady } from "./asr-model";
+import { asrModelDir, isAsrModelReady, isAsrModelWarm } from "./asr-model";
 import { sherpaLoader } from "./onboard-stt.ios";
 
 export type { CaptionCallbacks, DiarizerCallbacks } from "./mic-native";
@@ -101,14 +101,15 @@ export function createCaptionListener(callbacks: CaptionCallbacks): any {
   });
 }
 
-/** Android's caption model (Moonshine) once downloaded; else Apple's recognizer (IosCaptionEngine.APPLE_SPEECH). */
+/** Parakeet once warm, else Android's caption model (Moonshine) once downloaded, else Apple's recognizer (IosCaptionEngine.APPLE_SPEECH). */
 export function captionAsrDir(): string | null {
+  if (isAsrModelWarm("parakeet-v3")) return asrModelDir("parakeet-v3");
   return isAsrModelReady("moonshine") ? asrModelDir("moonshine") : "apple-speech";
 }
 
 /** Speech Recognition can only be granted from the foreground; the caption engine checks it per start. */
 export function prepareCaptions(): void {
-  if (isAsrModelReady("moonshine") || FaceclawSpeech.authorizationStatus() !== 0) return;
+  if (captionAsrDir() !== "apple-speech" || FaceclawSpeech.authorizationStatus() !== 0) return;
   if (UIApplication.sharedApplication.applicationState !== UIApplicationState.Active) return;
   FaceclawSpeech.requestAuthorization(() => {});
 }

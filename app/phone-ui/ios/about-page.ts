@@ -11,6 +11,11 @@ import { FACECLAW_VERSION } from '../../version'
 // The project docs webpack.config.js copies into the bundle's about/ folder.
 const DOCUMENTS = [['README.md', 'README'], ['LICENSE', 'License'], ['PRIVACY', 'Privacy Policy'], ['ACKNOWLEDGEMENTS.md', 'Acknowledgements']] as const
 
+// The On-device (Parakeet) transcription model's CC BY 4.0 attribution, and FluidAudio's license.
+export const PARAKEET_CREDIT = 'On-device (Parakeet) transcription uses NVIDIA\'s Parakeet TDT 0.6B v3 model (huggingface.co/nvidia/parakeet-tdt-0.6b-v3), ' +
+  'licensed under CC BY 4.0 (creativecommons.org/licenses/by/4.0), as converted to Core ML by FluidInference ' +
+  '(huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml). It runs with FluidAudio by FluidInference, under the Apache License 2.0.'
+
 export function createPage(): Page {
   const runtime = getRuntime(), controller = runtime.controller
   let shown = ''
@@ -31,7 +36,7 @@ export function createPage(): Page {
       valueRow({ title: 'Firmware', value: extension ? firmwareKindLabel(extension) : 'Not reported' }),
     ], footer: state?.leftVersion || state?.rightVersion ? undefined : 'The glasses report their versions after they connect.' }))
     container.addChild(section({ header: 'Documents', rows: DOCUMENTS.map(([fileName, title]) =>
-      navRow({ title, onTap: () => page.frame?.navigate({ create: () => documentPage(fileName, title) }) })) }))
+      navRow({ title, onTap: () => page.frame?.navigate({ create: () => documentPage(fileName, title) }) })), footer: PARAKEET_CREDIT }))
     // The old menu opened Permissions without dropping the connection.
     container.addChild(section({ rows: [navRow({ title: 'Permissions', onTap: () => { void presentDetour('phone-ui/permissions-page', undefined, false) } })] }))
   } })
