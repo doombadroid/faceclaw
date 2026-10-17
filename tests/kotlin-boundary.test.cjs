@@ -30,7 +30,7 @@ const TRIVIAL = new Set([
 const KOTLIN_ONLY = new Set(['ConnectionCounters.increment', 'ConnectionCounters.slug', 'VoiceEndpointDetector.accept']);
 // The error reporter itself: its body is one try/catch(Throwable) (checked below), and boundary()
 // would hand a failure of the reporter back to the reporter.
-const REPORTER = new Set(['IosErrorReports.record']);
+const REPORTER = new Set(['IosErrorReports.record', 'IosErrorReports.forgetRepeats']);
 
 function walk(dir, test) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
@@ -193,9 +193,11 @@ test('the gate finds the facades it guards', () => {
     .matchAll(/^\s*(?:(?:public|fun|sealed|enum|actual) )*interface (\w+)|^\s*enum class (\w+)/gm)].map(m => m[1] ?? m[2])));
   const lost = [...referencedNames()].filter(name => !owners.has(name) && !declared.has(name));
   assert.deepEqual(lost, []);
-  // The reporter is exempt only while its body is one try/catch.
-  const reporter = fns.find(fn => fn.owner === 'IosErrorReports' && fn.name === 'record');
-  assert.match(reporter.rest, /^[^)]*\)\s*\{\s*try\s*\{[^]*\} catch \(t: Throwable\) \{/);
+  // The reporter is exempt only while each of its bodies is one try/catch.
+  for (const label of REPORTER) {
+    const reporter = fns.find(fn => `${fn.owner}.${fn.name}` === label);
+    assert.match(reporter.rest, /^[^)]*\)\s*\{\s*try\s*\{[^]*\} catch \(t: Throwable\) \{/, label);
+  }
 });
 
 test('the class regex takes annotations and modifiers and does not let a body-less class swallow the next', () => {

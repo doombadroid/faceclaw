@@ -65,6 +65,19 @@ object IosErrorReports {
         }
     }
 
+    /**
+     * The owner cleared the reports (Settings): forget the repeat counts, so an error that keeps
+     * happening is forwarded at its next occurrence instead of at its next power of two. Never throws.
+     */
+    fun forgetRepeats() {
+        try {
+            repeatsLock.lock()
+            try { repeats.clear() } finally { repeatsLock.unlock() }
+        } catch (t: Throwable) {
+            runCatching { PlatformLog.e(TAG, "could not reset the repeat filter", t) }
+        }
+    }
+
     private fun deliver(target: IosErrorReportListener, report: Report) {
         try {
             target.onCaughtError(report.source, report.message, report.stack, report.occurrences)

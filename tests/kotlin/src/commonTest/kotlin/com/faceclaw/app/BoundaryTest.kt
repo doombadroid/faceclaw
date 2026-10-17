@@ -61,4 +61,13 @@ class BoundaryTest {
         assertEquals(1 to "b2", repeats.next("b") { "b3" }, "the 2nd occurrence carries the first stack")
         assertNull(repeats.next("b") { "b4" }, "the 3rd is only counted")
     }
+
+    /** Clearing the reports (Settings) forgets the counts: the next occurrence is forwarded at once. */
+    @Test fun clearedRepeatsAreNewAgain() {
+        val repeats = ErrorRepeats(maxKeys = 64)
+        repeat(5) { repeats.next("a") { "a" } }
+        repeats.clear()
+        assertEquals(1 to "a2", repeats.next("a") { "a2" })
+        assertEquals(1 to "a2", repeats.next("a") { "a3" })
+    }
 }

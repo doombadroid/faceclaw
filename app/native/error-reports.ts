@@ -10,6 +10,7 @@ import { FACECLAW_VERSION } from '../version'
 
 declare const NSBundle: any
 declare const FaceclawLog: { log(message: string): void } | undefined
+declare const FaceclawKitIosErrorReports: { shared: { forgetRepeats(): void } } | undefined
 
 export type ErrorReport = {
   /** Latest occurrence (ISO). */
@@ -127,6 +128,11 @@ export function clearErrorReports(): void {
     // The unreadable file that kept saving off is gone.
     readOnly = false
   } catch (error) { console.error(`error-reports: could not clear: ${error}`) }
+  // Kotlin's repeat filter too: a Kotlin error that keeps happening would otherwise next be
+  // forwarded only at its next power of two, unseen until then.
+  try {
+    if (typeof FaceclawKitIosErrorReports !== 'undefined') FaceclawKitIosErrorReports.shared.forgetRepeats()
+  } catch (error) { reportError('error reports', error, { while: 'resetting the Kotlin repeat filter' }) }
 }
 
 export function onErrorReport(listener: Listener): () => void {

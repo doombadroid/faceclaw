@@ -98,6 +98,8 @@ internal class ErrorRepeats(private val maxKeys: Int) {
             else -> null
         }
     }
+
+    fun clear() = seen.clear()
 }
 
 /** iOS: IosErrorReports::record. Android: none yet (logcat is visible there). */

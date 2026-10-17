@@ -41,6 +41,7 @@ function harness({ files = new Map(), failWrite = false, main = true, logThrows 
   h.module = loader({
     global: { isIOS: true, postMessage: message => h.posted.push(JSON.parse(JSON.stringify(message))) }, Date: FakeDate, console: quiet,
     setTimeout: fn => { h.timers.push(fn); return h.timers.length; }, clearTimeout: () => {},
+    FaceclawKitIosErrorReports: { shared: { forgetRepeats: () => { h.kotlinForgot = (h.kotlinForgot ?? 0) + 1; } } },
     FaceclawLog: { log: line => { if (logThrows) throw new Error('native log failed'); h.logged.push(line); } },
     NSBundle: { mainBundle: { infoDictionary: { objectForKey: key => ({ CFBundleShortVersionString: '0.8.3', CFBundleVersion: '42' })[key] } } },
   }, { '@nativescript/core': core })('app/native/error-reports.ts');
@@ -392,6 +393,13 @@ test('A torn .tmp next to an intact file: only the .tmp is moved aside, the file
   assert.deepEqual(tmp.module.listErrorReports().map(r => [r.source, r.context?.movedTo]),
     [['error reports', 'error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z'], ['old', undefined]]);
   assert.equal(tmp.files.get('/lib/error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z'), 'garbage');
+});
+
+test('Clearing also resets Kotlin\'s repeat filter, so an error that keeps happening is new again at once', () => {
+  const h = harness();
+  h.module.reportError('x', 'one');
+  h.module.clearErrorReports();
+  assert.equal(h.kotlinForgot, 1);
 });
 
 test('Merging keeps an earlier launch\'s report of the same error apart', () => {

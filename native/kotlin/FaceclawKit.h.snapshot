@@ -3985,6 +3985,12 @@ __attribute__((swift_name("IosErrorReports")))
 + (instancetype)iosErrorReports __attribute__((swift_name("init()")));
 @property (class, readonly, getter=shared) FaceclawKitIosErrorReports *shared __attribute__((swift_name("shared")));
 
+/**
+ * The owner cleared the reports (Settings): forget the repeat counts, so an error that keeps
+ * happening is forwarded at its next occurrence instead of at its next power of two. Never throws.
+ */
+- (void)forgetRepeats __attribute__((swift_name("forgetRepeats()")));
+
 /** Never throws: it is called from inside catch blocks. */
 - (void)recordSource:(NSString *)source error:(FaceclawKitKotlinThrowable *)error __attribute__((swift_name("record(source:error:)")));
 
