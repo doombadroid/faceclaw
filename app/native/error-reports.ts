@@ -33,6 +33,7 @@ const FILE_NAME = 'error-reports.jsonl'
 const MAX_REPORTS = 200, MAX_CHARS = 1_000_000, MAX_MESSAGE = 2_000, MAX_STACK = 16_000, SAVE_INTERVAL_MS = 1000
 /** Distinct messages kept per source per session; past it they share one report (an error naming its frame). */
 const MAX_PER_SOURCE = 20
+const LISTENER_SOURCE = 'error report listener'
 
 let reports: ErrorReport[] | null = null
 const thisSession = new Map<string, ErrorReport>()
@@ -78,7 +79,11 @@ export function reportError(source: string, error: unknown, context?: Record<str
     else if (isNew || !(report.count & (report.count - 1))) scheduleSave()
     else unsaved = true
     for (const listener of [...listeners]) {
-      try { listener({ ...report }, isNew) } catch (listenerError) { console.error(`error report listener failed: ${listenerError}`) }
+      try { listener({ ...report }, isNew) } catch (listenerError) {
+        // Reported too, but later (the caller may be mid-layout) and never about itself: a
+        // listener that always throws would otherwise report once per tick forever.
+        if (report.source !== LISTENER_SOURCE) setTimeout(() => reportError(LISTENER_SOURCE, listenerError), 0)
+      }
     }
     // Last and on its own: a native logger that throws must not cost the save or the notice.
     try { log(report) } catch { /* the report is saved; only the log line is lost */ }

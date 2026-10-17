@@ -209,6 +209,19 @@ test('Listeners hear each report, can unsubscribe, and cannot break reporting', 
   assert.equal(h.module.listErrorReports().length, 3);
 });
 
+test('A listener that throws files its own report, once, without looping', () => {
+  const h = harness();
+  h.module.onErrorReport(() => { throw new Error('refresh failed'); });
+  h.module.reportError('x', 'one');
+  // Deferred: the caller may be mid-layout, and reporting inline would re-enter the listener.
+  assert.deepEqual(h.module.listErrorReports().map(r => r.source), ['x']);
+  for (let i = 0; i < 5; i++) h.flushTimers();
+  const reports = h.module.listErrorReports();
+  assert.deepEqual(reports.map(r => [r.source, r.message, r.count]).sort(),
+    [['error report listener', 'refresh failed', 1], ['x', 'one', 1]]);
+  assert.deepEqual(h.timers, [], 'no report re-arms itself');
+});
+
 test('reportError never throws, even when the disk or the input misbehaves', () => {
   const h = harness({ failWrite: true });
   const seen = [];
