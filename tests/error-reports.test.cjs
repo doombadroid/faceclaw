@@ -12,7 +12,7 @@ function harness({ files = new Map(), failWrite = false, main = true, logThrows 
       fromPath: path => ({
         // Like NativeScript: a read failure (say, a torn UTF-8 sequence) goes to onError, else returns undefined.
         readTextSync: onError => {
-          if (h.failRead) { const error = new Error('unreadable'); return onError ? onError(error) : undefined; }
+          if (h.failRead === true || h.failRead === path) { const error = new Error('unreadable'); return onError ? onError(error) : undefined; }
           return h.files.get(path) ?? '';
         },
         writeTextSync: text => {
@@ -373,6 +373,25 @@ test('Killed after writing the .tmp but before dropping the old file: both are m
   next.module.reportError('c', 'third');
   assert.deepEqual([...next.files.keys()], ['/lib/error-reports.jsonl'], 'the next save writes the merged set');
   assert.deepEqual(next.stored().map(r => [r.source, r.count]).sort(), [['a', 4], ['b', 1], ['c', 1]]);
+});
+
+test('A torn .tmp next to an intact file: only the .tmp is moved aside, the file\'s reports stay', () => {
+  const keep = JSON.stringify({ at: '2026-10-16T00:00:00.000Z', source: 'old', message: 'kept', count: 3 });
+  const h = harness({ files: new Map([['/lib/error-reports.jsonl', `${keep}\n`], ['/lib/error-reports.jsonl.tmp', 'torn \u2026']]) });
+  h.failRead = '/lib/error-reports.jsonl.tmp';
+  const listed = h.module.listErrorReports();
+  assert.deepEqual(listed.map(r => [r.source, r.count]), [['error reports', 1], ['old', 3]]);
+  assert.equal(listed[0].context.tmpMovedTo, 'error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z.tmp');
+  assert.equal(listed[0].context.movedTo, undefined, 'the intact file stays');
+  assert.deepEqual([...h.files.keys()].sort(), ['/lib/error-reports.jsonl', '/lib/error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z.tmp']);
+  assert.deepEqual(h.stored().map(r => r.source).sort(), ['error reports', 'old'], 'the notice is saved next to the kept report');
+
+  // The other way round: an unreadable file next to a complete .tmp keeps the .tmp's reports.
+  const tmp = harness({ files: new Map([['/lib/error-reports.jsonl', 'garbage'], ['/lib/error-reports.jsonl.tmp', `${keep}\n`]]) });
+  tmp.failRead = '/lib/error-reports.jsonl';
+  assert.deepEqual(tmp.module.listErrorReports().map(r => [r.source, r.context?.movedTo]),
+    [['error reports', 'error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z'], ['old', undefined]]);
+  assert.equal(tmp.files.get('/lib/error-reports.jsonl.corrupt-2026-10-17T12-00-00-000Z'), 'garbage');
 });
 
 test('Merging keeps an earlier launch\'s report of the same error apart', () => {

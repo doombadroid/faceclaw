@@ -172,14 +172,25 @@ function fromWorker(source: string, message: string, stack: string, context?: Re
 function loaded(): ErrorReport[] {
   if (reports) return reports
   reports = []
+  let renameError: unknown = null
+  // No file but a .tmp: save() died between dropping the old file and renaming the complete
+  // new one. Put it in place now, or the next save's .tmp write would be over the only copy.
   try {
-    // No file but a .tmp: save() died between dropping the old file and renaming the complete
-    // new one. Put it in place now, or the next save's .tmp write would be over the only copy.
     if (!File.exists(filePath()) && File.exists(tmpPath())) File.fromPath(tmpPath()).renameSync(FILE_NAME, (error: unknown) => { throw error })
-    // Both: save() died after writing the .tmp (complete or torn) but before dropping the old
-    // file. Each may hold what the other lacks; the next save writes the union.
-    reports = merge(readReports(filePath()), readReports(tmpPath()))
-  } catch (error) { quarantine(error) }
+  } catch (error) { renameError = error; readOnly = true }
+  // Both: save() died after writing the .tmp (complete or torn) but before dropping the old
+  // file. Each may hold what the other lacks; the next save writes the union. Read apart: a
+  // torn .tmp (iOS writes it in place, so it can end mid UTF-8 sequence) must not take the
+  // intact file aside with it.
+  const unreadable: string[] = []
+  let readError: unknown = null
+  const read = (path: string) => {
+    try { return readReports(path) } catch (error) { unreadable.push(path); readError ??= error; return [] }
+  }
+  reports = merge(read(filePath()), read(tmpPath()))
+  // reports is set, so these do not come back here.
+  if (unreadable.length) quarantine(unreadable, readError)
+  if (renameError) reportError('error reports', renameError, { notSaved: `could not put ${FILE_NAME}.tmp in place; reports are kept in memory only this session` })
   return reports
 }
 
@@ -216,16 +227,15 @@ function merge(old: ErrorReport[], newer: ErrorReport[]): ErrorReport[] {
   return merged
 }
 
-/** The file cannot be read: keep it aside (the next save would overwrite it), say so, start fresh. */
-function quarantine(readError: unknown): void {
-  reports = []
+/** These files cannot be read: keep them aside (the next save would overwrite them) and say so. */
+function quarantine(paths: string[], readError: unknown): void {
   const context: Record<string, string> = {}
   try {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-'), fail = (error: unknown) => { throw error }
-    for (const [path, name] of [[filePath(), `${FILE_NAME}.corrupt-${stamp}`], [tmpPath(), `${FILE_NAME}.corrupt-${stamp}.tmp`]]) {
-      if (!File.exists(path)) continue
+    for (const path of paths) {
+      const tmp = path === tmpPath(), name = `${FILE_NAME}.corrupt-${stamp}${tmp ? '.tmp' : ''}`
       File.fromPath(path).renameSync(name, fail)
-      context[path === filePath() ? 'movedTo' : 'tmpMovedTo'] = name
+      context[tmp ? 'tmpMovedTo' : 'movedTo'] = name
     }
     const folder = folderPath(), prefix = `${FILE_NAME}.corrupt-`, stampOf = (name: string) => name.slice(prefix.length).replace(/\.tmp$/, '')
     const aside = Folder.fromPath(folder).getEntitiesSync().map(entry => entry.name).filter(name => name.startsWith(prefix))
@@ -235,7 +245,6 @@ function quarantine(readError: unknown): void {
     readOnly = true
     context.notSaved = `could not move it aside (${normalizeError(moveError).message}); reports are kept in memory only this session`
   }
-  // reports is set, so this does not come back here.
   reportError('error reports', readError, context)
 }
 
