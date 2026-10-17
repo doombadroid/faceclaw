@@ -111,7 +111,8 @@ function parseHeader(text, model) {
     if (!pending && !/^[-+]|^@property/.test(line)) continue;
     pending += ' ' + line;
     if (!/;\s*$/.test(line)) continue;
-    const unavailable = /unavailable/.test(pending);
+    // `availability(swift, unavailable, ...)` (K/N's `+new` on classes with an init()) hides it from Swift only.
+    const unavailable = /__attribute__\(\(unavailable|NS_UNAVAILABLE/.test(pending);
     const decl = stripAttributes(pending).replace(/;\s*$/, '').replace(/\b(NS_DESIGNATED_INITIALIZER|NS_SWIFT_NAME\([^)]*\)|NS_UNAVAILABLE|API_AVAILABLE\([^)]*\))/g, '').trim();
     pending = '';
     if (decl.startsWith('@property')) {
@@ -256,7 +257,7 @@ function checkFile(file, model, report) {
       const type = model.get(proto);
       if (type) for (const name of type.instance.keys()) { known.add(name); known.add(twin(name)); }
     }
-    if (allowTwins) {
+    if (label.startsWith('kotlinListener')) {
       for (const name of names) {
         if (!known.has(name)) report.error(where(node), `${label} method \`${name}\` matches no method of ${protocols.join(', ')}; NativeScript never registers it`);
       }
@@ -324,20 +325,10 @@ function checkFile(file, model, report) {
       currentClass = saved;
       return;
     }
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'kotlinListener') {
-      const [proto, methods] = node.arguments;
-      const name = proto && protocolOf(proto);
-      if (name && methods && ts.isObjectLiteralExpression(methods)) {
-        const names = new Set(methods.properties.map(memberName).filter(Boolean));
-        checkImplementation(node, [name], names, true, `kotlinListener(${name})`);
-      } else if (proto && ts.isIdentifier(proto) && declared.has(proto.text)) {
-        report.error(where(node), `kotlinListener(${proto.text}): not a protocol in the native headers`);
-      }
-    }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      const type = typeOf(node.initializer);
+      const type = typeOfQuiet(node.initializer);
       if (type) vars.set(node.name.text, type);
-      ts.forEachChild(node.initializer, visitCalls);
+      visitCalls(node.initializer);
       return;
     }
     if (ts.isCallExpression(node) || ts.isPropertyAccessExpression(node)) {
@@ -347,8 +338,20 @@ function checkFile(file, model, report) {
     ts.forEachChild(node, visit);
   }
 
+  function checkKotlinListener(node) {
+    const [proto, methods] = node.arguments;
+    const name = proto && protocolOf(proto);
+    if (name && methods && ts.isObjectLiteralExpression(methods)) {
+      const names = new Set(methods.properties.map(memberName).filter(Boolean));
+      checkImplementation(node, [name], names, report.twins, `kotlinListener(${name})`);
+    } else if (proto && ts.isIdentifier(proto) && declared.has(proto.text)) {
+      report.error(where(node), `kotlinListener(${proto.text}): not a protocol in the native headers`);
+    }
+  }
+
   // A member chain is checked once, from its outermost node.
   function visitCalls(node) {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'kotlinListener') checkKotlinListener(node);
     if (ts.isCallExpression(node) || ts.isPropertyAccessExpression(node)) {
       typeOf(node);
       if (ts.isCallExpression(node)) node.arguments.forEach(arg => visit(arg));
@@ -386,6 +389,9 @@ function run({ kotlinHeader, files } = {}) {
   const errors = [];
   const report = { kotlin: !!kotlinHeader, checked: 0, untraced: 0, error: (at, message) => errors.push(`${at}: ${message}`) };
   const targets = files || iosFiles(path.join(ROOT, 'app'));
+  // Either twin name only passes while kotlinListener really registers both.
+  const helper = targets.find(f => f.endsWith('kotlin-listener.ios.ts')) || path.join(ROOT, 'app/native/kotlin-listener.ios.ts');
+  report.twins = /extend\(withSelectorTwins\(/.test(fs.readFileSync(helper, 'utf8'));
   for (const file of targets) checkFile(file, model, report);
   return { errors: [...new Set(errors)], checked: report.checked, untraced: report.untraced, files: targets.length,
     types: model.size, unparsedSwift };

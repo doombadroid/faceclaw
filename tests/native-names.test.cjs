@@ -34,6 +34,12 @@ __attribute__((swift_name("IosGlassesSession")))
 - (FaceclawKitIosGlassesSession *)copySession __attribute__((swift_name("copySession()")));
 @property (readonly) int32_t mtu __attribute__((swift_name("mtu")));
 @end
+__attribute__((objc_subclassing_restricted))
+__attribute__((swift_name("IosGifRecorder")))
+@interface FaceclawKitIosGifRecorder : FaceclawKitBase
+- (instancetype)init __attribute__((swift_name("init()"))) __attribute__((objc_designated_initializer));
++ (instancetype)new __attribute__((availability(swift, unavailable, message="use object initializers instead")));
+@end
 NS_ASSUME_NONNULL_END
 `;
 
@@ -42,7 +48,7 @@ function check(source) {
   const header = path.join(dir, 'FaceclawKit.h');
   const file = path.join(dir, 'probe.ios.ts');
   fs.writeFileSync(header, HEADER);
-  fs.writeFileSync(file, `declare const FaceclawKitIosGlassesSession: any, FaceclawKitIosAudioPacketListener: any, FaceclawKitIosTranscriptListener: any;\n${source}`);
+  fs.writeFileSync(file, `declare const FaceclawKitIosGlassesSession: any, FaceclawKitIosGifRecorder: any, FaceclawKitIosAudioPacketListener: any, FaceclawKitIosTranscriptListener: any;\n${source}`);
   try { return run({ kotlinHeader: header, files: [file] }).errors; } finally { fs.rmSync(dir, { recursive: true }); }
 }
 
@@ -72,6 +78,10 @@ test('kotlinListener objects pass on either twin name, and fail on a missing or 
   const missing = check(`kotlinListener(FaceclawKitIosTranscriptListener, { onTranscriptTextIsFinal: () => {} });`);
   assert.equal(missing.length, 1);
   assert.match(missing[0], /without `onReady`/);
+  // build 37's onboard-stt shape: the call is a variable's initializer.
+  const assigned = check(`function make() { const listener = kotlinListener(FaceclawKitIosTranscriptListener, { onTranscriptTextIsFinal: () => {} }); return listener; }`);
+  assert.equal(assigned.length, 1);
+  assert.match(assigned[0], /without `onReady`/);
   const stray = check(`kotlinListener(FaceclawKitIosTranscriptListener, { onReady: () => {}, onTranscriptTextIsFinal: () => {}, onTranscript: () => {} });`);
   assert.equal(stray.length, 1);
   assert.match(stray[0], /`onTranscript` matches no method/);
@@ -82,6 +92,7 @@ test('calls into native classes are checked through variables, fields and return
     const native = FaceclawKitIosGlassesSession.alloc().initWithRightAddressLeftAddress('r', null);
     native.startG2AudioForwardingNsDataListener(null);
     native.copySession().mtu;
+    FaceclawKitIosGifRecorder.new(); // unavailable to Swift only
     class Bridge { native = FaceclawKitIosGlassesSession.alloc().initWithRightAddressLeftAddress('r', null);
       go() { return this.native.mtu; } }`), []);
   const errors = check(`
