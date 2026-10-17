@@ -15,6 +15,8 @@ NS_ASSUME_NONNULL_BEGIN
  * [{startMs, endMs, cluster}] sorted by start, or an error message. */
 - (void)startWithProgress:(void (^)(double progress))progress
                completion:(void (^)(NSString *_Nullable turnsJson, NSString *_Nullable error))completion;
+/** ponytail: sherpa-onnx ignores the progress callback's return, so the run finishes and then reports
+ * "cancelled"; abort mid-run needs a sherpa that honours it. */
 - (void)cancel;
 @end
 NS_ASSUME_NONNULL_END

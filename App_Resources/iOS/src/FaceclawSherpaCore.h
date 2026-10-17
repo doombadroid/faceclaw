@@ -28,6 +28,7 @@ const SherpaOnnxOfflineSpeakerDiarization *faceclaw_sherpa_diarizer(const char *
                                                                     int32_t clusters, float threshold);
 
 /** Speaker turns of n 16 kHz samples as JSON [{"startMs":..,"endMs":..,"cluster":..}] sorted by
- * start, malloc'd (the caller frees); NULL when it failed. A non-zero progress return stops early. */
+ * start, malloc'd (the caller frees); NULL when it failed. sherpa-onnx v1.13.0 ignores the progress
+ * callback's return value, so a cancel only takes effect once the run ends. */
 char *faceclaw_sherpa_diarize(const SherpaOnnxOfflineSpeakerDiarization *diarizer, const float *samples, int32_t n,
                               SherpaOnnxOfflineSpeakerDiarizationProgressCallback progress, void *arg);
