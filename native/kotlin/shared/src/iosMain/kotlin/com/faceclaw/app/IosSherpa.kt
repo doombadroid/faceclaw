@@ -102,28 +102,28 @@ class IosOnDeviceTranscriber(
     @Volatile
     private var cancelled = false
 
-    fun start() {
-        if (started) return
+    fun start(): Unit = boundary("IosOnDeviceTranscriber.start", Unit) {
+        if (started) return@boundary
         started = true
         startThread(TAG, true) { run() }
     }
 
-    fun acceptPcm(pcm: NSData) {
+    fun acceptPcm(pcm: NSData): Unit = boundary("IosOnDeviceTranscriber.acceptPcm", Unit) {
         if (!cancelled) commands.put(pcm.byteArray())
     }
 
     /** Ends the current utterance with its final and starts the next (continuous capture). */
-    fun commitSegment() {
+    fun commitSegment(): Unit = boundary("IosOnDeviceTranscriber.commitSegment", Unit) {
         if (!cancelled) commands.put(COMMIT)
     }
 
     /** Emits the final for everything accepted, then stops. */
-    fun finish() {
+    fun finish(): Unit = boundary("IosOnDeviceTranscriber.finish", Unit) {
         if (!cancelled) commands.put(FINISH)
     }
 
     /** Stops without a final. */
-    fun cancel() {
+    fun cancel(): Unit = boundary("IosOnDeviceTranscriber.cancel", Unit) {
         cancelled = true
         commands.put(FINISH)
     }
@@ -193,21 +193,21 @@ class IosSpeakerVerifier(
     private var verifying = false
 
     /** 16 kHz mono S16LE capture audio, on the main queue. */
-    fun acceptPcm(chunk: NSData) {
+    fun acceptPcm(chunk: NSData): Unit = boundary("IosSpeakerVerifier.acceptPcm", Unit) {
         val room = VoiceCaptureSession.VERIFY_MAX_SAMPLES * 2 - pcm.size()
-        if (verifying || room <= 0) return
+        if (verifying || room <= 0) return@boundary
         val bytes = chunk.byteArray()
         pcm.write(bytes, 0, minOf(room, bytes.size) and 1.inv())
     }
 
     /** Once: the verdict follows on the main queue. */
-    fun verify() {
-        if (verifying) return
+    fun verify(): Unit = boundary("IosSpeakerVerifier.verify", Unit) {
+        if (verifying) return@boundary
         verifying = true
         val captured = pcm.toByteArray()
         if (captured.size < VoiceCaptureSession.VERIFY_MIN_SAMPLES * 2) {
             dispatchToMain { listener.onVerified(true, 0f) }
-            return
+            return@boundary
         }
         startThread("FaceclawSpeakerVerify", true) {
             var printer: IosVoicePrinter? = null
