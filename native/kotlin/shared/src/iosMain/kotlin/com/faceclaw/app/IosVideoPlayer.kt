@@ -50,6 +50,7 @@ import platform.CoreVideo.kCVPixelBufferLock_ReadOnly
 import platform.CoreVideo.kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
 import platform.Foundation.NSData
 import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSNumber
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
 import platform.QuartzCore.CACurrentMediaTime
@@ -140,9 +141,10 @@ class IosVideoPlayer {
         val asset = AVURLAsset(uRL = NSURL.fileURLWithPath(path), options = null)
         val track = asset.tracksWithMediaType(AVMediaTypeVideo).firstOrNull() as? AVAssetTrack
         val item = AVPlayerItem(asset = asset)
-        // The key is kCVPixelBufferPixelFormatTypeKey; plane 0 of 420f is full-range luma.
+        // The key is kCVPixelBufferPixelFormatTypeKey; plane 0 of 420f is full-range luma. A real
+        // NSNumber, not a boxed Kotlin UInt, since CoreVideo reads it as a CFNumber.
         val output = AVPlayerItemVideoOutput(pixelBufferAttributes = mapOf<Any?, Any>(
-            "PixelFormatType" to kCVPixelFormatType_420YpCbCr8BiPlanarFullRange))
+            "PixelFormatType" to NSNumber(unsignedInt = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)))
         item.addOutput(output)
         val avPlayer = AVPlayer(playerItem = item)
         avPlayer.muted = !audio
