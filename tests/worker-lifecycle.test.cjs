@@ -89,6 +89,19 @@ test('worker shutdown unregisters the isolate settings observer before acknowled
   finishWorkerShutdown(); assert.deepEqual(calls, ['dispose', 'worker-stopped']);
 });
 
+test("an app worker's uncaught error goes on to the main isolate's worker.onerror", () => {
+  // iOS runtime 9.0.3 WorkerWrapper::CallOnErrorHandlers drops an error thrown from onmessage unless the
+  // worker's global onerror is a function; a falsy result passes it to WorkerAppHost's onerror (which reports).
+  const global = { postMessage() {} };
+  loader({ global }, { '../../native/settings-store': { disposeSettingsStore() {} } })('app/ui/shell/worker-lifecycle.ts');
+  assert.equal(typeof global.onerror, 'function');
+  assert.equal(Boolean(global.onerror(new Error('in onmessage'))), false, 'not handled here');
+  const fs = require('node:fs');
+  for (const file of fs.readdirSync('app/apps', { recursive: true }).filter(name => name.endsWith('-app.worker.ts'))) {
+    assert.match(fs.readFileSync(`app/apps/${file}`, 'utf8'), /from "\.\.\/\.\.\/ui\/shell\/worker-lifecycle"/, file);
+  }
+});
+
 test('every app worker answers idle checks and shutdown; Terminal releases controls only on shutdown', () => {
   const fs = require('node:fs'), vm = require('node:vm'), ts = require('typescript');
   for (const app of ['blocks', 'flappy', 'freecell', 'minesweeper', 'navigate', 'pinball', 'roam', 'terminal']) {
