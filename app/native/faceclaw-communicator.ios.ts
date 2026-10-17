@@ -160,8 +160,14 @@ class AncsListener extends NSObject {
 class AudioPacketListener extends NSObject {
   static ObjCProtocols = [FaceclawKitIosAudioPacketListener];
   handler!: (packet: Uint8Array, arm: string, arrivalMs: number) => void;
-  onAudioPacketDataArmArrivalMs(data: NSData, arm: string, arrivalMs: number): void {
+  // Kotlin/Native exports this as `onAudioPacketData:arm:arrivalMs_:` (FaceclawAudioPacketListener has the
+  // unmangled selector); build 37 lacked it and crashed on the first glasses-mic packet. The unmangled
+  // name stays in case a compile-order change moves the "_" (see kotlinListener).
+  onAudioPacketDataArmArrivalMs_(data: NSData, arm: string, arrivalMs: number): void {
     this.handler(fromData(data), String(arm ?? ""), Number(arrivalMs));
+  }
+  onAudioPacketDataArmArrivalMs(data: NSData, arm: string, arrivalMs: number): void {
+    this.onAudioPacketDataArmArrivalMs_(data, arm, arrivalMs);
   }
 }
 

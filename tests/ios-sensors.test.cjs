@@ -140,7 +140,8 @@ test('iOS bridge exposes NSData audio forwarding, the passive audio monitor and 
   assert.equal(bridge.startAudioForwarding((p, arm, ms) => packets.push([...p, arm, ms])), true);
   const [startName, forwarder] = calls.at(-1);
   assert.equal(startName, 'startG2AudioForwardingNsDataListener');
-  forwarder.onAudioPacketDataArmArrivalMs(data, 'R', 7);
+  // The selector Kotlin/Native sends (build 37 crashed without it).
+  forwarder.onAudioPacketDataArmArrivalMs_(data, 'R', 7);
   bridge.stopAudioForwarding();
   assert.deepEqual(calls.at(-1), ['stopG2AudioForwarding']);
   const off = bridge.addAudioMonitorListener((p, arm, ms) => packets.push([...p, arm, ms]));

@@ -53,3 +53,15 @@ test('iOS links every system framework the port uses and declares the usage stri
     assert.match(plist, new RegExp(`<key>${key}</key>\\s*<string>OcuSmart [^<]{20,}</string>`), key);
   }
 });
+
+test('Kotlin listeners answer to both K/N twin selector names', () => {
+  let extended = null;
+  const NSObject = { extend: (methods) => { extended = methods; return { new: () => methods }; } };
+  const { kotlinListener } = load('app/native/kotlin-listener.ios.ts', { NSObject });
+  const onTranscript = () => {}, onFailure = () => {};
+  kotlinListener({}, { onTranscriptTextIsFinal: onTranscript, onFailureMessage_: onFailure });
+  // K/N moves the "_" between twins by compile order; the protocol picks whichever it declares.
+  assert.equal(extended.onTranscriptTextIsFinal_, onTranscript);
+  assert.equal(extended.onFailureMessage, onFailure);
+  assert.equal(extended.onFailureMessage_, onFailure);
+});
