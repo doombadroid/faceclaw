@@ -21,7 +21,10 @@ HEADER_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../../App_Resources/iOS/src/lc3"
 // (OTHER_CFLAGS merges like OTHER_LDFLAGS).
 // sherpa-onnx's C API header for FaceclawSherpa.m, staged by scripts/ios-native-deps.cjs outside the
 // xcframeworks (whose C++ headers are stripped). CoreML above is for onnxruntime's CoreML provider.
-OTHER_CFLAGS = $(inherited) -I"$(SRCROOT)/../../App_Resources/iOS/src/lc3" -I"$(SRCROOT)/../../native/kotlin/plugin/platforms/ios/include"
+// The ObjC shims implement Kotlin/Native protocols (SqlPort, IosPcmRecognizer, ...) and call
+// FaceclawKit by selector; a missed or mangled name (build 37's crash was one, on the JS side)
+// is only a warning by default, so make those errors.
+OTHER_CFLAGS = $(inherited) -I"$(SRCROOT)/../../App_Resources/iOS/src/lc3" -I"$(SRCROOT)/../../native/kotlin/plugin/platforms/ios/include" -Werror=protocol -Werror=incomplete-implementation -Werror=objc-method-access
 
 // FaceclawKit ships arm64 device and Apple-silicon simulator slices.
 EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64;
