@@ -160,6 +160,32 @@ test('iOS bridge exposes NSData audio forwarding, the passive audio monitor and 
   assert.deepEqual(records, [[77, 67, 'L']]);
 });
 
+test('iOS forwarding and the voice mic share one capture slot: STT wins and neither release stops the other', async () => {
+  const { calls, native } = nativeSession({ startG2AudioForwardingNsDataListener: true, isSessionReady: true,
+    startG2AudioCaptureNsDataListener: true, isAudioCaptureActive: true });
+  const { FaceclawCommunicatorBridge: Bridge } = loader({
+    setTimeout, NativeClass: () => c => c, NSObject: class { static new() { return new this(); } },
+    FaceclawKitFaceclawBleCommunicatorListener: {}, FaceclawKitIosAncsListener: {}, FaceclawKitIosAudioPacketListener: {},
+    FaceclawKitFaceclawCompassListener: {},
+    FaceclawKitIosGlassesSession: { alloc: () => ({ initWithRightAddressLeftAddressRingAddress: () => native }) },
+  }, { '@nativescript/core': {}, './ios-graphics': {}, './ios-bluetooth': {}, './kotlin-listener.ios': { kotlinListener } })(
+    'app/native/faceclaw-communicator.ios.ts');
+  const bridge = new Bridge({ right: 'r', left: 'l' });
+  const names = () => calls.map(([name]) => name).filter(name => /Audio(Capture|Forwarding)/.test(name));
+  assert.equal(bridge.isAudioCaptureActive(), true);
+  assert.equal(bridge.startAudioForwarding(() => {}), true);
+  await bridge.setMicrophone(false);
+  assert.deepEqual(names(), ['isAudioCaptureActive', 'startG2AudioForwardingNsDataListener'], 'a stale voice release leaves forwarding alone');
+  await bridge.setMicrophone(true, () => {});
+  assert.equal(bridge.startAudioForwarding(() => {}), false, 'refused while STT or the raw tap holds the mic');
+  bridge.stopAudioForwarding();
+  assert.deepEqual(names().slice(2), ['startG2AudioCaptureNsDataListener'], 'the preempted forwarder cannot stop the voice capture');
+  await bridge.setMicrophone(false);
+  assert.equal(bridge.startAudioForwarding(() => {}), true);
+  bridge.stopAudioForwarding();
+  assert.deepEqual(names().slice(3), ['stopG2AudioCapture', 'startG2AudioForwardingNsDataListener', 'stopG2AudioForwarding']);
+});
+
 test('iOS audio monitor follows the active bridge and maps arms', () => {
   let active = null;
   const calls = [];

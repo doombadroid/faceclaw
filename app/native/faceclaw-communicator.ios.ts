@@ -221,6 +221,10 @@ export class FaceclawCommunicatorBridge {
   private recorder: any = null;
   private microphoneWork: Promise<void> = Promise.resolve();
   private microphoneToken = 0;
+  // The core has one audio listener slot. The voice mic (STT, raw tap) and CFW
+  // forwarding take turns: the voice mic preempts forwarding, forwarding is
+  // refused while the voice mic holds it, and each release stops only its own.
+  private audioOwner: "microphone" | "forwarding" | null = null;
 
   constructor(addresses: { right: string; left: string; ring?: string }) {
     this.communicator = FaceclawKitIosGlassesSession.alloc().initWithRightAddressLeftAddressRingAddress(
@@ -696,22 +700,26 @@ export class FaceclawCommunicatorBridge {
    */
   setMicrophone(enabled: boolean, listener?: (packet: Uint8Array) => void): Promise<void> {
     const token = ++this.microphoneToken;
+    if (enabled) this.audioOwner = "microphone";
+    else if (this.audioOwner === "microphone") this.audioOwner = null;
     const work = this.microphoneWork.catch(() => {}).then(async () => {
       if (token !== this.microphoneToken) return;
       if (!enabled) {
+        if (this.audioOwner === "forwarding") return;
         this.audioListener = null;
         await this.enqueueNativeCall(() => this.communicator.stopG2AudioCapture());
         return;
       }
-      if (!this.isSessionReady()) throw new Error("Connect the glasses before starting voice input.");
+      const fail = (message: string) => {
+        if (token === this.microphoneToken) { this.audioListener = null; this.audioOwner = null; }
+        return new Error(message);
+      };
+      if (!this.isSessionReady()) throw fail("Connect the glasses before starting voice input.");
       const proxy = AudioPacketListener.new() as AudioPacketListener;
       proxy.handler = (packet) => { if (token === this.microphoneToken && listener) listener(packet); };
       this.audioListener = proxy;
       const started = await this.enqueueNativeCall(() => Boolean(this.communicator.startG2AudioCaptureNsDataListener(proxy)));
-      if (!started) {
-        this.audioListener = null;
-        throw new Error("The glasses did not enable their microphone. Reconnect and try again.");
-      }
+      if (!started) throw fail("The glasses did not enable their microphone. Reconnect and try again.");
     });
     this.microphoneWork = work;
     return work;
@@ -719,20 +727,28 @@ export class FaceclawCommunicatorBridge {
 
   /**
    * CFW mic_control forwarding: every glasses audio packet to `listener` (main queue)
-   * until stopAudioForwarding. Shares the capture slot with setMicrophone; false before Connect.
+   * until stopAudioForwarding. false before Connect or while setMicrophone holds the slot.
    */
   startAudioForwarding(listener: (packet: Uint8Array, arm: string, arrivalMs: number) => void): boolean {
+    if (this.audioOwner === "microphone") return false;
     const proxy = AudioPacketListener.new() as AudioPacketListener;
     proxy.handler = listener;
+    if (!this.communicator.startG2AudioForwardingNsDataListener(proxy)) return false;
     this.audioListener = proxy;
-    if (this.communicator.startG2AudioForwardingNsDataListener(proxy)) return true;
-    this.audioListener = null;
-    return false;
+    this.audioOwner = "forwarding";
+    return true;
   }
 
   stopAudioForwarding(): void {
+    if (this.audioOwner !== "forwarding") return;
+    this.audioOwner = null;
     this.audioListener = null;
     this.communicator.stopG2AudioForwarding();
+  }
+
+  /** Whether the glasses mic is enabled in the current session (it dies with a drop or suspend). */
+  isAudioCaptureActive(): boolean {
+    return Boolean(this.communicator.isAudioCaptureActive());
   }
 
   /** Passive view of every audio-characteristic packet (diagnostics), on the main queue. */

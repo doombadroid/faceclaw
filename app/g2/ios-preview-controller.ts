@@ -1060,10 +1060,12 @@ export class IosPreviewController {
       await (continuous ? iosVoiceInput.startContinuousCapture(null, voice, log) : iosVoiceInput.startPhoneCapture(voice, log, endpointing))
     }
   }
-  /** Restart a continuous capture parked by the last session or a glasses lock; cheap per frame. */
+  /** Restart a continuous capture or raw tap parked by STT, the last session or a glasses lock; cheap per frame. */
   private resumeVoiceCapture(): void {
     const communicator = this.communicator
-    if (!iosVoiceInput.hasSuspendedCapture() || !communicator || this.state.phase !== 'connected' || this.glassesLocked) return
+    if (!communicator || this.state.phase !== 'connected' || this.glassesLocked) return
+    iosVoiceInput.resumeRawCapture()
+    if (!iosVoiceInput.hasSuspendedCapture()) return
     this.logBluetooth('Voice: resuming continuous capture')
     void iosVoiceInput.resumeCapture(communicator, this.voiceProvider(), message => this.logBluetooth(message))
   }
