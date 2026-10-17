@@ -51,7 +51,13 @@ test('the Swift wrapper keeps FluidAudio out of its @objc surface and pins the v
   // The network is used only by an explicit download.
   assert.match(swift, /ModelHub\.offlineMode = true\n  \}\(\)/);
   assert.equal(swift.match(/ModelHub\.offlineMode = false/g).length, 1);
-  assert.match(swift.split('public static func download(')[1].split('\n  }\n')[0], /ModelHub\.offlineMode = false/);
+  const download = swift.split('public static func download(')[1].split('\n  }\n')[0];
+  assert.match(download, /ModelHub\.offlineMode = false/);
+  // A cancelled download's tail neither ends nor takes offline the one that replaced it.
+  assert.match(download, /guard downloadGeneration == generation else \{ return false \}\n\s+downloading = nil/);
+  assert.match(download, /if newest \{ ModelHub\.offlineMode = true \}/);
+  // A captured var cannot cross into a @Sendable closure; the completion gets a let.
+  assert.doesNotMatch(download, /async \{ done\(failure\) \}/);
   // Blocking entry points refuse the main thread.
   for (const name of ['recognize', 'loadModel']) {
     assert.match(swift.split(`public static func ${name}(`)[1].split('\n')[1], /guard !Thread\.isMainThread/, name);

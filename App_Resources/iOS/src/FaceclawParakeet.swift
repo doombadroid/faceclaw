@@ -21,6 +21,7 @@ import os
   private static let lock = NSLock()
   private static var loading: Task<AsrManager?, Never>?  // under lock
   private static var downloading: Task<Void, Never>?  // under lock
+  private static var downloadGeneration = 0  // under lock; a cancelled download's tail must not end its replacement
 
   // Network only inside download(): a cache FluidAudio finds damaged on load must never
   // re-download 483 MB on its own (cellular included).
@@ -75,6 +76,7 @@ import os
   @objc(downloadDir:progress:completion:)
   public static func download(_ dir: String, progress: @escaping (Double) -> Void, completion done: @escaping (String?) -> Void) {
     _ = configured
+    let generation = lock.withLock { () -> Int in downloadGeneration += 1; return downloadGeneration }
     let task = Task.detached(priority: .utility) {
       var failure: String?
       ModelHub.offlineMode = false
@@ -89,12 +91,18 @@ import os
       } catch {
         failure = Task.isCancelled ? "Download cancelled." : "Parakeet download failed: \(error.localizedDescription)"
       }
-      ModelHub.offlineMode = true
+      // Only the newest download goes back offline: a replacement may already be fetching.
+      let newest = lock.withLock { () -> Bool in
+        guard downloadGeneration == generation else { return false }
+        downloading = nil
+        return true
+      }
+      if newest { ModelHub.offlineMode = true }
       if failure == nil { failure = await prepare(dir) }
-      lock.withLock { downloading = nil }
-      DispatchQueue.main.async { done(failure) }
+      let result = failure  // a let: a captured var cannot cross into the main-queue closure
+      DispatchQueue.main.async { done(result) }
     }
-    lock.withLock { downloading = task }
+    lock.withLock { if downloadGeneration == generation { downloading = task } }
   }
 
   /// Stops a download; FluidAudio keeps the partial files and resumes them next time.
