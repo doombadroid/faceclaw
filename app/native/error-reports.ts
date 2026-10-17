@@ -31,9 +31,12 @@ export type WorkerErrorReport = { type: 'error-report'; source: string; message:
 
 const FILE_NAME = 'error-reports.jsonl'
 const MAX_REPORTS = 200, MAX_CHARS = 1_000_000, MAX_MESSAGE = 2_000, MAX_STACK = 16_000, SAVE_INTERVAL_MS = 1000
+/** Distinct messages kept per source per session; past it they share one report (an error naming its frame). */
+const MAX_PER_SOURCE = 20
 
 let reports: ErrorReport[] | null = null
 const thisSession = new Map<string, ErrorReport>()
+const messagesPerSource = new Map<string, number>()
 const listeners = new Set<Listener>()
 let saveTimer: ReturnType<typeof setTimeout> | null = null, lastSave = 0, lifecycleHooked = false
 let build: string | null = null
@@ -41,14 +44,25 @@ let build: string | null = null
 /** Record a caught error. Never throws: it is called from inside catch blocks. */
 export function reportError(source: string, error: unknown, context?: Record<string, string>): void {
   try {
-    const { message, stack } = normalizeError(error)
+    const normalized = normalizeError(error), stack = normalized.stack
+    let message = normalized.message
     if (!Utils.isMainThread()) { fromWorker(source, message, stack, context); return }
-    const list = loaded(), key = `${source}\n${message}`
+    const list = loaded()
+    let key = `${source}\n${message}`, overflow = false
+    if (!thisSession.has(key)) {
+      const seen = messagesPerSource.get(source) ?? 0
+      if ((overflow = seen >= MAX_PER_SOURCE)) {
+        context = { ...context, latest: message }
+        message = `more than ${MAX_PER_SOURCE} different errors this session`
+        key = `${source}\n${message}`
+      } else messagesPerSource.set(source, seen + 1)
+    }
     let report = thisSession.get(key)
     const isNew = !report
     if (report) {
       report.count++
       report.at = new Date().toISOString()
+      if (overflow) { report.context = { ...context }; report.stack = stack }
       if (!list.includes(report)) list.push(report)
     } else {
       report = { at: new Date().toISOString(), build: appBuild(), platform: global.isIOS ? 'ios' : 'android',
@@ -78,6 +92,7 @@ export function listErrorReports(): ErrorReport[] {
 export function clearErrorReports(): void {
   reports = []
   thisSession.clear()
+  messagesPerSource.clear()
   if (saveTimer !== null) clearTimeout(saveTimer)
   saveTimer = null
   try { for (const path of [filePath(), tmpPath()]) if (File.exists(path)) File.fromPath(path).removeSync() } catch (error) { console.error(`error-reports: could not clear: ${error}`) }

@@ -108,12 +108,29 @@ test('A burst of distinct errors writes at most once a second, the first at once
   const files = { set: h.files.set.bind(h.files) };
   // Each save writes the .tmp once, then renames it into place.
   h.files.set = (k, v) => { if (k.endsWith('.tmp')) writes++; return files.set(k, v); };
-  for (let i = 0; i < 30; i++) h.module.reportError('burst', `error ${i}`);
+  for (let i = 0; i < 30; i++) h.module.reportError(`burst ${i}`, `error ${i}`);
   assert.equal(writes, 1);
   assert.equal(h.stored()[0].message, 'error 0');
   h.flushTimers();
   assert.equal(writes, 2);
   assert.equal(h.stored().length, 30);
+});
+
+test('A source failing with a different message every time cannot flood the reports', () => {
+  const h = harness();
+  const fresh = [];
+  h.module.onErrorReport((report, isNew) => { if (isNew) fresh.push(report.message); });
+  for (let frame = 0; frame < 30; frame++) h.module.reportError('IosGlassesSession.submitSurfaceFrame', new Error(`frame ${frame} failed`));
+  h.module.reportError('other', new Error('still heard'));
+  const reports = h.module.listErrorReports();
+  assert.equal(reports.length, 22, '20 distinct messages, one overflow report, and the other source');
+  const overflow = reports.find(report => report.message.startsWith('more than 20'));
+  assert.equal(overflow.count, 10);
+  assert.equal(overflow.context.latest, 'frame 29 failed');
+  assert.equal(fresh.length, 22, 'one notice per report, not per frame');
+  h.module.clearErrorReports();
+  h.module.reportError('IosGlassesSession.submitSurfaceFrame', new Error('frame 30 failed'));
+  assert.equal(h.module.listErrorReports()[0].message, 'frame 30 failed', 'clearing starts the count over');
 });
 
 test('Reports are listed newest first, by their latest occurrence', () => {
@@ -126,14 +143,14 @@ test('Reports are listed newest first, by their latest occurrence', () => {
 
 test('The file keeps the newest 200 reports and about 1 MB', () => {
   const h = harness();
-  for (let i = 0; i < 250; i++) { h.now += 1000; h.module.reportError('loop', `error ${i}`); }
+  for (let i = 0; i < 250; i++) { h.now += 1000; h.module.reportError(`loop ${i}`, `error ${i}`); }
   const stored = h.stored();
   assert.equal(stored.length, 200);
   assert.equal(stored[0].message, 'error 50');
   assert.equal(h.module.listErrorReports().length, 200);
 
   const big = harness();
-  for (let i = 0; i < 150; i++) { big.now += 1000; big.module.reportError('big', { message: `big ${i}`, stack: 's'.repeat(100_000) }); }
+  for (let i = 0; i < 150; i++) { big.now += 1000; big.module.reportError(`big ${i}`, { message: `big ${i}`, stack: 's'.repeat(100_000) }); }
   const text = big.files.get('/lib/error-reports.jsonl');
   assert.ok(text.length <= 1_000_000, `${text.length} chars`);
   assert.ok(big.stored().length > 50, 'stacks are truncated, so many reports still fit');
