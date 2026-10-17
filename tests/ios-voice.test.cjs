@@ -3,13 +3,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
+const { loader } = require('./helpers/load-typescript.cjs');
 function harness() {
   const native = { startWithEndpointing(endpointing) { this.endpointing = endpointing; return ''; }, startPhoneWithEndpointing(endpointing) { this.endpointing = endpointing; this.phone = true; return this.error ?? ''; },
     startPcmCaptureWithEndpointingPhone(endpointing, phone) { this.pcmCapture = { endpointing, phone }; return this.error ?? ''; },
     cancel() { this.cancels++; }, cancels: 0, finish() { this.finished = true; }, acceptPacket: p => audio.push(p) };
   const audio = [], timers = new Map(), commands = [], text = [], clouds = [], onboards = [];
   // Stands in for cloud-stt-provider: any provider but the on-device ones is a keyed cloud one.
-  const local = ['onboard', 'onboard-moonshine', 'onboard-whisper'];
+  const local = ['onboard', 'onboard-parakeet', 'onboard-moonshine', 'onboard-whisper'];
   const provider = {
     usesCloudStt: voice => !local.includes(voice.provider),
     createCloudSttClient(voice, options, continuous) {
@@ -21,11 +22,15 @@ function harness() {
     },
   };
   let authorization = 3, microphoneAuthorization = 3, microphoneRequests = 0, permissionRequests = 0, release, active = null, modelReady = true;
-  let verification = null;
+  let verification = null, parakeetWarm = false;
   const verifiers = [];
+  // The real provider-to-model mapping for Parakeet (it depends on the model being warm).
+  const realOnboardModel = loader({}, {
+    './asr-model': { isAsrModelWarm: id => parakeetWarm && id === 'parakeet-v3' }, './kotlin-data': {}, './kotlin-listener.ios': {},
+  })('app/native/onboard-stt.ios.ts').onboardModel;
   // Stands in for onboard-stt.ios (the sherpa model as a CloudSttClient) and the reconnecting wrapper.
   const onboardStt = {
-    onboardModel: p => ({ 'onboard-moonshine': 'moonshine', 'onboard-whisper': 'whisper-base-en' })[p] ?? null,
+    onboardModel: p => p === 'onboard-parakeet' ? realOnboardModel(p) : ({ 'onboard-moonshine': 'moonshine', 'onboard-whisper': 'whisper-base-en' })[p] ?? null,
     onboardModelError: () => modelReady ? '' : 'Download the on-device voice model first (Settings > Voice).',
     createOnboardSttClient(model, options) {
       const client = { model, options, pcm: [], started: false, finished: 0, stopped: false,
@@ -66,6 +71,7 @@ function harness() {
   } };
   const onboard = { provider: 'onboard', elevenLabsApiKey: '', openAiApiKey: '', sonioxApiKey: '' };
   return { bridge, native, session, audio, commands, text, timers, clouds, onboards, modelReady: value => { modelReady = value; },
+    parakeetWarm: value => { parakeetWarm = value; },
     verifiers, verify: value => { verification = value; },
     release: () => release(), activate: s => { active = s; },
     onboard, cloud: { ...onboard, provider: 'soniox', sonioxApiKey: 'key' },
@@ -223,6 +229,24 @@ test('On-device (Whisper) runs the sherpa model on native PCM like a cloud provi
   await m.bridge.startPhoneCapture({ ...m.onboard, provider: 'onboard-moonshine' }, () => {});
   assert.equal(m.native.pcmCapture, undefined); assert.equal(m.onboards.length, 0);
   assert.match(m.bridge.statusText, /Settings > Voice/); assert.equal(ends, 1);
+});
+
+test('Transcribe on a warm Parakeet never starts Apple\'s recognizer, and falls back to it until then', async () => {
+  for (const warm of [true, false]) {
+    const h = harness(); h.parakeetWarm(warm); h.authorization(0);
+    const parakeet = { ...h.onboard, provider: 'onboard-parakeet' };
+    // Only the Apple fallback needs Speech Recognition.
+    assert.equal(await h.bridge.prepare(false, false, parakeet), warm);
+    const start = h.bridge.startContinuousCapture(h.session, parakeet, () => {}); h.release(); await start;
+    if (warm) {
+      assert.deepEqual({ ...h.native.pcmCapture }, { endpointing: false, phone: false });
+      assert.equal(h.native.endpointing, undefined, 'no SFSpeech capture');
+      assert.equal(h.onboards[0].model, 'parakeet-v3'); assert.equal(h.onboards[0].continuous(), true);
+    } else {
+      assert.equal(h.native.pcmCapture, undefined); assert.equal(h.native.endpointing, false);
+      assert.equal(h.onboards.length, 0);
+    }
+  }
 });
 
 test('"My voice only" checks a PCM-fed push-to-talk capture and empties another speaker\'s final', async () => {

@@ -31,7 +31,7 @@ test('FluidAudio comes in through SPMPackages at exactly 0.17.7', () => {
 const SWIFT = 'App_Resources/iOS/src/FaceclawParakeet.swift';
 const SHIM = 'App_Resources/iOS/src/FaceclawSherpa.m';
 /** The ObjC selectors FaceclawParakeet.swift exports (`@objc(name)` on a static func). */
-const swiftSelectors = () => new Set([...read(SWIFT).matchAll(/@objc\(([\w:]+)\) public static func/g)].map(m => m[1]));
+const swiftSelectors = () => new Set([...read(SWIFT).matchAll(/@objc\(([\w:]+)\)\s+public static func/g)].map(m => m[1]));
 /** The method body that follows an ObjC signature in the shim. */
 const shimBody = signature => read(SHIM).split(signature)[1].split(/\n}\n/)[0];
 
@@ -70,4 +70,184 @@ test('the ObjC loader sends only the Parakeet folder to Swift and keeps voice-pr
   assert.doesNotMatch(shimBody('- (id<FaceclawKitIosVoicePrinter>)voicePrinterModelPath:(NSString *)modelPath {'), /Parakeet/);
   // IosOnDeviceTranscriber closes after every capture; the model must stay loaded.
   assert.match(shim, /@implementation FaceclawParakeetRecognizer[\s\S]*?- \(void\)close \{\n\}/);
+});
+
+const PARAKEET_DIR = '/M/faceclaw-voice-asr/parakeet-tdt-0.6b-v3-coreml';
+
+/** asr-model.ts over a stand-in FaceclawParakeet (null: Android, no native class). */
+function asrModels({ native = true } = {}) {
+  const calls = [], fake = { downloaded: false, warm: false, progress: null, done: null };
+  const fluid = {
+    isDownloadedDir: dir => (calls.push(['downloaded?', dir]), fake.downloaded),
+    isWarmDir: dir => (calls.push(['warm?', dir]), fake.warm),
+    downloadDirProgressCompletion: (dir, progress, done) => { calls.push(['download', dir]); fake.progress = progress; fake.done = done; },
+    warmUpDirCompletion: (dir, done) => { calls.push(['warmUp', dir]); fake.done = done; },
+    cancelDownload: () => calls.push(['cancel']),
+    deleteDir: dir => calls.push(['delete', dir]),
+  };
+  const asr = loader({}, {
+    './model-downloader': { modelsRoot: () => '/M', isModelFilePresent: () => false, startModelDownload: () => { throw new Error('sherpa path'); },
+      deleteModelFiles: () => { throw new Error('sherpa path'); } },
+    './parakeet': { fluidNative: () => native ? fluid : null },
+  })('app/native/asr-model.ts');
+  return { asr, calls, fake };
+}
+
+test('Parakeet downloads through FluidAudio into the shared models folder, Preparing until warm', () => {
+  const { asr, calls, fake } = asrModels();
+  assert.equal(asr.asrModelDir('parakeet-v3'), PARAKEET_DIR);
+  assert.equal(asr.ASR_MODELS['parakeet-v3'].totalBytes, 483e6);
+  assert.equal(asr.isAsrModelReady('parakeet-v3'), false);
+  const states = [];
+  asr.onAsrModelStateChanged('parakeet-v3', state => states.push(state.status === 'downloading' ? state.bytesDownloaded : state.status));
+  asr.startAsrModelDownload('parakeet-v3');
+  assert.deepEqual(calls.filter(c => c[0] === 'download'), [['download', PARAKEET_DIR]]);
+  // FluidAudio's fraction restarts per file: the row never steps back.
+  fake.progress(0.5); fake.progress(0.2); fake.progress(1);
+  assert.deepEqual(states, [0, 241.5e6, 241.5e6, 483e6]);
+  // A second tap while it runs starts nothing.
+  asr.startAsrModelDownload('parakeet-v3');
+  assert.equal(calls.filter(c => c[0] === 'download').length, 1);
+  fake.downloaded = true; fake.done(null);
+  assert.equal(states.at(-1), 'ready');
+  assert.equal(asr.isAsrModelWarm('parakeet-v3'), false);
+  fake.warm = true;
+  assert.equal(asr.isAsrModelWarm('parakeet-v3'), true);
+  asr.deleteAsrModel('parakeet-v3');
+  assert.deepEqual(calls.filter(c => c[0] === 'delete'), [['delete', PARAKEET_DIR]]);
+});
+
+test('a cancelled Parakeet download keeps its row free for the next one', () => {
+  const { asr, calls, fake } = asrModels();
+  asr.startAsrModelDownload('parakeet-v3');
+  const firstDone = fake.done;
+  asr.cancelAsrModelDownload('parakeet-v3');
+  assert.equal(calls.filter(c => c[0] === 'cancel').length, 1);
+  asr.startAsrModelDownload('parakeet-v3');
+  firstDone('Download cancelled.');
+  assert.equal(asr.asrModelState('parakeet-v3').status, 'downloading', 'the old completion does not end the new download');
+});
+
+test('the launch warm-up runs only for a downloaded, cold model, and never downloads', () => {
+  const { asr, calls, fake } = asrModels();
+  asr.warmUpAsrModels();
+  assert.equal(calls.filter(c => c[0] === 'warmUp' || c[0] === 'download').length, 0);
+  fake.downloaded = true; fake.warm = true;
+  asr.warmUpAsrModels();
+  assert.equal(calls.filter(c => c[0] === 'warmUp').length, 0);
+  fake.warm = false;
+  asr.warmUpAsrModels();
+  assert.deepEqual(calls.filter(c => c[0] === 'warmUp'), [['warmUp', PARAKEET_DIR]]);
+  // Moonshine and Whisper are warm whenever they are downloaded.
+  assert.equal(asr.isAsrModelWarm('moonshine'), asr.isAsrModelReady('moonshine'));
+});
+
+test('without FaceclawParakeet (Android) Parakeet is never ready and never downloads', () => {
+  const { asr } = asrModels({ native: false });
+  assert.equal(asr.isAsrModelReady('parakeet-v3'), false);
+  assert.equal(asr.isAsrModelWarm('parakeet-v3'), false);
+  asr.startAsrModelDownload('parakeet-v3');
+  assert.equal(asr.asrModelState('parakeet-v3').status, 'absent');
+  asr.warmUpAsrModels();
+});
+
+test('On-device (Parakeet) maps to the warm model with Moonshine\'s segmenting, else to Apple\'s recognizer', () => {
+  let warm = false;
+  const calls = [];
+  const transcriber = new Proxy({}, { get: (_, name) => (...args) => { calls.push([name, ...args]); return transcriber; } });
+  const stt = loader({ FaceclawSherpa: { new: () => ({ loader: true }) }, FaceclawKitIosOnDeviceTranscriber: { alloc: () => transcriber },
+    FaceclawKitIosTranscriptListener: 'listener' }, {
+    './asr-model': { asrModelDir: id => `/Models/${id}`, isAsrModelReady: () => true, isAsrModelWarm: id => warm && id === 'parakeet-v3' },
+    './kotlin-data': {}, './kotlin-listener.ios': { kotlinListener: (_, methods) => methods },
+  })('app/native/onboard-stt.ios.ts');
+  assert.equal(stt.onboardModel('onboard-parakeet'), null);
+  warm = true;
+  assert.equal(stt.onboardModel('onboard-parakeet'), 'parakeet-v3');
+  assert.equal(stt.onboardModel('onboard'), null);
+  stt.createOnboardSttClient('parakeet-v3', { onTranscript() {}, onStatus() {}, onError() {} });
+  // The same FaceclawSherpa loader (it routes the folder), with whisper=false.
+  assert.deepEqual(calls[0].slice(1, 4), [{ loader: true }, '/Models/parakeet-v3', false]);
+});
+
+/** dashboard-settings.ts over an in-memory store, as in display-layout-setting.test.cjs. */
+function settings(isIOS, store = new Map()) {
+  const vm = require('node:vm'), ts = require('typescript');
+  const context = { exports: {}, global: { isIOS }, setTimeout: fn => fn(), require: id => {
+    if (id.includes('settings-store')) return { onSettingsStoreChanged() {}, getStringSetting: (k, d) => store.get(k) ?? d,
+      setStringSetting: (k, v) => store.set(k, v), getBooleanSetting: (k, d) => store.get(k) ?? d, setBooleanSetting: (k, v) => store.set(k, v) };
+    if (id.includes('brightness-curve')) return require('../.test-build/app/g2/brightness-curve.js');
+    if (id.includes('animation-speed')) return require('../.test-build/app/ui/animation-speed.js');
+    if (id.includes('branding')) return { APP_NAME: 'OcuSmart' };
+    return { Layer: class {}, ASSISTANT_MODEL_CHOICES: [] };
+  } };
+  vm.runInNewContext(ts.transpileModule(read('app/ui/dashboard-settings.ts'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, context);
+  return context.exports;
+}
+
+test('iOS defaults to On-device (Parakeet) and moves the old Apple default over once; Android is unchanged', () => {
+  const fresh = settings(true).voiceProviderSetting;
+  assert.equal(fresh.get(), 'onboard-parakeet');
+  assert.equal(fresh.displayValue('onboard-parakeet'), 'On-device (Parakeet)');
+  assert.equal(fresh.isDisabled('onboard-parakeet'), false, 'pickable before the download: it falls back to Apple');
+  const store = new Map([['voice.provider', 'onboard']]);
+  const ios = settings(true, store);
+  ios.migrateIosVoiceProvider();
+  assert.equal(ios.voiceProviderSetting.get(), 'onboard-parakeet');
+  // Picking Apple again afterwards sticks.
+  ios.voiceProviderSetting.set('onboard');
+  settings(true, store).migrateIosVoiceProvider();
+  assert.equal(store.get('voice.provider'), 'onboard');
+  // Another explicit choice is never touched.
+  const moonshine = new Map([['voice.provider', 'onboard-moonshine']]);
+  settings(true, moonshine).migrateIosVoiceProvider();
+  assert.equal(moonshine.get('voice.provider'), 'onboard-moonshine');
+  const android = settings(false, new Map([['voice.provider', 'onboard']]));
+  android.migrateIosVoiceProvider();
+  assert.equal(android.voiceProviderSetting.get(), 'onboard');
+  assert.equal(android.voiceProviderSetting.values.includes('onboard-parakeet'), false);
+  assert.match(read('app/bootstrap.ios.ts'), /migrateIosVoiceProvider\(\)/);
+});
+
+test('Transcribe offers the Parakeet download once on iOS, and only a tap downloads', () => {
+  const store = new Map(), started = [];
+  let provider = 'onboard-parakeet', status = 'absent', isIOS = true;
+  const offer = () => loader({ global: { get isIOS() { return isIOS; } } }, {
+    '../../native/asr-model': { ASR_MODELS: { 'parakeet-v3': { totalBytes: 483e6 } }, asrModelState: () => ({ status }),
+      startAsrModelDownload: id => started.push(id) },
+    '../../native/settings-store': { getBooleanSetting: (k, d) => store.get(k) ?? d, setBooleanSetting: (k, v) => store.set(k, v) },
+    '../../ui/dashboard-settings': { voiceProviderSetting: { get: () => provider } },
+  })('app/apps/transcribe/parakeet-offer.ts');
+  const o = offer();
+  assert.match(o.takeParakeetNotice(), /Download Parakeet \(483 MB\)/);
+  assert.equal(o.takeParakeetNotice(), '', 'once');
+  assert.equal(started.length, 0);
+  const [item] = o.parakeetMenuItems(() => started.push('notice'));
+  assert.equal(item.label, 'Download Parakeet (483 MB)');
+  const popped = [];
+  item.onSelect({ stack: { pop: () => popped.push(true) } });
+  assert.deepEqual(started, ['parakeet-v3', 'notice']);
+  assert.equal(popped.length, 1);
+  for (const [field, value] of [['status', 'downloading'], ['provider', 'onboard'], ['isIOS', false]]) {
+    status = 'absent'; provider = 'onboard-parakeet'; isIOS = true;
+    if (field === 'status') status = value; else if (field === 'provider') provider = value; else isIOS = value;
+    store.clear();
+    assert.equal(offer().takeParakeetNotice(), '', field);
+    assert.equal(offer().parakeetMenuItems(() => {}).length, 0, field);
+  }
+});
+
+test('About credits the Parakeet model (CC BY 4.0) and FluidAudio (Apache 2.0)', () => {
+  const about = read('app/phone-ui/ios/about-page.ts');
+  assert.match(about, /PARAKEET_CREDIT = [^\n]*Parakeet TDT 0\.6B v3[\s\S]*?CC BY 4\.0[\s\S]*?FluidAudio[\s\S]*?Apache License 2\.0/);
+  assert.match(about, /footer: PARAKEET_CREDIT/);
+});
+
+test('every FaceclawParakeet call the TypeScript makes is a selector the Swift class exports', () => {
+  // NativeScript's JS name for an ObjC selector: downloadDir:progress:completion: -> downloadDirProgressCompletion.
+  const jsName = selector => selector.split(':').filter(Boolean).map((part, i) => i ? part[0].toUpperCase() + part.slice(1) : part).join('');
+  const exported = new Set([...swiftSelectors()].map(jsName));
+  const declared = [...read('app/native/parakeet.ts').split('export type FluidNative = {')[1].split('};')[0].matchAll(/^  (\w+)\(/gm)].map(m => m[1]);
+  assert.deepEqual(declared.sort(), ['cancelDownload', 'deleteDir', 'downloadDirProgressCompletion', 'isDownloadedDir', 'isWarmDir', 'warmUpDirCompletion']);
+  for (const name of declared) assert.ok(exported.has(name), `${name} is not exported by FaceclawParakeet.swift`);
 });

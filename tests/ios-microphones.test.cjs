@@ -103,6 +103,13 @@ test('captions use the downloaded Moonshine model through the sherpa loader, wit
   assert.match(fs.readFileSync(`${KOTLIN}/iosMain/kotlin/com/faceclaw/app/IosMicAudio.kt`, 'utf8'), /const val APPLE_SPEECH = "apple-speech"/);
 });
 
+test('captions prefer Parakeet once it is warm, through the same sherpa loader, with no Speech prompt', () => {
+  const { mic, calls } = setup({ moonshine: true, parakeet: true });
+  assert.equal(mic.captionAsrDir(), '/Models/parakeet-v3');
+  mic.prepareCaptions();
+  assert.equal(calls.filter(call => call[0] === 'speech').length, 0);
+});
+
 test('iOS re-diarizes a saved WAV through FaceclawSherpaDiarizer, with its selectors from the header', () => {
   const { mic, calls } = setup();
   const events = [];
