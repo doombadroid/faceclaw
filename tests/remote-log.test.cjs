@@ -6,7 +6,7 @@ const QUEUE = '/lib/remote-log-queue.jsonl';
 
 /** remote-log.ios.ts over an in-memory file, a settable clock, manual timers and a scripted Http. */
 function harness({ url = 'https://sink.example/abc', files = new Map(), secrets = [], native = false } = {}) {
-  const h = { url, files, secrets, sink: null, now: Date.parse('2026-10-17T12:00:00Z'), timers: [], requests: [], tasks: [], events: {}, reports: [], printed: [], respond: () => Promise.resolve({ statusCode: 200 }) };
+  const h = { url, files, secrets, sink: null, kotlinSink: { listener: null }, now: Date.parse('2026-10-17T12:00:00Z'), timers: [], requests: [], tasks: [], events: {}, reports: [], printed: [], respond: () => Promise.resolve({ statusCode: 200 }) };
   const core = {
     File: {
       exists: path => h.files.has(path),
@@ -34,6 +34,7 @@ function harness({ url = 'https://sink.example/abc', files = new Map(), secrets 
     UIDevice: { currentDevice: { systemVersion: '26.4', model: 'iPhone' } },
     UIBackgroundTaskInvalid: 0,
     ...(native ? { FaceclawLog: { setSink: fn => { h.sink = fn; } } } : {}),
+    ...(native ? { FaceclawKitIosLogSink: { shared: h.kotlinSink }, FaceclawKitIosLogListener: {} } : {}),
     UIApplication: { sharedApplication: { beginBackgroundTaskWithExpirationHandler: () => { h.tasks.push('begin'); return 7; }, endBackgroundTask: task => h.tasks.push(`end ${task}`) } },
   }, {
     '@nativescript/core': core,
@@ -44,6 +45,7 @@ function harness({ url = 'https://sink.example/abc', files = new Map(), secrets 
       reportError: (...args) => h.reports.push(args),
     },
     './callback-errors.ios': { guardCallback: (_where, run) => run() },
+    './kotlin-listener.ios': { kotlinListener: (_protocol, methods) => methods },
   })('app/native/remote-log.ios.ts');
   h.console = fakeConsole;
   h.install = () => h.module.installRemoteLog({ url: () => h.url, secretValues: () => h.secrets });
@@ -399,4 +401,22 @@ test('Objective-C FaceclawLog lines are forwarded through its sink', async () =>
   h.sink('FaceclawSherpa: no Whisper model in /x');
   await h.advance(2_000);
   assert.deepEqual(h.sentRecords().slice(1).map(r => [r.source, r.msg]), [['native', 'FaceclawSherpa: no Whisper model in /x']]);
+});
+
+test('FaceclawKit PlatformLog lines are forwarded while on, and the Kotlin listener is cleared when off', async () => {
+  const h = harness({ native: true });
+  h.install();
+  h.kotlinSink.listener.onLogLine_('GlassesSessionCore: message timed out: heartbeat sid=224');
+  await h.advance(2_000);
+  assert.deepEqual(h.sentRecords().slice(1).map(r => [r.source, r.msg]), [['kotlin', 'GlassesSessionCore: message timed out: heartbeat sid=224']]);
+  h.url = '';
+  await h.advance(2_000);
+  h.module.remoteLog('x', 'info', 'refresh');
+  assert.equal(h.kotlinSink.listener, null);
+});
+
+test('the Kotlin log listener is not registered while the URL is empty', () => {
+  const h = harness({ native: true, url: '' });
+  h.install();
+  assert.equal(h.kotlinSink.listener, null);
 });

@@ -17,6 +17,7 @@
 import { Application, File, Http, knownFolders, path as fsPath } from '@nativescript/core'
 import { appBuild, onErrorReport } from './error-reports'
 import { guardCallback } from './callback-errors.ios'
+import { kotlinListener } from './kotlin-listener.ios'
 
 export type RemoteLogStatus = {
   on: boolean; sending: boolean; sent: number; queued: number; dropped: number
@@ -107,7 +108,18 @@ function refresh(): boolean {
     secrets = url ? [...new Set(readSecrets().filter(value => value.length >= MIN_SECRET).flatMap(value => [value, JSON.stringify(value).slice(1, -1)]))] : []
   } catch (error) { url = ''; noteFailure('reading settings', error) }
   if (url && !was) turnedOn()
+  if (!!url !== !!was) listenToKotlin(!!url)
   return !!url
+}
+
+/** FaceclawKit's PlatformLog lines (the glasses session core): only while on, since each costs a main-queue hop. */
+let kotlinLog: FaceclawKitIosLogListener | null = null
+function listenToKotlin(on: boolean): void {
+  if (typeof FaceclawKitIosLogSink === 'undefined') return
+  try {
+    if (on) kotlinLog ??= kotlinListener(FaceclawKitIosLogListener, { onLogLine_: line => guardCallback('remote log kotlin line', () => remoteLog('kotlin', 'info', line ?? '')) })
+    FaceclawKitIosLogSink.shared.listener = on ? kotlinLog : null
+  } catch (error) { noteFailure('kotlin log', error) }
 }
 
 function turnedOn(): void {

@@ -32,6 +32,9 @@ import platform.posix.rename
 import platform.posix.stat
 import platform.posix.unlink
 import platform.posix.usleep
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
+import kotlin.concurrent.Volatile
 
 actual class Sha256Digest actual constructor() {
     private var context = nativeHeap.alloc<CC_SHA256_CTX>().also { CC_SHA256_Init(it.ptr) }
@@ -62,10 +65,29 @@ actual fun formatLocalTime(epochMs: Long, pattern: String): String {
     return formatter.stringFromDate(NSDate.dateWithTimeIntervalSince1970(epochMs / 1000.0))
 }
 
+/** Implemented in app/native/remote-log.ios.ts, which sends native lines to the remote log. */
+interface IosLogListener {
+    fun onLog(line: String)
+}
+
+/**
+ * Hands every PlatformLog line to JS: iOS 27 shows NSLog from the app as <private>, so the
+ * native core's log is otherwise unreadable. Delivered on the main queue.
+ */
+object IosLogSink {
+    /** Set from JS on the main thread while the remote log is on; null costs one read per line. */
+    @Volatile var listener: IosLogListener? = null
+}
+
 actual object PlatformLog {
     // NSLog's vararg bridge cannot take a Kotlin String (it segfaults), so the message becomes
     // the format string itself with '%' escaped.
-    private fun emit(text: String) = NSLog(text.replace("%", "%%"))
+    private fun emit(text: String) {
+        NSLog(text.replace("%", "%%"))
+        val listener = IosLogSink.listener ?: return
+        // ponytail: one main-queue hop per line; batch them if a chatty path ever shows in a profile.
+        dispatch_async(dispatch_get_main_queue()) { runCatching { listener.onLog(text) } }
+    }
 
     actual fun i(tag: String, message: String) = emit("$tag: $message")
 

@@ -2086,6 +2086,18 @@ declare class FaceclawKitIosLocalServerPort extends FaceclawKitBase implements F
   isLocalUnicastAddressAddress(address: string): boolean;
 }
 
+interface FaceclawKitIosLogListener extends NSObjectProtocol {
+  onLogLine_(line: string): void;
+}
+declare var FaceclawKitIosLogListener: { prototype: FaceclawKitIosLogListener };
+
+declare class FaceclawKitIosLogSink extends FaceclawKitBase {
+  static alloc(this: never): FaceclawKitIosLogSink;
+  static iosLogSink(): FaceclawKitIosLogSink;
+  static readonly shared: FaceclawKitIosLogSink;
+  listener: FaceclawKitIosLogListener | null;
+}
+
 declare class FaceclawKitIosMessageReceiver extends FaceclawKitBase {
   static alloc(): FaceclawKitIosMessageReceiver;
   init(): this;
