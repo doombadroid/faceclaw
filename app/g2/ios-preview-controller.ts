@@ -60,7 +60,6 @@ import type { VoiceProviderSelection } from '../native/cloud-stt-provider'
 import type { PhoneGesture } from '../phone-ui/phone-gestures'
 import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from '../apps/onboarding/onboarding-progress'
 import { APP_NAME } from '../branding'
-declare const FaceclawLog: { log(message: string): void }
 
 const SHELL_SURFACE_ID = 'shell'
 const SHELL_SURFACE_Z_ORDER = 1

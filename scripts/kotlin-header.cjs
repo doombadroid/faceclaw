@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Regenerates native/kotlin/FaceclawKit.h.snapshot, the Kotlin/Native ObjC header that
- * scripts/check-native-names.cjs checks the iOS JavaScript against, on Linux.
+ * scripts/check-native-names.cjs turns into native/faceclaw-native.ts (the iOS JavaScript's
+ * types for it), and that file, on Linux.
  *
  * Kotlin/Native only builds Apple frameworks on a macOS host, but the header comes from the
  * compiler front end: claiming a macOS host and omitting the framework binary produces it with
@@ -15,7 +16,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { kotlinSourcesHash } = require('./check-native-names.cjs');
+const { kotlinSourcesHash, write: writeNativeTypes } = require('./check-native-names.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const KOTLIN = path.join(ROOT, 'native/kotlin');
@@ -45,4 +46,5 @@ try {
   fs.rmSync(scratch, { recursive: true, force: true });
 }
 fs.writeFileSync(path.join(KOTLIN, 'FaceclawKit.h.sources'), `${kotlinSourcesHash()}\n`);
-console.log('kotlin-header: wrote native/kotlin/FaceclawKit.h.snapshot');
+writeNativeTypes();
+console.log('kotlin-header: wrote native/kotlin/FaceclawKit.h.snapshot and native/faceclaw-native.ts');

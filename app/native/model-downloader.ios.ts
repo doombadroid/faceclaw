@@ -11,8 +11,6 @@ import { kotlinListener } from "./kotlin-listener.ios";
 
 export type { ModelDownload, ModelDownloadCallbacks } from "./model-downloader";
 
-declare const FaceclawKitIosModelDownloader: any;
-declare const FaceclawKitFaceclawModelDownloaderListener: any;
 
 let root: string | null = null;
 

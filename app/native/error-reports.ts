@@ -9,8 +9,6 @@ import { Application, File, Folder, Utils, knownFolders, path as fsPath } from '
 import { FACECLAW_VERSION } from '../version'
 
 declare const NSBundle: any
-declare const FaceclawLog: { log(message: string): void } | undefined
-declare const FaceclawKitIosErrorReports: { shared: { forgetRepeats(): void } } | undefined
 
 export type ErrorReport = {
   /** Latest occurrence (ISO). */

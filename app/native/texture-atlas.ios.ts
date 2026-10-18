@@ -1,5 +1,4 @@
 import { toData } from './kotlin-data'
-declare const FaceclawKitIosTextureAtlas: any
 const atlas = FaceclawKitIosTextureAtlas.new()
 
 export function textureAtlasAvailable(): boolean { return true }

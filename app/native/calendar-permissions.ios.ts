@@ -1,6 +1,5 @@
 import { Dialogs, Utils } from "@nativescript/core";
 
-declare const FaceclawCalendar: any;
 
 export function hasCalendarPermission(): boolean {
   return FaceclawCalendar.shared().hasPermission();

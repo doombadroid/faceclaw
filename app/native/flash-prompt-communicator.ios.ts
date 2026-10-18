@@ -4,7 +4,6 @@ import type { FlashPromptBattery, FlashPromptState } from './flash-prompt-commun
 import { guardCallback } from './callback-errors.ios'
 export type { FlashPromptBattery, FlashPromptState } from './flash-prompt-communicator'
 
-declare const FaceclawKitIosFlashPrompt: any, FaceclawKitFaceclawFlashPromptListener: any
 
 function normalizePercent(value: number): number | null {
   const n = Number(value)
@@ -17,8 +16,8 @@ function normalizePercent(value: number): number | null {
  * the pre-flash Yes/No page on the glasses (unless skipPrompt) and reads each arm's battery.
  */
 export class FlashPromptCommunicator {
-  private communicator: any = null
-  private listenerProxy: object | null = null
+  private communicator: FaceclawKitIosFlashPrompt | null = null
+  private listenerProxy: FaceclawKitFaceclawFlashPromptListener | null = null
   private readonly logListeners = new Set<(line: string) => void>()
   private readonly stateListeners = new Set<(state: FlashPromptState, detail: string) => void>()
   private readonly resultListeners = new Set<(approved: boolean) => void>()

@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { loader } = require('./helpers/load-typescript.cjs');
 const { exportedNames } = require('./helpers/kotlin-export.cjs');
+const { loadModel } = require('../scripts/check-native-names.cjs');
+const SNAPSHOT = require('node:path').join(__dirname, '..', 'native/kotlin/FaceclawKit.h.snapshot');
 
 const KOTLIN = 'native/kotlin/shared/src';
 const SHERPA_KT = `${KOTLIN}/iosMain/kotlin/com/faceclaw/app/IosSherpa.kt`;
@@ -61,8 +63,10 @@ test('the on-device STT client drives IosOnDeviceTranscriber with names the Kotl
   const exported = exportedNames(SHERPA_KT);
   for (const [name] of calls) assert.ok(exported.has(name), `${name} is not exported by Kotlin`);
   assert.equal(listener.protocol, 'listener-protocol');
-  for (const name of Object.keys(listener.methods)) assert.ok(exported.has(name), `${name} is not exported by Kotlin`);
-  listener.methods.onReady(); listener.methods.onTranscriptTextIsFinal('hi', false); listener.methods.onErrorMessage('boom');
+  // Listener names come from the header: Kotlin/Native mangles some (onTranscriptText:isFinal_:), which the sources do not show.
+  const protocol = loadModel(SNAPSHOT).get('FaceclawKitIosTranscriptListener');
+  for (const name of Object.keys(listener.methods)) assert.ok(protocol.instance.has(name), `${name} is not a FaceclawKitIosTranscriptListener method in FaceclawKit.h`);
+  listener.methods.onReady(); listener.methods.onTranscriptTextIsFinal_('hi', false); listener.methods.onErrorMessage_('boom');
   assert.deepEqual(events, [['s', 'Loading voice model…'], ['s', 'Listening…'], ['ready'], ['t', 'hi', false], ['e', 'boom']]);
 });
 

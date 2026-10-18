@@ -8,7 +8,6 @@ import { APP_NAME } from '../branding'
 import { guardCallback } from './callback-errors.ios'
 export type { FlashState, FlashProgress } from '../g2/firmware-types'
 
-declare const FaceclawKitIosFirmwareFlasher: any, FaceclawKitFaceclawFirmwareFlasherListener: any
 
 let flashes = 0
 /** Flashes started this process; even a failed one may have rewritten a lens. */
@@ -22,8 +21,8 @@ export const flashesStarted = () => flashes
  * awake, and MAC addresses are mapped to peripheral identifiers first.
  */
 export class FirmwareFlasher {
-  private flasher: any = null
-  private listenerProxy: object | null = null
+  private flasher: FaceclawKitIosFirmwareFlasher | null = null
+  private listenerProxy: FaceclawKitFaceclawFirmwareFlasherListener | null = null
   private readonly logListeners = new Set<(line: string) => void>()
   private readonly progressListeners = new Set<(progress: FlashProgress) => void>()
   private readonly stateListeners = new Set<(state: FlashState, detail: string) => void>()

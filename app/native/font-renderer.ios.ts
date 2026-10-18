@@ -1,4 +1,3 @@
-declare const FaceclawFontRenderer: any
 function bytes(data: NSData | null): Uint8Array {
   return data ? new Uint8Array(interop.bufferFromData(data)).slice() : new Uint8Array()
 }

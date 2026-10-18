@@ -5,10 +5,8 @@
 import { kotlinListener } from './kotlin-listener.ios'
 import { reportError } from './error-reports'
 
-declare const FaceclawKitIosErrorReports: any
-declare const FaceclawKitIosErrorReportListener: any
 
-let listener: object | null = null
+let listener: FaceclawKitIosErrorReportListener | null = null
 
 /** Once at startup; Kotlin buffers what it caught before this and delivers it now. */
 export function installKotlinErrorReports(): void {

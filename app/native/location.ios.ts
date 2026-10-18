@@ -1,6 +1,5 @@
 import { type CurrentLocation } from './location-types'
 export { type CurrentLocation } from './location-types'
-declare const FaceclawLocationUpdates: any
 
 /** Main-thread one-shot lookup, independent of navigation and compass managers. */
 export function getCurrentLocation(): Promise<CurrentLocation> {

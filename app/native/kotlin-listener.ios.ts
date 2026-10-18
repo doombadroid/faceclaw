@@ -13,8 +13,13 @@ import { guardCallback } from './callback-errors.ios'
  * method is also offered under its twin name; NativeScript registers only the name the protocol
  * declares and leaves the other a plain JS property. A method that throws is logged, not thrown
  * into the Kotlin frame (see guardCallback).
+ *
+ * `protocol` is the protocol object as native/faceclaw-native.ts and @nativescript/types-ios declare
+ * it (`declare var P: { prototype: P }`), so tsc requires every required method under the exact name
+ * the header gives (the twins stay as a runtime fallback) and rejects any name the protocol lacks.
+ * NSObjectProtocol's members come from NSObject.
  */
-export function kotlinListener<T extends object>(protocol: unknown, methods: T): T {
+export function kotlinListener<P extends object>(protocol: { prototype: P }, methods: NoInfer<Omit<P, keyof NSObjectProtocol>>): P {
   const guarded: Record<string, unknown> = {}
   for (const [name, method] of Object.entries(methods)) {
     guarded[name] = typeof method === 'function'
@@ -22,7 +27,7 @@ export function kotlinListener<T extends object>(protocol: unknown, methods: T):
       : method
   }
   const NativeListener = (NSObject as any).extend(withSelectorTwins(guarded), { protocols: [protocol] })
-  return NativeListener.new() as T
+  return NativeListener.new() as P
 }
 
 /** methods plus, for each name, the same function under its K/N "_"-mangled (or unmangled) twin. */

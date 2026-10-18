@@ -4,9 +4,8 @@ import { kotlinListener } from './kotlin-listener.ios'
 import { decodeAmbientLightReport, type AmbientLightPollingOptions, type AmbientLightReport } from './ambient-light-report'
 export * from './ambient-light-report'
 
-declare const FaceclawKitFaceclawAmbientLightListener: any
 
-const native = (): any => FaceclawCommunicatorBridge.getActive()?.getNativeCommunicator()
+const native = () => FaceclawCommunicatorBridge.getActive()?.getNativeCommunicator()
 
 export function queryAmbientLight(): void {
   native()?.queryAmbientLight()

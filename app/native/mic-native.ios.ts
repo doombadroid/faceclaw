@@ -16,23 +16,17 @@ import { sherpaLoader } from "./onboard-stt.ios";
 
 export type { CaptionCallbacks, DiarizerCallbacks } from "./mic-native";
 
-declare const FaceclawKitIosConversationStore: any;
-declare const FaceclawKitIosNoiseSuppressor: any;
-declare const FaceclawKitIosCaptionEngine: any;
-declare const FaceclawKitIosWavRecorder: any;
-declare const FaceclawKitFaceclawCaptionEngineListener: any;
-declare const FaceclawSqlite: any;
-declare const FaceclawSpeech: any;
-declare const FaceclawSherpaDiarizer: any;
 
-/** Android method name -> the Kotlin export's ObjC-derived name. */
-function adapt(native: any, names: Record<string, string>): any {
-  const out: any = {};
-  for (const [name, selector] of Object.entries(names)) out[name] = (...args: unknown[]) => native[selector](...args);
+/** Android method name -> the Kotlin export's ObjC-derived name (tsc checks it is one of native's members).
+ * The result has mic-native.ts's untyped Android-shaped API, hence any. */
+function adapt<N extends object>(native: N, names: Record<string, Extract<keyof N, string>>): any {
+  const out: Record<string, (...args: unknown[]) => unknown> = {};
+  const methods = native as unknown as Record<string, (...args: unknown[]) => unknown>; // each name was checked against N above
+  for (const [name, selector] of Object.entries(names)) out[name] = (...args: unknown[]) => methods[selector](...args);
   return out;
 }
 
-const STORE_METHODS: Record<string, string> = {
+const STORE_METHODS: Record<string, Extract<keyof FaceclawKitIosConversationStore, string>> = {
   startSession: "startSessionStartedAtMsTitle",
   endSession: "endSessionSessionIdEndedAtMsAudioPathAudioCodecAvgSentiment",
   setSessionAudio: "setSessionAudioSessionIdAudioPathAudioCodec",
@@ -150,7 +144,7 @@ export function createRecordingPlayer(path: string, onComplete: () => void): any
   const player = AVAudioPlayer.alloc().initWithContentsOfURLError(NSURL.fileURLWithPath(path));
   // The delegate is weak: the returned object holds it for the player's life.
   const delegate = kotlinListener(AVAudioPlayerDelegate, { audioPlayerDidFinishPlayingSuccessfully: () => onComplete() });
-  player.delegate = delegate as unknown as AVAudioPlayerDelegate;
+  player.delegate = delegate;
   player.prepareToPlay();
   return {
     delegate,
@@ -173,7 +167,7 @@ export function deleteFile(path: string): void {
   }
 }
 
-const activeDiarizers = new Set<any>();
+const activeDiarizers = new Set<FaceclawSherpaDiarizer>();
 
 /** Offline re-diarization of a saved WAV through the FaceclawSherpa shim (a background queue). */
 export function startDiarizer(

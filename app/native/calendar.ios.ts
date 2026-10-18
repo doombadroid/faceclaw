@@ -2,7 +2,6 @@ import { hasCalendarPermission } from "./calendar-permissions";
 import { type CalendarEvent, type CalendarReadState } from "./calendar-types";
 export type { CalendarEvent } from "./calendar-types";
 
-declare const FaceclawCalendar: any;
 
 const DEFAULT_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 const CACHE_MS = 30_000;
@@ -18,7 +17,7 @@ let cache: Cache | null = null;
 let bound = false;
 const listeners = new Set<() => void>();
 
-function calendar(): any {
+function calendar(): FaceclawCalendar {
   const bridge = FaceclawCalendar.shared();
   if (!bound) {
     bound = true;

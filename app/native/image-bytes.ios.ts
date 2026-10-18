@@ -1,6 +1,5 @@
 import { GrayImage } from '../graphics/image'
 import { toData, fromData } from './kotlin-data'
-declare const FaceclawGraphics: any
 
 /** Native image decoding and grayscale conversion, safe on a rendering worker. */
 export function decodeImageBytes(bytes: ArrayBuffer, width: number, height: number): GrayImage | null {

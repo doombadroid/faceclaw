@@ -4,10 +4,9 @@ export type SurfaceConfiguration = SurfaceRect & {
   zOrder: number
   transparency: 'opaque' | 'color-key'
 }
-declare const FaceclawKitIosSurfaceCompositor: any
 /** Retained pixels, clipping, layers and composition live in shared Kotlin. */
 export class SurfaceCompositor {
-  private native: any
+  private native: FaceclawKitIosSurfaceCompositor
   private readonly surfaces = new Set<string>()
   constructor(readonly width: number, readonly height: number) {
     if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) throw new Error('Invalid compositor size')

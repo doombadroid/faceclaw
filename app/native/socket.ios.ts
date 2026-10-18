@@ -1,5 +1,4 @@
 import type { SocketConnection, SocketHeader, SocketListener } from './socket'
-declare const FaceclawSocket: any
 export function openSocket(url: string, listener: SocketListener, header?: SocketHeader): SocketConnection {
   const native = FaceclawSocket.alloc().initWithURLHeaderNameHeaderValue(url, header?.name ?? null, header?.value ?? null)
   let ended = false

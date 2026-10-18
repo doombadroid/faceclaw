@@ -103,7 +103,6 @@ const ANDROID_PERMISSIONS: PermissionDefinition[] = [
   },
 ];
 
-declare const FaceclawSpeech: any;
 declare const CLLocationManager: any;
 
 /** iOS prompts only once; after a denial the switch is on the app's Settings page. */

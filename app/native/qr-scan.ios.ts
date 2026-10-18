@@ -1,6 +1,5 @@
-declare const FaceclawQrScanner: any
 
-let activeScanner: any = null
+let activeScanner: FaceclawQrScanner | null = null
 
 export function isQrScannerAvailable(): boolean { return FaceclawQrScanner.isAvailable() }
 

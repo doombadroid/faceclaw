@@ -2,7 +2,7 @@ import { FaceclawCommunicatorBridge } from './faceclaw-communicator.ios'
 import type { BandwidthBenchmarkStatus } from './bandwidth-benchmark'
 export type { BandwidthBenchmarkStatus }
 
-const native = (): any => FaceclawCommunicatorBridge.getActive()?.getNativeCommunicator()
+const native = () => FaceclawCommunicatorBridge.getActive()?.getNativeCommunicator()
 
 /** CoreBluetooth picks the connection interval and PHY itself, so linkMode is ignored on iOS. */
 export function startBandwidthBenchmark(messageSize: number, windowSize: number, durationMs: number, linkMode = 0): boolean {

@@ -1,5 +1,4 @@
 export type { BleTrafficSample } from './ble-traffic'
-declare const FaceclawKitIosBleTraffic: any
 
 // The Kotlin counters reset on every sample; accumulate here so callers see
 // running totals like FaceclawBleManager.sampleOutboundTraffic on Android.

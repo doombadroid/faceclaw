@@ -12,14 +12,6 @@ import { iosBluetooth } from "./ios-bluetooth";
 export type { FirmwareInfo };
 
 // Kotlin/Native facades exported by FaceclawKit (see native/kotlin/shared/src/iosMain/.../ble).
-declare const FaceclawKitIosGlassesSession: any;
-declare const FaceclawKitFaceclawBleCommunicatorListener: any;
-declare const FaceclawKitIosAncsListener: any;
-declare const FaceclawKitIosAudioPacketListener: any;
-declare const FaceclawKitFaceclawCompassListener: any;
-declare const FaceclawKitFaceclawImuListener: any;
-declare const FaceclawKitFaceclawMicStatusListener: any;
-declare const FaceclawKitIosGifRecorder: any;
 
 
 export type CommunicatorPhase =
@@ -86,12 +78,12 @@ function timestamp(): string {
 }
 
 /** Start an animated-GIF screen recording (FaceclawKitIosGifRecorder; add frames with addGrayWidthHeightTimestampMs). */
-export function newGifRecorder(): any {
+export function newGifRecorder(): FaceclawKitIosGifRecorder {
   return FaceclawKitIosGifRecorder.new();
 }
 
 /** Encode `recorder` and save it under Documents; returns the path, or "" when it holds no frames. */
-export function saveGifRecording(recorder: any): string {
+export function saveGifRecording(recorder: FaceclawKitIosGifRecorder | null): string {
   const gif = recorder?.encode();
   if (!gif) return "";
   const target = path.join(knownFolders.documents().path, `recording-${timestamp()}.gif`);
@@ -123,7 +115,7 @@ export function ensureIosBluetoothReady(): Promise<void> {
 
 // Every method body runs under guardCallback: a JS error unwinding into the Kotlin caller ends the app.
 @NativeClass()
-class SessionListener extends NSObject {
+class SessionListener extends NSObject implements FaceclawKitFaceclawBleCommunicatorListener {
   static ObjCProtocols = [FaceclawKitFaceclawBleCommunicatorListener];
   bridge!: FaceclawCommunicatorBridge;
   onStateChangePhaseStatus(phase: string, status: string): void {
@@ -157,7 +149,7 @@ class SessionListener extends NSObject {
 }
 
 @NativeClass()
-class AncsListener extends NSObject {
+class AncsListener extends NSObject implements FaceclawKitIosAncsListener {
   static ObjCProtocols = [FaceclawKitIosAncsListener];
   bridge!: FaceclawCommunicatorBridge;
   onAncsAuthorizationAuthorized(authorized: boolean): void {
@@ -167,7 +159,7 @@ class AncsListener extends NSObject {
 }
 
 @NativeClass()
-class AudioPacketListener extends NSObject {
+class AudioPacketListener extends NSObject implements FaceclawKitIosAudioPacketListener {
   static ObjCProtocols = [FaceclawKitIosAudioPacketListener];
   handler!: (packet: Uint8Array, arm: string, arrivalMs: number) => void;
   // Kotlin/Native exports this as `onAudioPacketData:arm:arrivalMs_:` (FaceclawAudioPacketListener has the
@@ -182,7 +174,7 @@ class AudioPacketListener extends NSObject {
 }
 
 @NativeClass()
-class CompassListener extends NSObject {
+class CompassListener extends NSObject implements FaceclawKitFaceclawCompassListener {
   static ObjCProtocols = [FaceclawKitFaceclawCompassListener];
   handler!: (event: CompassEvent) => void;
   onCompassEventCommandHeadingDegreesMagneticAccuracyMagneticAnomaliesOrientationSourceDiagnosticFlagsSampleTimeMs(
@@ -211,7 +203,7 @@ export class FaceclawCommunicatorBridge {
   private static active: FaceclawCommunicatorBridge | null = null;
   /** The live session, as Android's FaceclawBleCommunicator.getActive(). */
   static getActive(): FaceclawCommunicatorBridge | null { return FaceclawCommunicatorBridge.active; }
-  private readonly communicator: any;
+  private readonly communicator: FaceclawKitIosGlassesSession;
   private readonly listenerProxy: SessionListener;
   private ancsProxy: AncsListener | null = null;
   private nativeCallQueue: Promise<void> = Promise.resolve();
@@ -234,7 +226,7 @@ export class FaceclawCommunicatorBridge {
   private readonly ancsAuthorizationListeners = new Set<(authorized: boolean) => void>();
   private readonly ancsRelayListeners = new Set<(frame: Uint8Array) => void>();
   private audioListener: AudioPacketListener | null = null;
-  private recorder: any = null;
+  private recorder: FaceclawKitIosGifRecorder | null = null;
   private microphoneWork: Promise<void> = Promise.resolve();
   private microphoneToken = 0;
   // The core has one audio listener slot. The voice mic (STT, raw tap) and CFW
@@ -421,7 +413,7 @@ export class FaceclawCommunicatorBridge {
     return () => this.firmwareInfoListeners.delete(listener);
   }
 
-  getNativeCommunicator(): any {
+  getNativeCommunicator(): FaceclawKitIosGlassesSession {
     return this.communicator;
   }
 

@@ -2,7 +2,6 @@ import { type SseListener } from './sse-types';
 import { withUserAgent } from '../util/http';
 import { kotlinListener } from './kotlin-listener.ios';
 export { type SseListener } from './sse-types';
-declare const FaceclawKitIosSseRequest: any, FaceclawKitFaceclawSseListener: any;
 
 /** The shared Kotlin SseStream over NSURLSession; the Kotlin side delivers every callback on the main queue, in order. */
 export function openSseRequest(url: string, body: string, headers: Record<string, string>, listener: SseListener): { cancel(): void } {

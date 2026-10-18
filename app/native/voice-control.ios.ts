@@ -8,8 +8,6 @@ import { FaceclawCommunicatorBridge } from './faceclaw-communicator.ios'
 import { fromData, toData } from './kotlin-data'
 import { wearerVerificationOptions } from '../apps/microphones/speakers'
 
-declare const FaceclawSpeech: any
-declare const FaceclawLc3Decoder: any
 export type IosMicrophoneSession = {
   setMicrophone(enabled: boolean, listener?: (packet: Uint8Array) => void): Promise<void>
 }
@@ -23,7 +21,7 @@ type CaptureHolder = 'ptt' | 'continuous'
  * model (Moonshine / Whisper, fed PCM like a cloud provider) or a cloud provider.
  */
 export class IosVoiceControlBridge {
-  private native: any = null
+  private native: FaceclawSpeech | null = null
   private readonly statuses = new Set<(state: VoiceControlState) => void>()
   private readonly transcripts = new Set<(event: VoiceTranscriptEvent) => void>()
   private readonly ends = new Set<() => void>()
@@ -77,7 +75,7 @@ export class IosVoiceControlBridge {
   /** A silence endpoint in continuous capture, after that utterance's final. */
   onSpeechPause(listener: () => void): () => void { this.pauses.add(listener); return () => { this.pauses.delete(listener) } }
   private setStatus(status: string): void { this.status = status; for (const fn of [...this.statuses]) fn({ status, listening: this.capturing, detail: '' }) }
-  private ensureNative(): any {
+  private ensureNative(): FaceclawSpeech {
     if (!this.native) {
       this.native = FaceclawSpeech.new()
       this.native.eventHandler = (json: string) => this.receive(JSON.parse(json))
@@ -144,7 +142,7 @@ export class IosVoiceControlBridge {
     const session = this.rawSession; this.rawSession = null
     if (release) void session?.setMicrophone(false).catch(() => {})
   }
-  private receiveRaw(decoder: any, packet: Uint8Array): void {
+  private receiveRaw(decoder: FaceclawLc3Decoder, packet: Uint8Array): void {
     const pcm = decoder.decodePacket(toData(packet))
     // Wrong length, duplicate from the other arm, or a decode error.
     if (!pcm?.length) return

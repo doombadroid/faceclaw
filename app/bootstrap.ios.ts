@@ -1,6 +1,5 @@
 import { Application, Frame } from '@nativescript/core'
 import { logJsError } from './native/callback-errors.ios'
-declare const FaceclawConfigPort: any
 
 // nativescript.config.ts discards uncaught JS errors instead of ending the app; each becomes an error report.
 Application.on(Application.discardedErrorEvent, (args) => logJsError('uncaught JS', args.error))

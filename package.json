@@ -18,7 +18,7 @@
     "run": "./build_and_run.sh",
     "release": "scripts/release.sh",
     "clean": "rm -rf platforms",
-    "test": "tsc -p tests/tsconfig.json && node --test tests/*.test.cjs",
+    "test": "tsc -p tests/tsconfig.json && tsc --noEmit -p . && node --test tests/*.test.cjs",
     "test:kotlin:ios": "bash scripts/test-kotlin.sh iosSimulatorArm64Test compileKotlinIosArm64",
     "postinstall": "node scripts/install-hooks.cjs",
     "kotlin-header": ". ./build_paths.sh 2>/dev/null; node scripts/kotlin-header.cjs"

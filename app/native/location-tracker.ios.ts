@@ -1,10 +1,9 @@
 import { type LocationTrackerCallbacks } from './location-types'
 export { type TrackedLocation, type LocationTrackerCallbacks } from './location-types'
-declare const FaceclawLocationUpdates: any
 
 /** Owned by the main-thread iOS sensor host; JSON fixes are relayed to app workers. */
 export class LocationTracker {
-  private native: any = null
+  private native: FaceclawLocationUpdates | null = null
   constructor(private readonly callbacks: LocationTrackerCallbacks) {}
   isRunning(): boolean { return this.native !== null }
   start(intervalMs = 1000): void {

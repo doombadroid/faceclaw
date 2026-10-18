@@ -1,7 +1,6 @@
 import { ImageSource } from '@nativescript/core'
 import { GrayImage } from '../graphics/image'
 
-declare const FaceclawGraphics: any
 
 type CropRect = { x: number; y: number; width: number; height: number }
 

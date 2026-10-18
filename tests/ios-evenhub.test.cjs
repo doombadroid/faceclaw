@@ -294,7 +294,7 @@ test('iOS video player drives the Kotlin AVPlayer wrapper and decodes probes and
     onFrame: () => events.push(['frame']) });
   const listener = calls.find(c => c[0] === 'setListenerListener')[1];
   assert.equal(listener.protocol, 'video');
-  listener.onStateChangedStatePositionMs('ended', 1500); listener.onErrorMessage('bad'); listener.onFrame();
+  listener.onStateChangedStatePositionMs('ended', 1500); listener.onErrorMessage_('bad'); listener.onFrame();
   assert.deepEqual(events, [['ended', 1500], ['error', 'bad'], ['frame']]);
   player.start({ path: '/a.mov', surfaceId: 's', rect: { x: 5, y: 6, width: 300.4, height: 168.6 }, monochrome: false, gamma: 2.2, audio: true, startMs: -3 });
   assert.deepEqual(calls.at(-1), ['startPathWidthHeightMonochromeGammaAudioStartMs', '/a.mov', 300, 169, false, 2.2, true, 0]);

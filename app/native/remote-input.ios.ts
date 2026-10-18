@@ -1,5 +1,4 @@
 import { createListenerPool, type InterfaceAddress } from '../remote/listeners';
-declare const FaceclawKitIosRemoteInput: any;
 /** The shared Kotlin RemoteInputSession over POSIX sockets; request notifications arrive on the main queue. */
 export function remoteNative(onRequestReady: () => void) {
   return createListenerPool(() => {
@@ -9,7 +8,7 @@ export function remoteNative(onRequestReady: () => void) {
       nextRequest: () => native.nextRequest(), complete: (id, response) => native.completeIdValue(id, response) };
   });
 }
-function shared(): any { return FaceclawKitIosRemoteInput.companion.shared; }
+function shared() { return FaceclawKitIosRemoteInput.companion.shared; }
 export function remoteInterfaces(): InterfaceAddress[] { return JSON.parse(String(shared().interfaces())); }
 export function randomTokenSecret(): string { return String(shared().randomSecret()); }
 export function tokenHash(value: string): string { return String(shared().tokenDigestValue(value)); }

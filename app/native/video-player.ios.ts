@@ -9,8 +9,6 @@ import type { VideoInfo, VideoPlaybackState, VideoPlayerCallbacks, VideoStartOpt
 
 export type { VideoInfo, VideoPlaybackState, VideoPlayerCallbacks, VideoStartOptions };
 
-declare const FaceclawKitIosVideoPlayer: any;
-declare const FaceclawKitIosVideoListener: any;
 
 /** Containers AVFoundation opens (no MKV or WebM). */
 const PLAYABLE_VIDEO = /\.(mp4|m4v|mov|3gp)$/i;
@@ -38,13 +36,13 @@ export function probeVideo(path: string): VideoInfo | { error: string } {
 export class VideoPlayer {
   private readonly player = FaceclawKitIosVideoPlayer.new();
   // Kotlin calls this; keep it referenced.
-  private readonly listener: object;
+  private readonly listener: FaceclawKitIosVideoListener;
 
   constructor(callbacks: VideoPlayerCallbacks) {
     this.listener = kotlinListener(FaceclawKitIosVideoListener, {
       onStateChangedStatePositionMs: (state: string, positionMs: number) =>
         callbacks.onState(String(state) as VideoPlaybackState, Number(positionMs)),
-      onErrorMessage: (message: string) => callbacks.onError(String(message ?? "Playback failed")),
+      onErrorMessage_: (message: string) => callbacks.onError(String(message ?? "Playback failed")),
       onFrame: () => callbacks.onFrame?.(),
     });
     this.player.setListenerListener(this.listener);

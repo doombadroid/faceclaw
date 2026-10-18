@@ -1,7 +1,6 @@
 import { EVENHUB_BRIDGE_INJECT_SCRIPT, buildFaceclawExtensionsScript, type EvenHubSession } from './session'
 import { FACECLAW_VERSION } from '../../version'
 import type { EvenHubWebView } from './webview'
-declare const FaceclawEvenHubWebView: any
 
 export const IOS_EVENHUB_TRANSPORT_SCRIPT = `
 window.__faceclawEvenHub = { postMessage: function(name, args, id) {

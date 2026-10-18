@@ -12,16 +12,11 @@ import { asrModelDir, isAsrModelReady, isAsrModelWarm, type AsrModelId } from ".
 import { toData } from "./kotlin-data";
 import { kotlinListener } from "./kotlin-listener.ios";
 
-declare const FaceclawSherpa: any;
-declare const FaceclawKitIosOnDeviceTranscriber: any;
-declare const FaceclawKitIosTranscriptListener: any;
-declare const FaceclawKitIosSpeakerVerifier: any;
-declare const FaceclawKitIosSpeakerVerifiedListener: any;
 
-let loader: any = null;
+let loader: FaceclawSherpa | null = null;
 
 /** The app's one FaceclawSherpa model loader (FaceclawKitIosSherpaLoader); it hands the Parakeet folder to FluidAudio. */
-export function sherpaLoader(): any {
+export function sherpaLoader(): FaceclawSherpa {
   if (!loader) loader = FaceclawSherpa.new();
   return loader;
 }
@@ -47,8 +42,8 @@ export function createOnboardSttClient(model: AsrModelId, options: CloudSttOptio
       options.onStatus("Listening…");
       options.onReady?.();
     },
-    onTranscriptTextIsFinal: (text: string, isFinal: boolean) => options.onTranscript({ text: String(text ?? ""), isFinal: !!isFinal }),
-    onErrorMessage: (message: string) => options.onError(String(message ?? "On-device transcription failed.")),
+    onTranscriptTextIsFinal_: (text: string, isFinal: boolean) => options.onTranscript({ text: String(text ?? ""), isFinal: !!isFinal }),
+    onErrorMessage_: (message: string) => options.onError(String(message ?? "On-device transcription failed.")),
   });
   const transcriber = FaceclawKitIosOnDeviceTranscriber.alloc()
     .initWithLoaderModelDirWhisperListener(sherpaLoader(), asrModelDir(model), model === "whisper-base-en", listener);

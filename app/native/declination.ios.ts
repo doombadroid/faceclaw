@@ -1,4 +1,3 @@
-declare const FaceclawLocation: any
 
 export function restoreDeclination(_latitude: number, _longitude: number, degrees: number): number | null {
   return Number.isFinite(degrees) && Math.abs(degrees) <= 180 ? degrees : null

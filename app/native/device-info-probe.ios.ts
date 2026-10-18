@@ -4,7 +4,6 @@ import type { DeviceInfo, DeviceInfoState } from './device-info-probe'
 import { guardCallback } from './callback-errors.ios'
 export type { DeviceInfo, DeviceInfoState } from './device-info-probe'
 
-declare const FaceclawKitIosDeviceInfoProbe: any, FaceclawKitFaceclawDeviceInfoProbeListener: any
 
 /**
  * iOS twin of the Android DeviceInfoProbe wrapper: the shared Kotlin DeviceInfoProbeFlow
@@ -13,8 +12,8 @@ declare const FaceclawKitIosDeviceInfoProbe: any, FaceclawKitFaceclawDeviceInfoP
  * queue and are fanned out asynchronously like the Android wrapper does.
  */
 export class DeviceInfoProbe {
-  private probe: any = null
-  private listenerProxy: object | null = null
+  private probe: FaceclawKitIosDeviceInfoProbe | null = null
+  private listenerProxy: FaceclawKitFaceclawDeviceInfoProbeListener | null = null
   private readonly logListeners = new Set<(line: string) => void>()
   private readonly stateListeners = new Set<(state: DeviceInfoState, detail: string) => void>()
   private settled = false

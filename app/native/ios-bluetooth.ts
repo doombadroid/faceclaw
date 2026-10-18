@@ -5,7 +5,6 @@ import { kotlinListener } from './kotlin-listener.ios'
 import { APP_NAME } from '../branding'
 import type { RawAdvertisement } from '../g2/even-advertisement'
 
-declare const FaceclawKitIosBleCentral: any, FaceclawKitIosProtocolPlatform: any, FaceclawKitIosBleScanListener: any
 
 const PERIPHERAL_KEY = 'ios.ble.peripheral.'
 
@@ -32,7 +31,7 @@ export class IosBluetooth {
   readonly devices = new Map<string, IosDevice>()
   private scanTimer: ReturnType<typeof setTimeout> | null = null
   private scanGeneration = 0
-  private readonly scanListener: object
+  private readonly scanListener: FaceclawKitIosBleScanListener
   state = 0
   authorization = 0
   scanning = false

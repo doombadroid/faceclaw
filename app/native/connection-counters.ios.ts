@@ -1,4 +1,3 @@
-declare const FaceclawKitConnectionCounters: any
 
 export function drainConnectionCounters(): Record<string, number> {
   const counts: Record<string, number> = {}

@@ -128,7 +128,13 @@ needs device testing, particularly sustained rendering and microphone traffic.
 
 The iOS JavaScript reaches FaceclawKit by ObjC selector with no compiler in between, and
 Kotlin/Native renames some selectors (a `_` suffix when two interfaces share a method name with
-different signatures). `scripts/check-native-names.cjs` checks every name the `.ios.ts` files use
-against `FaceclawKit.h.snapshot`, the real generated header. After changing Kotlin, run
-`npm run kotlin-header` (seconds, on Linux) to regenerate it; `npm test` fails until you do,
-and CI fails when the committed snapshot differs from the header it builds.
+different signatures). `scripts/check-native-names.cjs` generates `native/faceclaw-native.ts`,
+TypeScript declarations under the NativeScript names, from `FaceclawKit.h.snapshot` (the real
+generated header) and the ObjC/Swift shims in `App_Resources/iOS/src`, so tsc checks every
+native call and protocol implementation: `kotlinListener(Protocol, {...})` and
+`class X extends NSObject implements Protocol` need each required method under the header's exact
+(possibly mangled) name. After changing Kotlin, run `npm run kotlin-header` (seconds, on Linux) to
+regenerate both; after changing a shim header, `node scripts/check-native-names.cjs --write`.
+`npm test` fails until you do, and CI fails when the committed snapshot differs from the header it
+builds. Never `declare const FaceclawX: any` locally: it shadows the generated type (the checker
+rejects it).

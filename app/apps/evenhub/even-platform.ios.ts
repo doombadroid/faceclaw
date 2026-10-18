@@ -1,5 +1,4 @@
 import { getStringSetting, setStringSetting } from "../../native/settings-store";
-declare const FaceclawCrypto: any;
 
 export function hmacSha256Base64(secret: string, message: string): string {
   return FaceclawCrypto.hmacSha256Message(secret, message);

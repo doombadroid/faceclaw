@@ -5,7 +5,6 @@ import { previewPixels } from "./ios-graphics";
 import { toData } from "./kotlin-data";
 import { newGifRecorder, saveGifRecording, type FaceclawCommunicatorBridge, type SurfaceOptions } from "./faceclaw-communicator.ios";
 
-declare const FaceclawKitIosProtocol: any;
 
 /** The display subset of the communicator bridge; see the Android twin. */
 export type DisplayTarget = Pick<
@@ -152,7 +151,7 @@ export class PreviewDisplayTarget implements DisplayTarget {
     return target;
   }
 
-  private recorder: any = null;
+  private recorder: FaceclawKitIosGifRecorder | null = null;
 
   startScreenRecording(): void {
     this.recorder = newGifRecorder();

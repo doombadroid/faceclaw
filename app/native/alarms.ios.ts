@@ -11,7 +11,6 @@ export type { AlarmKind, AlarmReliabilityIssue, PhoneAlarmAction } from './alarm
 // and Focus instead; it is loud at once, so 'fc-<id>' stays the silent record either way.
 // kit = the fire time of an AlarmKit alarm AlarmKit confirmed.
 type Entry = { id: number; at: number; title: string; text: string; kind: AlarmKind; snooze: number; kit?: number }
-declare const FaceclawAlarmKit: any
 const ENTRIES_KEY = 'alarms.ios.entries'
 const JOURNAL_KEY = 'alarms.ios.journal'
 const CATEGORY = 'fc-alarm'
