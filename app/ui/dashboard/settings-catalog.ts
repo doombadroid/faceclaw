@@ -1,6 +1,8 @@
 import type { AsrModelId } from "../../native/asr-model";
 import {
   anthropicApiKeySetting,
+  perplexityApiKeySetting,
+  xaiApiKeySetting,
   appSwitcherPositionSetting,
   assistantAllowProactiveSetting,
   assistantBackendSetting,
@@ -147,6 +149,8 @@ const PHONE_TITLES: Record<string, string> = {
   "openai-api-key": "OpenAI API Key",
   "soniox-api-key": "Soniox API Key",
   "anthropic-api-key": "Anthropic API Key",
+  "xai-api-key": "xAI (Grok) API Key",
+  "perplexity-api-key": "Perplexity API Key",
   "mapbox-api-key": "Mapbox Token",
   "data-collection": dataCollectionSetting.label.replace(/ statistics$/, " Statistics"),
   "show-ble-bandwidth": "Show BLE Bandwidth Usage",
@@ -287,6 +291,8 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
           item(openAiApiKeySetting),
           item(sonioxApiKeySetting),
           item(anthropicApiKeySetting),
+          item(xaiApiKeySetting),
+          item(perplexityApiKeySetting),
           item(mapboxApiKeySetting),
         ],
       },

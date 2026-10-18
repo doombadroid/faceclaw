@@ -14,6 +14,7 @@ import {
   ASSISTANT_MODEL_CHOICES,
   assistantModelLabel,
   assistantModelProvider,
+  type AssistantApiKeys,
   type AssistantModel,
 } from "~/assistant/models";
 import { isLocalModelReady } from "../native/llama";
@@ -1008,6 +1009,37 @@ export const anthropicApiKeySetting = new ConfigSettingString({
   description: "Anthropic API key, used when an Anthropic model is selected for the voice assistant.",
 });
 
+export const xaiApiKeySetting = new ConfigSettingString({
+  id: "xai-api-key",
+  label: "xAI (Grok) key",
+  storageKey: "llm.xaiApiKey",
+  defaultValue: "",
+  editorTitle: "xAI (Grok) API key",
+  glassesEditTitle: "Edit xAI key",
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  description: "xAI API key, used when a Grok model is selected for the voice assistant.",
+});
+
+export const perplexityApiKeySetting = new ConfigSettingString({
+  id: "perplexity-api-key",
+  label: "Perplexity key",
+  storageKey: "llm.perplexityApiKey",
+  defaultValue: "",
+  editorTitle: "Perplexity API key",
+  glassesEditTitle: "Edit Perplexity key",
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  description: "Perplexity API key, used when Perplexity is selected for the voice assistant.",
+});
+
+export function assistantApiKeys(): AssistantApiKeys {
+  return {
+    anthropic: anthropicApiKeySetting.get(),
+    openai: openAiApiKeySetting.get(),
+    xai: xaiApiKeySetting.get(),
+    perplexity: perplexityApiKeySetting.get(),
+  };
+}
+
 export const assistantModelSetting = new ConfigSettingEnum<AssistantModel>({
   id: "assistant-model",
   label: "Assistant model",
@@ -1017,13 +1049,11 @@ export const assistantModelSetting = new ConfigSettingEnum<AssistantModel>({
   formatValue: assistantModelLabel,
   isDisabled: (value) => {
     const provider = assistantModelProvider(value);
-    if (provider === "anthropic") return anthropicApiKeySetting.get().trim().length === 0;
-    if (provider === "openai") return openAiApiKeySetting.get().trim().length === 0;
     if (provider === "local") return !isLocalModelReady();
-    return false;
+    return provider !== null && assistantApiKeys()[provider].trim().length === 0;
   },
   description:
-    global.isIOS ? "Model used by the voice assistant. Auto prefers Terra with an OpenAI key, then Sonnet with an Anthropic key." : "Model used by the voice assistant. Auto prefers Terra when an OpenAI key is set, then Sonnet when an Anthropic key is set, then the downloaded on-phone model.",
+    global.isIOS ? "Model used by the voice assistant. Auto prefers Terra with an OpenAI key, then Sonnet with an Anthropic key, then Grok with an xAI key, then Perplexity." : "Model used by the voice assistant. Auto prefers Terra when an OpenAI key is set, then Sonnet, Grok and Perplexity by their keys, then the downloaded on-phone model.",
 });
 
 export const mapboxApiKeySetting = new ConfigSettingString({

@@ -8,19 +8,27 @@ import type {
 import { openSseRequest, type SseListener } from "./sse";
 
 /**
- * Minimal streaming client for the OpenAI Responses API. NativeScript cannot
- * use the Node SDK, so this shares the native streaming transport used by Anthropic.
+ * Minimal streaming client for the Responses API (OpenAI, and the xAI and
+ * Perplexity Agent endpoints that speak it). NativeScript cannot use the Node
+ * SDK, so this shares the native streaming transport used by Anthropic.
  */
 
-const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+export type ResponsesProvider = "openai" | "xai" | "perplexity";
+
+const ENDPOINTS: Record<ResponsesProvider, { url: string; label: string }> = {
+  openai: { url: "https://api.openai.com/v1/responses", label: "OpenAI" },
+  xai: { url: "https://api.x.ai/v1/responses", label: "xAI" },
+  perplexity: { url: "https://api.perplexity.ai/v1/agent", label: "Perplexity" },
+};
 
 type StreamingOutput =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; inputJson: string; itemId: string; item: any }
   | { type: "provider_item"; item: any };
 
-export function streamOpenAiResponse(options: LlmStreamOptions): LlmStreamHandle {
+export function streamOpenAiResponse(options: LlmStreamOptions, provider: ResponsesProvider = "openai"): LlmStreamHandle {
   const apiKey = options.apiKey.trim();
+  const { url, label } = ENDPOINTS[provider];
   let request: any = null;
   let settled = false;
   let text = "";
@@ -48,28 +56,11 @@ export function streamOpenAiResponse(options: LlmStreamOptions): LlmStreamHandle
   };
 
   if (!apiKey) {
-    setTimeout(() => fail("No OpenAI API key set"), 0);
+    setTimeout(() => fail(`No ${label} API key set`), 0);
     return { cancel: () => { settled = true; } };
   }
 
-  const body: any = {
-    model: options.model,
-    input: buildOpenAiInput(options.messages),
-    stream: true,
-    store: false,
-    include: ["reasoning.encrypted_content"],
-    max_output_tokens: options.maxTokens ?? 8192,
-  };
-  if (options.system) body.instructions = options.system;
-  if (options.tools?.length) {
-    body.tools = options.tools.map((tool) => ({
-      type: "function",
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.input_schema,
-    }));
-  }
-  if (options.effort) body.reasoning = { effort: options.effort };
+  const body = buildResponsesBody(options, provider);
 
   const listener: SseListener = {
     onLine: (line: string) => {
@@ -149,31 +140,31 @@ export function streamOpenAiResponse(options: LlmStreamOptions): LlmStreamHandle
           done();
           return;
         case "response.failed":
-          fail(`OpenAI: ${String(event.response?.error?.message ?? "response failed")}`);
+          fail(`${label}: ${String(event.response?.error?.message ?? event.error?.message ?? "response failed")}`);
           return;
         case "error":
-          fail(`OpenAI: ${String(event.message ?? event.error?.message ?? "stream error")}`);
+          fail(`${label}: ${String(event.message ?? event.error?.message ?? "stream error")}`);
           return;
         default:
           return;
       }
     },
     onHttpError: (code: number, errorBody: string) => {
-      fail(describeHttpError(Number(code), String(errorBody)));
+      fail(describeHttpError(label, Number(code), String(errorBody)));
     },
     onComplete: () => {
       // A transport EOF alone must not execute an unfinished tool call.
-      fail("OpenAI stream ended before the response completed");
+      fail(`${label} stream ended before the response completed`);
     },
     onFailure: (message: string) => {
-      fail(`OpenAI connection failed: ${String(message)}`);
+      fail(`${label} connection failed: ${String(message)}`);
     },
   };
 
   try {
-    request = openSseRequest(OPENAI_RESPONSES_URL, JSON.stringify(body), { Authorization: `Bearer ${apiKey}` }, listener);
+    request = openSseRequest(url, JSON.stringify(body), { Authorization: `Bearer ${apiKey}` }, listener);
   } catch (error) {
-    setTimeout(() => fail(`OpenAI request failed: ${String((error as Error)?.message ?? error)}`), 0);
+    setTimeout(() => fail(`${label} request failed: ${String((error as Error)?.message ?? error)}`), 0);
     return { cancel: () => { settled = true; } };
   }
 
@@ -189,19 +180,49 @@ export function streamOpenAiResponse(options: LlmStreamOptions): LlmStreamHandle
   };
 }
 
+/**
+ * Perplexity runs its "fast" preset (server-side web_search, which merges with
+ * our function tools); our instructions replace the preset prompt, so restate
+ * what it would have said. It has no `include` and the preset's effort is none.
+ */
+function buildResponsesBody(options: LlmStreamOptions, provider: ResponsesProvider): any {
+  const perplexity = provider === "perplexity";
+  const body: any = {
+    ...(perplexity ? { preset: "fast" } : { model: options.model, include: ["reasoning.encrypted_content"] }),
+    input: buildOpenAiInput(options.messages),
+    stream: true,
+    store: false,
+    max_output_tokens: options.maxTokens ?? 8192,
+  };
+  const system = perplexity
+    ? `${options.system ? `${options.system}\n\n` : ""}Today is ${new Date().toDateString()}. Use web_search for current facts. Never add [n] citation markers.`
+    : options.system;
+  if (system) body.instructions = system;
+  if (options.tools?.length) {
+    body.tools = options.tools.map((tool) => ({
+      type: "function",
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.input_schema,
+    }));
+  }
+  if (options.effort && !perplexity) body.reasoning = { effort: options.effort };
+  return body;
+}
+
 /** Convert neutral conversation history to Responses API input items. */
 function buildOpenAiInput(messages: LlmMessage[]): any[] {
   const input: any[] = [];
   for (const message of messages) {
     if (typeof message.content === "string") {
-      input.push({ role: message.role, content: message.content });
+      input.push({ type: "message", role: message.role, content: message.content });
       continue;
     }
 
     let pendingText = "";
     const flushText = () => {
       if (!pendingText) return;
-      input.push({ role: message.role, content: pendingText });
+      input.push({ type: "message", role: message.role, content: pendingText });
       pendingText = "";
     };
     for (const block of message.content) {
@@ -299,26 +320,27 @@ function parseSseDataLine(line: string): any {
   }
 }
 
-function describeHttpError(code: number, body: string): string {
+function describeHttpError(label: string, code: number, body: string): string {
   let detail = "";
   try {
-    detail = String(JSON.parse(body)?.error?.message ?? "");
+    const error = JSON.parse(body)?.error;
+    detail = String((typeof error === "string" ? error : error?.message) ?? "");
   } catch {
     // non-JSON error body
   }
   switch (code) {
     case 401:
-      return "OpenAI: invalid API key";
+      return `${label}: invalid API key`;
     case 403:
-      return "OpenAI: API key lacks permission";
+      return `${label}: API key lacks permission`;
     case 429:
-      return "OpenAI: rate limited, try again shortly";
+      return `${label}: rate limited, try again shortly`;
     case 500:
     case 502:
     case 503:
     case 504:
-      return "OpenAI: service unavailable, try again shortly";
+      return `${label}: service unavailable, try again shortly`;
     default:
-      return `OpenAI: HTTP ${code}${detail ? ` (${detail})` : ""}`;
+      return `${label}: HTTP ${code}${detail ? ` (${detail})` : ""}`;
   }
 }

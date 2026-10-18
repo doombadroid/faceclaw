@@ -29,6 +29,8 @@ import { drawRightValueMenuItem, openModalMenu, submenuItem, type MenuItem } fro
 import { shell } from "../shell/shell";
 import {
   anthropicApiKeySetting,
+  perplexityApiKeySetting,
+  xaiApiKeySetting,
   appSwitcherPositionSetting,
   statusBarPositionSetting,
   statusBarVisibilitySetting,
@@ -153,6 +155,8 @@ function settingsSections(): SettingsSection[] {
         textSettingMenuItem(openAiApiKeySetting),
         textSettingMenuItem(sonioxApiKeySetting),
         textSettingMenuItem(anthropicApiKeySetting),
+        textSettingMenuItem(xaiApiKeySetting),
+        textSettingMenuItem(perplexityApiKeySetting),
         textSettingMenuItem(mapboxApiKeySetting),
       ],
     },

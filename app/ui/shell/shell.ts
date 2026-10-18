@@ -30,7 +30,7 @@ import { getStringSetting, setStringSetting } from "../../native/settings-store"
 import type { AssistantContext } from "../../assistant/types";
 import { SingleNotificationLayer } from "../notifications";
 import {
-  anthropicApiKeySetting,
+  assistantApiKeys,
   assistantBackendSetting,
   assistantBridgeHostSetting,
   assistantBridgePortSetting,
@@ -40,7 +40,6 @@ import {
   batteryIndicatorSettingsKey,
   brightnessSetting,
   onAnySettingChanged,
-  openAiApiKeySetting,
   statusBarPositionSetting,
   statusBarVisibilitySetting,
   timeFormatSetting,
@@ -1640,10 +1639,7 @@ class Shell {
       const port = parseInt(assistantBridgePortSetting.get(), 10) || 8790;
       return { kind: "external", bridge: { host, port, token } };
     }
-    const llm = resolveAssistantModel(model, {
-      anthropic: anthropicApiKeySetting.get(),
-      openai: openAiApiKeySetting.get(),
-    });
+    const llm = resolveAssistantModel(model, assistantApiKeys());
     if (llm && reasoning !== "default" && llm.effort) llm.effort = reasoning;
     return llm ? { kind: "direct", llm } : null;
   }

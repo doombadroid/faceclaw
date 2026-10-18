@@ -196,7 +196,7 @@ test('every catalog row title is Title Case on the phone', () => {
   for (const category of catalog.SETTINGS_CATEGORIES) for (const section of category.sections()) for (const item of section.items) {
     if (item.kind !== 'setting') continue;
     const title = catalog.itemTitle(item);
-    assert.ok(title.split(' ').every(word => !/^[a-z]/.test(word) || ['on', 'to', 'of', 'and'].includes(word)), `${category.id}: ${title}`);
+    assert.ok(title.split(' ').every(word => !/^[a-z]/.test(word) || ['on', 'to', 'of', 'and', 'xAI'].includes(word)), `${category.id}: ${title}`);
   }
 });
 

@@ -23,6 +23,8 @@ import type { Snapshot } from "./analytics-store";
 const API_KEY_SETTINGS: Record<string, string> = {
   anthropic: "llm.anthropicApiKey",
   openai: "voice.openAiApiKey",
+  xai: "llm.xaiApiKey",
+  perplexity: "llm.perplexityApiKey",
   elevenlabs: "voice.elevenLabsApiKey",
   soniox: "voice.sonioxApiKey",
   mapbox: "maps.mapboxApiKey",
