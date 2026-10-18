@@ -252,7 +252,8 @@ export class ConfigSettingString<TId extends string = string> extends ConfigSett
     return normalized;
   }
 
-  validationError(value = this.get()): string | null { return this.validator?.(value) ?? null; }
+  /** Judges [value] as set() would store it: a raw draft (a pasted trailing newline) is normalized first. */
+  validationError(value = this.get()): string | null { return this.validator?.(this.normalizer(value)) ?? null; }
 
   /** An API key, token or password: never logged, never sent (remote-log scrubs these values). */
   get isSecret(): boolean { return /apikey|token|password/i.test(this.storageKey); }
@@ -1046,8 +1047,9 @@ export const remoteLogUrlSetting = new ConfigSettingString({
   storageKey: "dev.remoteLogUrl",
   defaultValue: "",
   editorTitle: "Remote log URL (empty = off)",
-  normalize: (value) => (value ?? "").trim(),
-  validate: (value) => (!value || /^https?:\/\/\S+$/.test(value) ? null : "Paste a URL starting with https://, or leave it empty to stop sending."),
+  // A URL has no whitespace: a paste can bring a line break or a trailing space.
+  normalize: (value) => (value ?? "").replace(/\s+/g, ""),
+  validate: (value) => (!value || /^https?:\/\/\S+$/i.test(value) ? null : "Paste a URL starting with https://, or leave it empty to stop sending."),
   description: "Error reports, the app log and console output are sent to <URL>/log as JSON while this is set. API keys and tokens are redacted.",
 });
 

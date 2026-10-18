@@ -64,3 +64,13 @@ test('the curve validator agrees with Kotlin BrightnessPolicy.parseCurve on the 
   for (const { curve, valid } of require('./fixtures/brightness-curves.json'))
     assert.equal(brightnessCurveError(curve) === null, valid, JSON.stringify(curve));
 });
+
+test('the Remote Log URL editor accepts a pasted URL with a line break, spaces or a capitalised scheme', () => {
+  const { remoteLogUrlSetting } = settingsFixture();
+  for (const draft of ['https://host.ts.net/token\n', ' https://host.ts.net/token ', 'Https://host.ts.net/to\nken']) {
+    assert.equal(remoteLogUrlSetting.validationError(draft), null, JSON.stringify(draft));
+  }
+  assert.equal(remoteLogUrlSetting.set('https://host.ts.net/token\n'), 'https://host.ts.net/token');
+  assert.ok(remoteLogUrlSetting.validationError('host.ts.net/token'));
+  assert.equal(remoteLogUrlSetting.validationError(''), null);
+});
