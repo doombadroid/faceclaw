@@ -8,7 +8,9 @@ import kotlin.jvm.JvmField
  * {1 commandId, 2 magicRandom, 3..8 one sub-message}. Field numbers agree between
  * g2-kit-unofficial ble/gen/translate_pb.ts and Commute773's proto/g2/translate.proto;
  * CTRL OPEN's srcKey/dstKey (6/7), the "SRC>DST" pair format and error 66 (a repeated
- * magicRandom) come from ithinkthisiscool's apps/translate.py, decoded from the official app.
+ * magicRandom, retried by the official app after 1 s with a new magic, up to 5 times) and
+ * LANG_SWITCH 164/165 (fields 9/10) come from ithinkthisiscool's apps/translate.py, decoded
+ * from the official app.
  * None of it is verified live yet: the Translate Tests page (T8) is that check.
  */
 internal object TranslateProtocol {
@@ -19,6 +21,8 @@ internal object TranslateProtocol {
     const val CMD_NOTIFY = 161
     const val CMD_COMM_RESP = 162
     const val CMD_MODE_SWITCH = 163
+    const val CMD_LANG_SWITCH_REQ = 164
+    const val CMD_LANG_SWITCH_RSP = 165
     const val CMD_HEARTBEAT = 255
 
     const val CTRL_OPEN = 1
@@ -34,6 +38,8 @@ internal object TranslateProtocol {
         CMD_MODE_SWITCH -> 6
         CMD_COMM_RESP -> 7
         CMD_HEARTBEAT -> 8
+        CMD_LANG_SWITCH_REQ -> 9
+        CMD_LANG_SWITCH_RSP -> 10
         else -> 0
     }
 
@@ -60,11 +66,14 @@ internal object TranslateProtocol {
 
     fun heartbeat(magic: Int): ByteArray = pack(CMD_HEARTBEAT, magic, ByteArray(0))
 
+    /** LANG_SWITCH_RSP {10: {}}: accepts a language the user picked on the glasses (errorCode 0 is left unset). */
+    fun langSwitchResponse(magic: Int): ByteArray = pack(CMD_LANG_SWITCH_RSP, magic, ByteArray(0))
+
     private fun text(field: Int, value: String): ByteArray = BleProtocol.encodeBytesField(field, value.encodeToByteArray())
 
-    /** A decoded package from the glasses. value: NOTIFY/CTRL cmd or MODE_SWITCH mode; error: its errorCode. */
-    class Reply(@JvmField val cmd: Int, @JvmField val magic: Int, @JvmField val value: Int, @JvmField val error: Int) {
-        override fun toString(): String = "cmd=$cmd magic=$magic value=$value error=$error"
+    /** A decoded package from the glasses. value: NOTIFY/CTRL cmd or MODE_SWITCH mode; error: its errorCode; key: LANG_SWITCH_REQ's langKey. */
+    class Reply(@JvmField val cmd: Int, @JvmField val magic: Int, @JvmField val value: Int, @JvmField val error: Int, @JvmField val key: String = "") {
+        override fun toString(): String = "cmd=$cmd magic=$magic value=$value error=$error" + if (key.isEmpty()) "" else " key=$key"
     }
 
     /** pb without the envelope CRC. */
@@ -74,13 +83,14 @@ internal object TranslateProtocol {
         val sub = (if (field == 0) null else BleProtocol.readFieldBytes(pb, field)) ?: ByteArray(0)
         val value = if (cmd == CMD_NOTIFY || cmd == CMD_CTRL || cmd == CMD_MODE_SWITCH) BleProtocol.readVarintFieldValue(sub, 1, 0) else 0
         val error = when (cmd) {
-            CMD_COMM_RESP -> BleProtocol.readVarintFieldValue(sub, 1, 0)
+            CMD_COMM_RESP, CMD_LANG_SWITCH_RSP -> BleProtocol.readVarintFieldValue(sub, 1, 0)
             CMD_NOTIFY -> BleProtocol.readVarintFieldValue(sub, 2, 0)
             CMD_RESULT -> BleProtocol.readVarintFieldValue(sub, 3, 0)
             CMD_CTRL -> BleProtocol.readVarintFieldValue(sub, 4, 0)
             else -> 0
         }
-        return Reply(cmd, BleProtocol.readVarintFieldValue(pb, 2, -1), value, error)
+        val key = if (cmd == CMD_LANG_SWITCH_REQ) BleProtocol.readFieldBytes(sub, 1)?.decodeToString() ?: "" else ""
+        return Reply(cmd, BleProtocol.readVarintFieldValue(pb, 2, -1), value, error, key)
     }
 }
 
@@ -95,8 +105,10 @@ interface FaceclawTranslateProbeListener {
 /**
  * Opens the firmware Translate screen, sends [UPDATES] (partials, commits, a speaker change) with
  * a heartbeat every [Timings.heartbeatMs], then closes it, reporting every packet and reply.
- * Bounded by [Timings.deadlineMs]; stops at the first reply carrying a non-zero error code or a
- * NOTIFY CLOSE from the glasses, and always sends CLOSE. Writes nothing but service 0x05.
+ * Bounded by [Timings.deadlineMs]; stops at the first reply carrying a non-zero error code (66,
+ * a magicRandom the glasses saw recently, is retried with a new one as the official app does) or
+ * a NOTIFY CLOSE from the glasses, and always sends CLOSE. Writes nothing but service 0x05.
+ * A run the glasses never answered ends ok=false, "completed (no replies)".
  * [write] frames and sends one package; [onFrame] takes each 0x05 package the glasses send.
  */
 internal class TranslateScreenProbe(
@@ -113,6 +125,7 @@ internal class TranslateScreenProbe(
         @JvmField val heartbeatMs: Long = 4_000,
         @JvmField val closeWaitMs: Long = 2_000,
         @JvmField val deadlineMs: Long = 30_000,
+        @JvmField val magicRetryMs: Long = 1_000,
     )
 
     /** source, translation, commit, speaker. */
@@ -128,18 +141,28 @@ internal class TranslateScreenProbe(
             Update("Muchas gracias.", "Thank you very much.", true, "A"),
         )
         private const val WAKE_ONLY_SIZE = 0
+        private const val MAGIC_TRIES = 5
+        // Past the ~15 magics one run uses, so a retry leaves a previous run's range.
+        private const val MAGIC_JUMP = 20
     }
 
     private val replies = BlockingQueue<ByteArray>(platform)
     private val startedAt = platform.elapsedRealtimeMs()
     private var magic = firstMagic
     private var lastHeartbeatAt = startedAt
+    private var replyCount = 0
+    private var lastError = 0
 
     @Volatile
     private var cancelled = false
 
     fun onFrame(pb: ByteArray) {
         replies.put(pb.copyOf())
+    }
+
+    /** Something the session saw while the probe runs (an EvenHub sys-event), so T8 can tell its effects apart. */
+    fun noteSessionEvent(detail: String) {
+        listener.onStep("session $detail", true, elapsed(), null)
     }
 
     fun cancel() {
@@ -152,14 +175,15 @@ internal class TranslateScreenProbe(
         var ok = true
         try {
             outcome = script()
-            ok = outcome == "completed"
+            ok = outcome == "completed" && replyCount > 0
+            if (outcome == "completed" && replyCount == 0) outcome = "completed (no replies)"
         } catch (t: Throwable) {
             CaughtErrors.report("TranslateScreenProbe.run", t)
             ok = false
             outcome = "failed: ${t.message ?: t}"
         } finally {
             try {
-                if (send("close") { TranslateProtocol.close(it) }) await("close", timings.closeWaitMs)
+                exchange("close", timings.closeWaitMs) { TranslateProtocol.close(it) }
             } catch (t: Throwable) {
                 CaughtErrors.report("TranslateScreenProbe.close", t)
                 ok = false
@@ -171,8 +195,7 @@ internal class TranslateScreenProbe(
 
     /** "completed", or why it stopped early. */
     private fun script(): String {
-        if (!send("open") { TranslateProtocol.open(it, source, target) }) return "open write failed"
-        await("open", timings.replyWaitMs)?.let { return it }
+        exchange("open", timings.replyWaitMs) { TranslateProtocol.open(it, source, target) }?.let { return it }
         for ((index, update) in UPDATES.withIndex()) {
             if (cancelled) return "cancelled"
             if (elapsed() + timings.replyWaitMs + timings.closeWaitMs > timings.deadlineMs) return "deadline"
@@ -181,10 +204,27 @@ internal class TranslateScreenProbe(
                 if (!send("heartbeat") { TranslateProtocol.heartbeat(it) }) return "heartbeat write failed"
             }
             val step = "result ${index + 1}/${UPDATES.size} endFlag=${if (update.commit) 1 else 0} speaker=${update.speaker}"
-            if (!send(step) { TranslateProtocol.result(it, update.source, update.translated, update.commit, update.speaker) }) return "result write failed"
-            await(step, timings.replyWaitMs)?.let { return it }
+            exchange(step, timings.replyWaitMs) { TranslateProtocol.result(it, update.source, update.translated, update.commit, update.speaker) }?.let { return it }
         }
         return "completed"
+    }
+
+    /**
+     * send + await; after error 66 waits [Timings.magicRetryMs] and resends with a new magic, up to
+     * [MAGIC_TRIES] times while the deadline allows. Null, or the reason to stop.
+     */
+    private fun exchange(step: String, windowMs: Long, build: (Int) -> ByteArray): String? {
+        var tries = 1
+        while (true) {
+            if (!send(step, build)) return "$step write failed"
+            val stop = await(step, windowMs) ?: return null
+            if (lastError != TranslateProtocol.ERR_MAGIC_DUPLICATE || tries >= MAGIC_TRIES || cancelled ||
+                elapsed() + timings.magicRetryMs + windowMs > timings.deadlineMs) return stop
+            tries++
+            magic = wrapMagic(magic + MAGIC_JUMP)
+            listener.onStep("retry $step", true, elapsed(), "error 66: new magic in ${timings.magicRetryMs}ms (try $tries/$MAGIC_TRIES)")
+            await("retry wait", timings.magicRetryMs, reportSilence = false)?.let { if (lastError != TranslateProtocol.ERR_MAGIC_DUPLICATE) return it }
+        }
     }
 
     /** build gets the package's fresh magicRandom. */
@@ -199,32 +239,43 @@ internal class TranslateScreenProbe(
     /**
      * Reports every package for windowMs; the reason to stop at the first non-zero error code or a
      * NOTIFY CLOSE, null otherwise. A window with no reply is reported but does not stop the run.
+     * A LANG_SWITCH_REQ (the user picked a language on the glasses) is answered with a LANG_SWITCH_RSP.
      */
-    private fun await(step: String, windowMs: Long): String? {
+    private fun await(step: String, windowMs: Long, reportSilence: Boolean = true): String? {
         val until = platform.elapsedRealtimeMs() + windowMs
         var seen = 0
+        lastError = 0
         while (!cancelled) {
             val left = until - platform.elapsedRealtimeMs()
             if (left <= 0) break
             val pb = replies.poll(left) ?: break
             if (pb.isEmpty()) continue
             seen++
+            replyCount++
             val reply = TranslateProtocol.decode(pb)
             val closed = reply.cmd == TranslateProtocol.CMD_NOTIFY && reply.value == TranslateProtocol.CTRL_CLOSE
             listener.onStep("reply after $step", reply.error == 0, elapsed(), reply.toString())
-            if (reply.error != 0) return "error ${reply.error} after $step"
+            if (reply.error != 0) {
+                lastError = reply.error
+                return "error ${reply.error} after $step"
+            }
             if (closed) return "glasses closed the screen after $step"
+            if (reply.cmd == TranslateProtocol.CMD_LANG_SWITCH_REQ && !send("lang switch response") { TranslateProtocol.langSwitchResponse(it) })
+                return "lang switch response write failed"
         }
-        if (seen == 0 && !cancelled) listener.onStep("no reply after $step", false, elapsed(), "${windowMs}ms")
+        if (seen == 0 && !cancelled && reportSilence) listener.onStep("no reply after $step", false, elapsed(), "${windowMs}ms")
         return null
     }
 
     // Fresh per package (a repeat is error 66), within the session's 100-255 magic range.
     private fun nextMagic(): Int {
         val current = magic
-        magic = if (magic >= BleMagicPool.MAX_MAGIC) BleMagicPool.MIN_MAGIC else magic + 1
+        magic = wrapMagic(magic + 1)
         return current
     }
+
+    private fun wrapMagic(value: Int): Int =
+        if (value > BleMagicPool.MAX_MAGIC) BleMagicPool.MIN_MAGIC + (value - BleMagicPool.MAX_MAGIC - 1) else value
 
     private fun elapsed(): Int = (platform.elapsedRealtimeMs() - startedAt).toInt()
 }

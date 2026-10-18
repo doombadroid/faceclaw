@@ -55,6 +55,9 @@ export const FONT_SAMPLES: readonly { label: string; text: string }[] = [
   { label: 'Arabic', text: 'مرحبا بالعالم' },
 ]
 
+/** T7: a caption-length translated line, wrapped the way the captions layer wraps (on spaces). */
+export const WRAP_SAMPLE = { label: 'zh caption', text: '我们明天早上九点在火车站门口见面，然后一起坐地铁去博物馆参观新的摄影展览，中午在附近吃饭。' }
+
 /** One JSON line of Documents/translate-spike.jsonl. */
 export function spikeLine(test: string, step: string, ok: boolean, ms: number, detail: unknown, at = new Date()): string {
   return JSON.stringify({ ts: at.toISOString(), test, step, ok, ms: Math.round(ms), detail: detail ?? null })

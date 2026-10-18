@@ -114,8 +114,10 @@ class GlassesSessionCore(
      * fall through to the normal frame parser exactly as before. Called on the BLE thread.
      */
     @Volatile internal var rawFrameTap: ((ByteArray) -> Unit)? = null
-    /** (sid, tap): every control-characteristic frame of that stock service goes to tap (address, frame) instead of the session. */
+    /** (sid, tap): every well-formed control-characteristic frame of that stock service goes to tap (address, frame) instead of the session. */
     @Volatile internal var stockFrameTap: Pair<Int, (String, ByteArray) -> Unit>? = null
+    /** Sees each EvenHub sys-event type except IMU samples (called under the monitor), while set. */
+    @Volatile internal var sysEventTap: ((Int) -> Unit)? = null
     internal val imuListeners = CopyOnWriteList<FaceclawImuListener>(platform)
     /** A compass subscriber plus the dispatcher it registered from (see addCompassListener). */
     internal class CompassSubscription(
@@ -353,7 +355,7 @@ class GlassesSessionCore(
     }
 
     /** See [stockFrameTap] (the Translate screen spike reads service 0x05); null tap restores the default. */
-    fun setStockFrameTap(sid: Int, tap: ((String, ByteArray) -> Unit)?) {
+    internal fun setStockFrameTap(sid: Int, tap: ((String, ByteArray) -> Unit)?) {
         stockFrameTap = tap?.let { sid to it }
     }
 
@@ -1429,7 +1431,8 @@ class GlassesSessionCore(
             return
         }
         val stockTap = stockFrameTap
-        if (stockTap != null && data.size >= 8 && (data[6].toInt() and 255) == stockTap.first) {
+        if (stockTap != null && data.size >= 10 && data[0] == 0xaa.toByte() && (data[1].toInt() == 0x21 || data[1].toInt() == 0x12) &&
+            (data[6].toInt() and 255) == stockTap.first) {
             monitor.withLock { lastIncomingAtMs = now() }
             stockTap.second(address, data.copyOf())
             return
@@ -1606,6 +1609,7 @@ class GlassesSessionCore(
                         updateSilentModeLocked(false)
                     }
                     if ("sys-event" == decoded.kind) {
+                        if (!pureImuSample) sysEventTap?.invoke(decoded.eventType)
                         if (decoded.eventType == BleProtocol.EVENT_ABNORMAL_EXIT || decoded.eventType == BleProtocol.EVENT_SYSTEM_EXIT) {
                             if (shutdownRequested) {
                                 lastShutdownExitAtMs = now()

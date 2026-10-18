@@ -64,6 +64,11 @@ class TranslateScreenTest {
         val ok = TranslateProtocol.decode(hex("08 a2 01 10 71 3a 00"))
         assertEquals(0, ok.error)
         assertEquals(-1, TranslateProtocol.decode(ByteArray(0)).cmd)
+        // LANG_SWITCH_REQ {9: {1 langKey}} (translate.py); the answer is LANG_SWITCH_RSP {10: {}}.
+        val lang = TranslateProtocol.decode(hex("08 a4 01 10 72 4a 04 0a 02") + "JA".encodeToByteArray())
+        assertEquals(listOf(164, 114, 0), listOf(lang.cmd, lang.magic, lang.error))
+        assertEquals("JA", lang.key)
+        assertEquals("08a501" + "1064" + "5200", TranslateProtocol.langSwitchResponse(100).hex())
     }
 
     @Test
@@ -73,7 +78,7 @@ class TranslateScreenTest {
         assertEquals(TranslateProtocol.heartbeat(100).hex(), BleProtocol.stripTrailingCrc(BleProtocol.parseFrame(frame).pb).hex())
     }
 
-    private val fast = TranslateScreenProbe.Timings(replyWaitMs = 25, heartbeatMs = 60, closeWaitMs = 10, deadlineMs = 5_000)
+    private val fast = TranslateScreenProbe.Timings(replyWaitMs = 25, heartbeatMs = 60, closeWaitMs = 10, deadlineMs = 5_000, magicRetryMs = 5)
 
     /** Runs a probe whose glasses answer each package with reply(sent so far, its magic) (null: silence). */
     private fun run(reply: (List<TranslateProtocol.Reply>, Int) -> ByteArray?): Pair<Recorder, List<TranslateProtocol.Reply>> {
@@ -109,11 +114,46 @@ class TranslateScreenTest {
     @Test
     fun stopsAtTheFirstErrorCodeAndStillCloses() {
         val results = { sent: List<TranslateProtocol.Reply> -> sent.count { it.cmd == TranslateProtocol.CMD_RESULT } }
-        val (recorder, sent) = run { so, magic -> commResp(magic, if (results(so) == 2) TranslateProtocol.ERR_MAGIC_DUPLICATE else 0) }
+        val (recorder, sent) = run { so, magic -> commResp(magic, if (results(so) == 2) 3 else 0) }
         assertEquals(false, recorder.finished!!.first)
-        assertTrue(recorder.finished!!.second!!.startsWith("error 66 after result 2/6"), recorder.finished!!.second)
+        assertTrue(recorder.finished!!.second!!.startsWith("error 3 after result 2/6"), recorder.finished!!.second)
         assertEquals(2, results(sent))
         assertEquals(listOf(TranslateProtocol.CMD_CTRL, TranslateProtocol.CTRL_CLOSE), listOf(sent.last().cmd, sent.last().value))
+    }
+
+    @Test
+    fun aRepeatedMagicIsRetriedWithANewOne() {
+        var refused = 0
+        val (recorder, sent) = run { so, magic ->
+            val dup = so.last().cmd == TranslateProtocol.CMD_RESULT && so.count { it.cmd == TranslateProtocol.CMD_RESULT } == 2 && refused++ == 0
+            commResp(magic, if (dup) TranslateProtocol.ERR_MAGIC_DUPLICATE else 0)
+        }
+        assertEquals(true to "completed", recorder.finished, recorder.steps.joinToString("\n"))
+        val results = sent.filter { it.cmd == TranslateProtocol.CMD_RESULT }
+        assertEquals(TranslateScreenProbe.UPDATES.size + 1, results.size)
+        // The resend jumps 20 past the refused magic's successor, wrapping inside 100-255.
+        val (refusedMagic, resent) = results[1].magic to results[2].magic
+        assertEquals(if (refusedMagic + 21 > 255) refusedMagic + 21 - 156 else refusedMagic + 21, resent)
+        assertTrue(recorder.steps.any { it.startsWith("retry result 2/6") })
+    }
+
+    @Test
+    fun aMagicRefusedFiveTimesStopsTheRun() {
+        val (recorder, sent) = run { so, magic ->
+            commResp(magic, if (so.last().cmd == TranslateProtocol.CMD_CTRL && so.last().value == TranslateProtocol.CTRL_OPEN) TranslateProtocol.ERR_MAGIC_DUPLICATE else 0)
+        }
+        assertEquals(false to "error 66 after open", recorder.finished)
+        assertEquals(5, sent.count { it.cmd == TranslateProtocol.CMD_CTRL && it.value == TranslateProtocol.CTRL_OPEN })
+        assertEquals(TranslateProtocol.CTRL_CLOSE, sent.last().value)
+    }
+
+    @Test
+    fun aLanguagePickedOnTheGlassesIsAnswered() {
+        val langReq = { magic: Int -> TranslateProtocol.pack(TranslateProtocol.CMD_LANG_SWITCH_REQ, magic, BleProtocol.encodeBytesField(1, "JA".encodeToByteArray())) }
+        val (recorder, sent) = run { so, magic -> if (so.size == 2) langReq(magic) else commResp(magic, 0) }
+        assertEquals(true to "completed", recorder.finished)
+        assertTrue(sent.any { it.cmd == TranslateProtocol.CMD_LANG_SWITCH_RSP }, sent.toString())
+        assertTrue(recorder.steps.any { it.contains("key=JA") })
     }
 
     @Test
@@ -126,7 +166,7 @@ class TranslateScreenTest {
     @Test
     fun silenceIsReportedNotFatal() {
         val (recorder, sent) = run { _, _ -> null }
-        assertEquals(true to "completed", recorder.finished)
+        assertEquals(false to "completed (no replies)", recorder.finished)
         assertTrue(recorder.steps.any { it.startsWith("no reply after open|false") })
         assertEquals(listOf(TranslateProtocol.CMD_CTRL, TranslateProtocol.CTRL_CLOSE), listOf(sent.last().cmd, sent.last().value))
     }

@@ -40,7 +40,8 @@ import UIKit
   }
 
   /// Translates linesJson (a JSON array of strings) one line at a time with an installed-languages
-  /// session (kept per pair and strategy, so a second call measures a warm one). done gets
+  /// session (kept per pair and strategy, so a second call measures a warm one; a session that was
+  /// not ready is dropped, so a run after T2 installs the languages gets a new one). done gets
   /// {"ready":Bool,"rows":[{"text","out"|"error","ms"}]}.
   @objc(translateLines:source:target:strategy:completion:)
   public static func translate(_ linesJson: String, source: String, target: String, strategy: Int,
@@ -49,6 +50,7 @@ import UIKit
     Task {
       let session = FaceclawTranslateSpike.session(source, target, strategy)
       let ready = await session.isReady
+      if !ready { FaceclawTranslateSpike.forget(source, target, strategy) }
       var rows: [[String: Any]] = []
       for line in lines {
         let start = DispatchTime.now().uptimeNanoseconds
@@ -88,14 +90,20 @@ import UIKit
     }
   }
 
+  private static func key(_ source: String, _ target: String, _ strategy: Int) -> String { "\(source)>\(target)|\(strategy)" }
+
+  private static func forget(_ source: String, _ target: String, _ strategy: Int) {
+    lock.withLock { _ = sessions.removeValue(forKey: key(source, target, strategy)) }
+  }
+
   private static func session(_ source: String, _ target: String, _ strategy: Int) -> TranslationSession {
     lock.withLock { () -> TranslationSession in
-      let key = "\(source)>\(target)|\(strategy)"
-      if let cached = sessions[key] { return cached }
+      let id = key(source, target, strategy)
+      if let cached = sessions[id] { return cached }
       let from = Locale.Language(identifier: source), to = Locale.Language(identifier: target)
       let made = preferred(strategy).map { TranslationSession(installedSource: from, target: to, preferredStrategy: $0) }
         ?? TranslationSession(installedSource: from, target: to)
-      sessions[key] = made
+      sessions[id] = made
       return made
     }
   }
@@ -129,7 +137,9 @@ import UIKit
     let host = UIHostingController(rootView: view)
     host.isModalInPresentation = true
     state.host = host
-    top.present(host, animated: true)
+    // .translationTask can finish before the sheet is up; a dismiss sent mid-presentation is
+    // ignored, so PrepareState dismisses only once this completion has run.
+    top.present(host, animated: true) { MainActor.assumeIsolated { state.presented() } }
   }
 
   @MainActor private static func topViewController() -> UIViewController? {
@@ -141,17 +151,24 @@ import UIKit
   }
 }
 
-/// Finishes a prepare sheet once: dismisses it and reports to JS.
+/// Reports a prepare sheet to JS once and dismisses it once it is on screen (Cancel always closes it).
 @MainActor private final class PrepareState {
   private var done: ((String?) -> Void)?
+  private var shown = false, closing = false
   weak var host: UIViewController?
 
   init(_ done: @escaping (String?) -> Void) { self.done = done }
 
+  func presented() {
+    shown = true
+    if closing { host?.dismiss(animated: true) }
+  }
+
   func finish(_ error: String?) {
+    closing = true
+    if shown { host?.dismiss(animated: true) }
     guard let report = done else { return }
     done = nil
-    host?.dismiss(animated: true)
     report(error)
   }
 }

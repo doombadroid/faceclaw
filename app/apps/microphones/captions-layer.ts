@@ -122,7 +122,8 @@ export class CaptionsLayer implements Layer {
   }
 }
 
-function wrapWords(font: UiFont, text: string, maxWidth: number): string[] {
+/** Splits on spaces only (exported for the Translate Tests page, T7, to measure CJK lines). */
+export function wrapWords(font: Pick<UiFont, "measureText">, text: string, maxWidth: number): string[] {
   const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let line = "";

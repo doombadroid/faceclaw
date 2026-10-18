@@ -1642,7 +1642,6 @@ declare class FaceclawKitGlassesSessionCore extends FaceclawKitBase implements F
   setRawFrameTapTap(tap: ((p0: FaceclawKitKotlinByteArray) => void) | null): void;
   setRequiredFirmwareRevisionRevision(revision: number): void;
   setScreenBlankedBlanked(blanked: boolean): void;
-  setStockFrameTapSidTap(sid: number, tap: ((p0: string, p1: FaceclawKitKotlinByteArray) => void) | null): void;
   setSurfaceDepthIdDepth(id: string, depth: number): void;
   setSurfaceVisibleIdVisible(id: string, visible: boolean): void;
   setUnderlayDimBelowZOrderFactor256(belowZOrder: number, factor256: number): void;

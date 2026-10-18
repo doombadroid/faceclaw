@@ -140,16 +140,34 @@ class IosGlassesSession internal constructor(
 
                 override fun onFinished(ok: Boolean, detail: String?) {
                     core.setStockFrameTap(TranslateProtocol.SID, null)
+                    core.sysEventTap = null
                     translateProbe = null
                     dispatch_async(dispatch_get_main_queue()) { listener.onFinished(ok, detail) }
                 }
             }
             val probe = TranslateScreenProbe({ pb ->
-                // ponytail: single-frame replies assumed (they are a few bytes); a fragmented one decodes partially.
-                BleProtocol.framePb(pb, TranslateProtocol.SID, BleProtocol.FLAG_REQUEST, seq++ and 0xff, limit).all { core.writeRawPacket("R", it) }
+                // Written outside the scheduler with the probe's own seq, as the ANCS relay does; one
+                // frame per package, so the scheduler's frames can never land between its fragments.
+                val frames = BleProtocol.framePb(pb, TranslateProtocol.SID, BleProtocol.FLAG_REQUEST, seq++ and 0xff, limit)
+                check(frames.size == 1) { "a ${pb.size}-byte 0x05 package needs ${frames.size} frames at write limit $limit" }
+                core.writeRawPacket("R", frames[0])
             }, onMain, source, target)
             translateProbe = probe
-            core.setStockFrameTap(TranslateProtocol.SID) { _, frame -> probe.onFrame(BleProtocol.stripTrailingCrc(BleProtocol.parseFrame(frame).pb)) }
+            // Glasses packages can span frames (header byte 4 = count, 5 = 1-based index); the CRC follows the last.
+            val partial = HashMap<String, ByteArray>()
+            core.setStockFrameTap(TranslateProtocol.SID) { address, frame ->
+                val count = frame[4].toInt() and 255
+                val index = frame[5].toInt() and 255
+                val chunk = BleProtocol.parseFrame(frame).pb
+                val pb = if (index <= 1) chunk else (partial[address] ?: ByteArray(0)) + chunk
+                if (index >= count) {
+                    partial.remove(address)
+                    probe.onFrame(BleProtocol.stripTrailingCrc(pb))
+                } else {
+                    partial[address] = pb
+                }
+            }
+            core.sysEventTap = { type -> probe.noteSessionEvent("EvenHub sys-event type=$type") }
             val thread = NSThread { probe.run() }
             thread.name = "faceclaw-translate-probe"
             thread.start()

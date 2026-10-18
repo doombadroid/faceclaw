@@ -3212,9 +3212,6 @@ __attribute__((swift_name("GlassesSessionCore")))
  */
 - (void)setScreenBlankedBlanked:(BOOL)blanked __attribute__((swift_name("setScreenBlanked(blanked:)")));
 
-/** See [stockFrameTap] (the Translate screen spike reads service 0x05); null tap restores the default. */
-- (void)setStockFrameTapSid:(int32_t)sid tap:(void (^ _Nullable)(NSString *, FaceclawKitKotlinByteArray *))tap __attribute__((swift_name("setStockFrameTap(sid:tap:)")));
-
 /** Stereo depth for a full-screen surface; applies from its next frame. */
 - (void)setSurfaceDepthId:(NSString *)id depth:(int32_t)depth __attribute__((swift_name("setSurfaceDepth(id:depth:)")));
 - (void)setSurfaceVisibleId:(NSString *)id visible:(BOOL)visible __attribute__((swift_name("setSurfaceVisible(id:visible:)")));

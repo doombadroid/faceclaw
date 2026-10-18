@@ -15,8 +15,10 @@ test('every place that sets the minimum iOS says 26.4 (Translation strategies; F
   assert.match(read('App_Resources/iOS/Podfile'), /^platform :ios, '26\.4'$/m);
   if (!BUILD_YML) return;
   const yml = read(BUILD_YML);
-  assert.deepEqual([...yml.matchAll(/IPHONEOS_DEPLOYMENT_TARGET=([\d.]+)/g)].map(m => m[1]), ['26.4']);
-  assert.match(yml, /"minOSVersion": "26\.4"/);
+  // CI builds and lists each checkout at its own build.xcconfig minimum, never a literal.
+  assert.match(yml, /App_Resources\/iOS\/build\.xcconfig/);
+  assert.deepEqual([...yml.matchAll(/IPHONEOS_DEPLOYMENT_TARGET=(\S+)/g)].map(m => m[1]), ['"$MIN_IOS"']);
+  assert.match(yml, /"minOSVersion": os\.environ\["MIN_IOS"\]/);
   // The ObjC loader imports faceclaw-Swift.h: NativeScript names the product after the checkout folder.
   assert.match(yml, /path: faceclaw\s/);
 });

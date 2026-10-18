@@ -11,8 +11,9 @@ import { EvenHubFont } from '../../graphics/evenhub-font'
 import { fontSelectionLabel, getDefaultSmallFont, getUiFontSelection } from '../../graphics/ui-fonts'
 import { shell } from '../../ui/shell/shell'
 import type { Layer, LayerContext } from '../../ui/layers'
+import { wrapWords } from '../../apps/microphones/captions-layer'
 import {
-  CAPTION_LINES, FONT_SAMPLES, LID_CASES, PAIRS, localeCoverage, median, missingGlyphs, nextPair, scoreLanguageId, spikeLine, type LidResult,
+  CAPTION_LINES, FONT_SAMPLES, WRAP_SAMPLE, LID_CASES, PAIRS, localeCoverage, median, missingGlyphs, nextPair, scoreLanguageId, spikeLine, type LidResult,
 } from './translate-spike'
 
 /*
@@ -35,9 +36,8 @@ type Translated = { ready: boolean; rows: { text: string; out?: string; error?: 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 function appendLog(line: string): void {
-  const file = knownFolders.documents().getFile(LOG_NAME)
-  const fail = (error: unknown) => reportError('translate-tests.log', error)
-  file.writeTextSync(file.readTextSync(fail) + line + '\n', fail)
+  // getFile creates the file, which appendTextSync's NSFileHandle needs.
+  knownFolders.documents().getFile(LOG_NAME).appendTextSync(line + '\n', error => reportError('translate-tests.log', error))
 }
 
 function logLineCount(): number {
@@ -67,9 +67,16 @@ const translateLines = (lines: readonly string[], pair: string, strategy: number
 const glassesPhase = () => getRuntime().controller.connectionState?.phase ?? 'disconnected'
 const APP_STATES = ['active', 'inactive', 'background']
 
-/** T7's glasses page: every FONT_SAMPLES line in one face, labelled in the UI font. */
+type SampleFace = {
+  name: string; lineHeight: number; measureText: (text: string) => number; draw: (image: GrayImage, x: number, y: number, text: string) => void
+}
+const SAMPLE_X = 96
+
+/** T7's glasses page: every FONT_SAMPLES line in one face, labelled in the UI font, then WRAP_SAMPLE wrapped as captions wrap. */
 class FontSampleLayer implements Layer {
-  face: { name: string; lineHeight: number; draw: (image: GrayImage, x: number, y: number, text: string) => void } | null = null
+  face: SampleFace | null = null
+  /** The last paint's WRAP_SAMPLE: wrapped lines, the widest one's px and the width it had. */
+  wrap: { lines: number; widestPx: number; maxPx: number } | null = null
 
   paint(ctx: LayerContext): GrayImage {
     const label = getDefaultSmallFont()
@@ -79,8 +86,17 @@ class FontSampleLayer implements Layer {
     let y = 12 + label.lineHeight
     for (const sample of FONT_SAMPLES) {
       image.drawText(label, 12, y, sample.label, 130)
-      this.face?.draw(image, 96, y, sample.text)
+      this.face?.draw(image, SAMPLE_X, y, sample.text)
       y += Math.max(label.lineHeight, this.face?.lineHeight ?? 0) + 6
+    }
+    if (this.face) {
+      image.drawText(label, 12, y, WRAP_SAMPLE.label, 130)
+      const maxPx = width - SAMPLE_X - 12, wrapped = wrapWords(this.face, WRAP_SAMPLE.text, maxPx)
+      this.wrap = { lines: wrapped.length, widestPx: Math.max(...wrapped.map(line => this.face!.measureText(line))), maxPx }
+      for (const line of wrapped) {
+        this.face.draw(image, SAMPLE_X, y, line)
+        y += this.face.lineHeight + 2
+      }
     }
     return image
   }
@@ -89,9 +105,13 @@ class FontSampleLayer implements Layer {
 }
 
 let probeListener: FaceclawKitFaceclawTranslateProbeListener | null = null
+// Module-level, so a test still running behind a closed page (T4 runs 90 s) blocks a second one
+// started from a reopened page; refreshPage is the newest page's.
+let busy: string | null = null
+let refreshPage = () => {}
 
 export function createPage(): Page {
-  let pair = 'es>en', busy: string | null = null
+  let pair = 'es>en'
   const results = new Map<string, string>()
   const output = new Label()
   output.className = 'os-error-stack'; output.textWrap = true
@@ -103,7 +123,7 @@ export function createPage(): Page {
   async function run(test: string, body: (rec: Rec) => Promise<string>): Promise<void> {
     if (busy) { show('Busy', `${busy} is still running.`); return }
     busy = test
-    refresh()
+    refreshPage()
     const started = Date.now()
     const rec: Rec = (step, ok, ms, detail) => appendLog(spikeLine(test, step, ok, ms, detail))
     show(test, 'running…')
@@ -117,7 +137,7 @@ export function createPage(): Page {
       show(test, `FAILED: ${error}`)
     } finally {
       busy = null
-      refresh()
+      refreshPage()
     }
   }
 
@@ -232,11 +252,11 @@ export function createPage(): Page {
   const T7 = async (rec: Rec) => {
     const ui = getDefaultSmallFont(), terminus = getFont('terminus12'), stock = EvenHubFont.get()
     const faces = [
-      { name: `UI small (${fontSelectionLabel(getUiFontSelection())})`, lineHeight: ui.lineHeight, hasGlyph: (cp: number) => ui.hasGlyph(cp),
+      { name: `UI small (${fontSelectionLabel(getUiFontSelection())})`, lineHeight: ui.lineHeight, hasGlyph: (cp: number) => ui.hasGlyph(cp), measureText: (text: string) => ui.measureText(text),
         draw: (image: GrayImage, x: number, y: number, text: string) => image.drawText(ui, x, y, text, 235) },
-      { name: 'Terminus 12 bitmap', lineHeight: terminus.lineHeight, hasGlyph: (cp: number) => terminus.hasGlyph(cp),
+      { name: 'Terminus 12 bitmap', lineHeight: terminus.lineHeight, hasGlyph: (cp: number) => terminus.hasGlyph(cp), measureText: (text: string) => terminus.measureText(text),
         draw: (image: GrayImage, x: number, y: number, text: string) => image.drawText(terminus, x, y, text, 235) },
-      { name: 'G2 stock 20 + Source Han Sans (EvenHub)', lineHeight: stock.lineHeight, hasGlyph: (cp: number) => stock.hasGlyph(cp),
+      { name: 'G2 stock 20 + Source Han Sans (EvenHub)', lineHeight: stock.lineHeight, hasGlyph: (cp: number) => stock.hasGlyph(cp), measureText: (text: string) => stock.measureLine(text),
         draw: (image: GrayImage, x: number, y: number, text: string) => stock.drawText(image, x, y, text, 235) },
     ]
     const lines: string[] = []
@@ -255,8 +275,9 @@ export function createPage(): Page {
         layer.face = face
         window.requestRender()
         show('T7', `On the glasses now: ${face.name} (${T7_HOLD_MS / 1000} s each). Note which lines look right.\n${lines.join('\n')}`)
-        rec(`showing ${face.name}`, true, 0, null)
         await sleep(T7_HOLD_MS)
+        // ok:false when the caption wrap left a line wider than the lens column (no spaces to break at).
+        rec(`showing ${face.name}`, !!layer.wrap && layer.wrap.widestPx <= layer.wrap.maxPx, T7_HOLD_MS, { captionWrap: layer.wrap })
       }
     } finally {
       shell.closeWindow(WINDOW_ID)
@@ -313,6 +334,7 @@ export function createPage(): Page {
       } }),
     ], footer: 'Every step is a JSON line {ts, test, step, ok, ms, detail}; pull the file over USB with afcclient.' }))
   } })
-  if (!output.text) output.text = 'No test run yet.'
+  refreshPage = refresh
+  if (!output.text) output.text = busy ? `${busy} is still running from an earlier visit.` : 'No test run yet.'
   return page
 }
