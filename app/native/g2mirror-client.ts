@@ -597,7 +597,7 @@ function stripAnsi(text: string): string {
 }
 
 function encodeBase64Utf8(text: string): string {
-  if (global.isIOS) return NSString.stringWithString(text).dataUsingEncoding(NSUTF8StringEncoding).base64EncodedStringWithOptions(0 as NSDataBase64EncodingOptions);
+  if (global.isIOS) return NSString.stringWithString(text).dataUsingEncoding(NSUTF8StringEncoding)!.base64EncodedStringWithOptions(0 as NSDataBase64EncodingOptions);
   const bytes = new java.lang.String(text).getBytes("UTF-8");
   return String(android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP));
 }

@@ -16,6 +16,6 @@ export function presentOnTop(controller: UIViewController): boolean {
     if (host.presentedViewController.beingDismissed) { setTimeout(() => presentOnTop(controller), 50); return true }
     host = host.presentedViewController
   }
-  host.presentViewControllerAnimatedCompletion(controller, true, null)
+  host.presentViewControllerAnimatedCompletion(controller, true, null as never) // types-ios drops a nullable block's parens
   return true
 }

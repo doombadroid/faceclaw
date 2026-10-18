@@ -2,6 +2,7 @@ import { Application, ApplicationSettings, Utils } from '@nativescript/core'
 import { APP_NAME } from '../branding'
 import type { AlarmKind, AlarmReliabilityIssue, PhoneAlarmAction } from './alarms'
 import { guardCallback, logJsError } from './callback-errors.ios'
+import { kotlinListener } from './kotlin-listener.ios'
 export type { AlarmKind, AlarmReliabilityIssue, PhoneAlarmAction } from './alarms'
 
 // Local notifications stand in for Android's alarm service. Nothing runs at fire time while
@@ -43,7 +44,7 @@ function post(identifier: string, entry: Entry, sound: boolean, trigger: UNNotif
   // TimeSensitive needs an entitlement a sideloaded build lacks; iOS then treats it as Active.
   content.interruptionLevel = sound ? UNNotificationInterruptionLevel.TimeSensitive : UNNotificationInterruptionLevel.Passive
   if (sound) content.sound = UNNotificationSound.defaultSound
-  center().addNotificationRequestWithCompletionHandler(UNNotificationRequest.requestWithIdentifierContentTrigger(identifier, content, trigger), null)
+  center().addNotificationRequestWithCompletionHandler(UNNotificationRequest.requestWithIdentifierContentTrigger(identifier, content, trigger), null as never) // types-ios drops a nullable block's parens
 }
 function at(ms: number): UNNotificationTrigger {
   if (ms - Date.now() < 1_000) return UNTimeIntervalNotificationTrigger.triggerWithTimeIntervalRepeats(1, false)
@@ -175,27 +176,26 @@ function handleResponse(identifier: string, action: string): void {
   }
 }
 
-@NativeClass()
-class AlarmNotificationDelegate extends NSObject implements UNUserNotificationCenterDelegate {
-  static ObjCProtocols = [UNUserNotificationCenterDelegate]
-  // Bodies under guardCallback (a throw into UIKit ends the app); iOS still gets its completion call.
-  userNotificationCenterWillPresentNotificationWithCompletionHandler(_center: UNUserNotificationCenter, notification: UNNotification, done: (options: UNNotificationPresentationOptions) => void): void {
-    const loud = UNNotificationPresentationOptions.Banner | UNNotificationPresentationOptions.Sound | UNNotificationPresentationOptions.List
-    const options = guardCallback('userNotificationCenterWillPresentNotification', () => notification.request.content.sound ? loud : UNNotificationPresentationOptions.List)
-    done(options ?? loud)
-  }
-  userNotificationCenterDidReceiveNotificationResponseWithCompletionHandler(_center: UNUserNotificationCenter, response: UNNotificationResponse, done: () => void): void {
-    guardCallback('userNotificationCenterDidReceiveNotificationResponse', () => handleResponse(String(response.notification.request.identifier), String(response.actionIdentifier)))
-    done()
-  }
-}
 // UNUserNotificationCenter.delegate is weak: this module keeps the only strong reference.
-let delegate: AlarmNotificationDelegate | null = null
+let delegate: UNUserNotificationCenterDelegate | null = null
 
 /** Install before Application.run, so an action tapped on a cold background launch is not lost. */
 export function installPhoneAlarmDelegate(): void {
   if (delegate) return
-  delegate = AlarmNotificationDelegate.new() as AlarmNotificationDelegate
+  // An inline literal, not a class or a named object: only a fresh literal gets tsc's check against misspelled
+  // optional delegate methods (see kotlinListener). Bodies under guardCallback (a throw into UIKit ends the app);
+  // iOS still gets its completion call.
+  delegate = kotlinListener(UNUserNotificationCenterDelegate, {
+    userNotificationCenterWillPresentNotificationWithCompletionHandler(_center: UNUserNotificationCenter, notification: UNNotification, done: (options: UNNotificationPresentationOptions) => void): void {
+      const loud = UNNotificationPresentationOptions.Banner | UNNotificationPresentationOptions.Sound | UNNotificationPresentationOptions.List
+      const options = guardCallback('userNotificationCenterWillPresentNotification', () => notification.request.content.sound ? loud : UNNotificationPresentationOptions.List)
+      done(options ?? loud)
+    },
+    userNotificationCenterDidReceiveNotificationResponseWithCompletionHandler(_center: UNUserNotificationCenter, response: UNNotificationResponse, done: () => void): void {
+      guardCallback('userNotificationCenterDidReceiveNotificationResponse', () => handleResponse(String(response.notification.request.identifier), String(response.actionIdentifier)))
+      done()
+    },
+  })
   center().delegate = delegate
   // No customDismissAction: a swipe-away must not count as a dismiss. The *OptionNone names are
   // header static consts with no exported symbol, so pass 0 rather than trust the runtime to resolve them.

@@ -21,7 +21,7 @@ export function addAmbientLightListener(listener: (report: AmbientLightReport) =
   const session = native()
   if (!session) return () => {}
   const proxy = kotlinListener(FaceclawKitFaceclawAmbientLightListener, {
-    onAmbientLightBody: (body: any) => {
+    onAmbientLightBody: (body) => {
       const report = decodeAmbientLightReport(fromKotlinBytes(body))
       if (report) listener(report)
     },

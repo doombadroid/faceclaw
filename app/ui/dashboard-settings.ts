@@ -164,7 +164,7 @@ export class ConfigSettingEnum<TValue extends string, TId extends string = strin
     this.disabledPredicate = options.isDisabled ?? (() => false);
     if (options.normalize) {
       this.normalizer = (value: string | null | undefined) => {
-        const normalized = options.normalize(value) as TValue|undefined;
+        const normalized = options.normalize!(value) as TValue|undefined;
         if (normalized === undefined) return this.defaultValue;
         return normalized;
       }

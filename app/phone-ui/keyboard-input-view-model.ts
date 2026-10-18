@@ -32,10 +32,11 @@ export class KeyboardInputViewModel extends Observable {
   onKeyboardInputPrimarySendTap(): void { this.send(0) }
   onKeyboardInputSecondarySendTap(): void { this.send(1) }
   private send(index: number): void {
-    const target = this.session?.targets[index]
-    if (!target) return
-    this.session.setText(this.text)
-    this.session.sendTo(target.id)
+    const session = this.session
+    const target = session?.targets[index]
+    if (!session || !target) return
+    session.setText(this.text)
+    session.sendTo(target.id)
   }
   onKeyboardInputDiscardTap(): void { this.session?.discard() }
 }

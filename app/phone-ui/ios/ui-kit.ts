@@ -68,7 +68,7 @@ export function readableColumn(measured: View, targets: () => View[], max = READ
 export function inheritBarTint(page: Page): void {
   const bar = page.actionBar as unknown as { setColor(navBar: UINavigationBar | null, color: unknown): void }
   const setColor = bar.setColor.bind(bar) as typeof bar.setColor
-  bar.setColor = (navBar, color) => { setColor(navBar, color); if (navBar) navBar.tintColor = null }
+  bar.setColor = (navBar, color) => { setColor(navBar, color); if (navBar) navBar.tintColor = null! } // null_resettable: nil restores the inherited tint
 }
 
 function label(text: string, className: string): Label {
@@ -127,7 +127,7 @@ function baseRow(title: string, options: { tile?: GridLayout; subtitle?: string;
   GridLayout.setColumn(text, 1); grid.addChild(text)
   if (options.onTap && options.enabled !== false) {
     grid.accessibilityRole = 'button'
-    grid.on('tap', () => options.onTap())
+    grid.on('tap', () => options.onTap!())
   }
   return grid
 }

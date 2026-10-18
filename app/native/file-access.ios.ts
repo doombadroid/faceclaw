@@ -19,6 +19,7 @@ export function statPath(path: string): DirectoryEntry | null {
 export function listDirectory(path: string): DirectoryEntry[] | null {
   try {
     const names = fm.contentsOfDirectoryAtPathError(path), entries: DirectoryEntry[] = []
+    if (!names) return null
     for (let i = 0; i < names.count; i++) { const entry = statPath(paths.join(path, names.objectAtIndex(i))); if (entry) entries.push(entry) }
     return entries.sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name))
   } catch { return null }
@@ -44,6 +45,7 @@ export function readTextFile(path: string): string | null {
 export function writeTextToDownloads(filename: string, text: string): string | null {
   const path = paths.join(knownFolders.documents().path, 'Downloads', filename.slice(filename.lastIndexOf('/') + 1))
   const data = NSString.stringWithString(text).dataUsingEncoding(NSUTF8StringEncoding)
+  if (!data) return null
   return writeBinaryFile(path, new Uint8Array(interop.bufferFromData(data))) ? path : null
 }
 export function deletePathRecursively(path: string): void {

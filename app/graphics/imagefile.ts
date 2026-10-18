@@ -2,7 +2,6 @@ import { File, knownFolders } from "@nativescript/core";
 
 import { GrayImage } from "./image";
 
-declare const interop: any;
 
 const UPNG = require("upng-js");
 
@@ -61,7 +60,8 @@ function toArrayBuffer(raw: unknown): ArrayBuffer {
     return out.buffer;
   }
   if (global.isIOS && raw) {
-    return interop.bufferFromData(raw).slice(0);
+    const data = raw as NSData;
+    return interop.bufferFromData(data).slice(0);
   }
   throw new Error(`Unsupported PNG byte source: ${String(raw)}`);
 }

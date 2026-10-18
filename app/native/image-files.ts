@@ -8,7 +8,6 @@ import { toUint8Array } from "../util/array-util";
 
 declare const com: any;
 declare const global: any;
-declare const interop: any;
 
 /** File extensions BitmapFactory can decode (no SVG). */
 const DECODABLE_IMAGE = /\.(png|jpe?g|gif|bmp|webp|heic|heif)$/i;

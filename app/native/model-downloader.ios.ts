@@ -48,7 +48,7 @@ export function startModelDownload(
 
 export function isModelFilePresent(path: string): boolean {
   try {
-    return Number(NSFileManager.defaultManager.attributesOfItemAtPathError(path).objectForKey(NSFileSize)) > 0;
+    return Number(NSFileManager.defaultManager.attributesOfItemAtPathError(path)?.objectForKey(NSFileSize)) > 0;
   } catch {
     return false;
   }

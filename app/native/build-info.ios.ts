@@ -1,7 +1,5 @@
 import type { BuildKind } from './build-info'
 
-declare const NSBundle: any
-declare const NSProcessInfo: any
 
 let cached: BuildKind | null = null
 

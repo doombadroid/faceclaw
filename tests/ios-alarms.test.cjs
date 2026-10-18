@@ -66,6 +66,7 @@ function alarms({ status = 2, alertSetting = 2, timeSensitive = 0, active = true
       },
       '../branding': { APP_NAME: 'OcuSmart' },
       './callback-errors.ios': callbackErrors,
+      './kotlin-listener.ios': { kotlinListener: (_protocol, methods) => methods },
     })[name],
     NativeClass: () => c => c,
     NSObject: class { static new() { return new this(); } },

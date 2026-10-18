@@ -8,7 +8,6 @@
 import { Application, File, Folder, Utils, knownFolders, path as fsPath } from '@nativescript/core'
 import { FACECLAW_VERSION } from '../version'
 
-declare const NSBundle: any
 
 export type ErrorReport = {
   /** Latest occurrence (ISO). */
@@ -309,7 +308,7 @@ function appBuild(): string {
   if (build) return build
   try {
     if (global.isIOS) {
-      const info = NSBundle.mainBundle.infoDictionary
+      const info = NSBundle.mainBundle.infoDictionary!
       build = `${info.objectForKey('CFBundleShortVersionString')} (${info.objectForKey('CFBundleVersion')})`
     } else {
       const context = Utils.android.getApplicationContext()

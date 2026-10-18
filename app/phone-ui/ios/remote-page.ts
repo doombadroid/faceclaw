@@ -222,7 +222,7 @@ export function createRemotePage(): Page {
     releaseMirror ??= runtime.acquireMirror()
     if (!keyboardObservers.length) keyboardObservers = [
       observe(UIKeyboardWillChangeFrameNotification, notification => {
-        root.paddingBottom = keyboardInset(notification.userInfo.objectForKey(UIKeyboardFrameEndUserInfoKey).CGRectValue)
+        root.paddingBottom = keyboardInset(notification.userInfo!.objectForKey(UIKeyboardFrameEndUserInfoKey).CGRectValue)
       }),
       observe(UIKeyboardWillHideNotification, () => { root.paddingBottom = 0 }),
     ]

@@ -13,20 +13,26 @@ import { toData } from "./kotlin-data";
 import { kotlinListener } from "./kotlin-listener.ios";
 import { asrModelDir, isAsrModelReady, isAsrModelWarm } from "./asr-model";
 import { sherpaLoader } from "./onboard-stt.ios";
+import type { FaceclawCommunicatorBridge } from "./faceclaw-communicator.ios";
 
 export type { CaptionCallbacks, DiarizerCallbacks } from "./mic-native";
 
 
-/** Android method name -> the Kotlin export's ObjC-derived name (tsc checks it is one of native's members).
- * The result has mic-native.ts's untyped Android-shaped API, hence any. */
-function adapt<N extends object>(native: N, names: Record<string, Extract<keyof N, string>>): any {
+/** A method (not a property, not NSObject's) of N. */
+type NativeMethod<N> = Exclude<{ [K in keyof N]-?: N[K] extends (...args: never[]) => unknown ? K : never }[keyof N], keyof NSObjectProtocol> & string;
+
+/** Android method name -> the Kotlin export's ObjC-derived name (tsc checks it is one of native's methods).
+ * The result has mic-native.ts's untyped Android-shaped API, hence any.
+ * ponytail: arity and argument types are unchecked here; shared callers import mic-native.ts (Android, any). A typed
+ * cross-platform store interface in mic-native.ts would check them on both platforms. */
+function adapt<N extends object>(native: N, names: Record<string, NativeMethod<N>>): any {
   const out: Record<string, (...args: unknown[]) => unknown> = {};
   const methods = native as unknown as Record<string, (...args: unknown[]) => unknown>; // each name was checked against N above
   for (const [name, selector] of Object.entries(names)) out[name] = (...args: unknown[]) => methods[selector](...args);
   return out;
 }
 
-const STORE_METHODS: Record<string, Extract<keyof FaceclawKitIosConversationStore, string>> = {
+const STORE_METHODS: Record<string, NativeMethod<FaceclawKitIosConversationStore>> = {
   startSession: "startSessionStartedAtMsTitle",
   endSession: "endSessionSessionIdEndedAtMsAudioPathAudioCodecAvgSentiment",
   setSessionAudio: "setSessionAudioSessionIdAudioPathAudioCodec",
@@ -87,7 +93,7 @@ export function createCaptionEngine(): any {
 
 export function createCaptionListener(callbacks: CaptionCallbacks): any {
   return kotlinListener(FaceclawKitFaceclawCaptionEngineListener, {
-    onUtteranceTextEmbeddingStartMsEndMsPeakRms: (text: string, embedding: unknown, startMs: number, endMs: number, peakRms: number) =>
+    onUtteranceTextEmbeddingStartMsEndMsPeakRms: (text, embedding, startMs: number, endMs: number, peakRms: number) =>
       callbacks.onUtterance(String(text ?? ""), embedding ?? null, Number(startMs), Number(endMs), Number(peakRms)),
     onSpeechStartStartMs: (startMs: number) => callbacks.onSpeechStart(Number(startMs)),
     onStatusStatus: (status: string) => callbacks.onStatus(String(status ?? "")),
@@ -109,9 +115,9 @@ export function prepareCaptions(): void {
 }
 
 /** A caption's voice-print (a KotlinFloatArray) as floats. */
-export function embeddingToFloat32(embedding: any): Float32Array {
+export function embeddingToFloat32(embedding: FaceclawKitKotlinFloatArray | null): Float32Array {
   const out = new Float32Array(Number(embedding?.size ?? 0));
-  for (let i = 0; i < out.length; i++) out[i] = Number(embedding.getIndex(i));
+  for (let i = 0; i < out.length; i++) out[i] = Number(embedding!.getIndex(i));
   return out;
 }
 
@@ -121,11 +127,11 @@ export function createForwardingListener(handler: (packet: Uint8Array, arm: stri
 }
 
 /** False before Connect or while the voice mic (STT or the raw tap) holds the capture slot. */
-export function startForwarding(communicator: any, listener: (packet: Uint8Array, arm: string) => void): boolean {
+export function startForwarding(communicator: FaceclawCommunicatorBridge, listener: (packet: Uint8Array, arm: string) => void): boolean {
   return communicator.startAudioForwarding((packet: Uint8Array, arm: string) => listener(packet, arm));
 }
 
-export function stopForwarding(communicator: any): void {
+export function stopForwarding(communicator: FaceclawCommunicatorBridge | null): void {
   communicator?.stopAudioForwarding();
 }
 

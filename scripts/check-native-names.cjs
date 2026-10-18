@@ -17,7 +17,10 @@
  *     - a class with `static ObjCProtocols = [P]` must also `implements P`: NativeScript's ClassBuilder
  *       silently skips a misnamed protocol method, and only `implements` makes tsc look;
  *     - no `NSObject.extend(..., { protocols })` outside kotlinListener, for the same reason;
- *     - no local `declare const Faceclaw...`: it would shadow the generated type with an untyped one.
+ *     - no local `declare const Faceclaw...` (or an SDK name such as NSBundle): it would shadow the type with an untyped
+ *       one; no `global.Faceclaw...`, which is `any` for the same reason;
+ *     - ObjCProtocols only for Faceclaw protocols (every method required, so `implements` checks them): an SDK
+ *       delegate's methods are optional, so it goes through kotlinListener, whose literal tsc checks for stray names.
  *
  * Usage: node scripts/check-native-names.cjs [--kotlin-header path]   check (exit 1 on any error)
  *        node scripts/check-native-names.cjs --write                    regenerate native/faceclaw-native.ts
@@ -108,7 +111,7 @@ function parseProperty(decl) {
   const type = block ? rest.replace(block[0], block[0].replace(/\w+\s*\)$/, ')')) : rest.replace(/\w+\s*$/, '').trim();
   const getter = attrs.map(a => a.match(/^getter\s*=\s*(\w+)$/)).find(Boolean);
   return { name, type, getter: getter && getter[1], readonly: attrs.includes('readonly'), isClass: attrs.includes('class'),
-    nullable: attrs.includes('nullable') };
+    nullable: attrs.includes('nullable'), nonnull: attrs.includes('nonnull') };
 }
 
 function emptyType(kind, name) {
@@ -120,9 +123,12 @@ const typeParams = angle => (angle || '').slice(1, -1).split(',').map(s => s.rep
 
 function parseHeader(text, model) {
   const lines = stripComments(text).split('\n');
-  let current = null, required = true, pending = '';
+  // Outside NS_ASSUME_NONNULL_BEGIN/END an unannotated pointer is null_unspecified: native code may pass or take nil.
+  let current = null, required = true, pending = '', assumeNonnull = false;
   for (const raw of lines) {
     const line = raw.trim();
+    if (/^NS_ASSUME_NONNULL_BEGIN\b/.test(line)) { assumeNonnull = true; continue; }
+    if (/^NS_ASSUME_NONNULL_END\b/.test(line)) { assumeNonnull = false; continue; }
     if (!current) {
       // `@interface Name<Generics> (Category) : Super<Generics> <Protocols>` / `@protocol Name <Protocols>`.
       const head = line.match(/^@(interface|protocol)\s+(\w+)\s*(<[^>]*>)?\s*(?:\(\s*\w*\s*\))?\s*(?::\s*(\w+)(<[^>]*>)?)?\s*(?:<([^>]*)>)?/);
@@ -152,7 +158,7 @@ function parseHeader(text, model) {
       const prop = parseProperty(decl);
       if (!prop.name) continue;
       const entry = { selector: prop.name, ret: prop.type, property: true, name: prop.name, isStatic: prop.isClass,
-        readonly: prop.readonly, nullable: prop.nullable, optional, params: [] };
+        readonly: prop.readonly, nullable: prop.nullable, optional, params: [], unspecified: !assumeNonnull && !prop.nonnull };
       current.members.push(entry);
       const table = prop.isClass ? current.statics : current.instance;
       table.set(prop.name, entry);
@@ -163,7 +169,7 @@ function parseHeader(text, model) {
     const isStatic = decl.startsWith('+');
     const { selector, ret, params } = parseMethod(decl);
     const name = jsNameOf(selector);
-    const entry = { selector, ret, params, name, isStatic, optional, unavailable };
+    const entry = { selector, ret, params, name, isStatic, optional, unavailable, unspecified: !assumeNonnull };
     current.members.push(entry);
     if (unavailable) { (isStatic ? current.unavailableStatics : current.unavailable).add(name); continue; }
     (isStatic ? current.statics : current.instance).set(name, entry);
@@ -175,18 +181,29 @@ function parseHeader(text, model) {
 /** @objc(Name) classes and their @objc(selector:) members in a Swift file. */
 function parseSwift(text, model, file) {
   const clean = stripComments(text);
-  let current = null;
+  // Every type body, so that an @objc member belongs to the innermost type around it.
+  const bodies = [];
+  for (const t of clean.matchAll(/\b(?:class|struct|enum|extension|actor|protocol)\s+(\w+)(?<!\b(?:func|var|let|init|override|static|final|public|open|private|fileprivate|internal))\b[^{;]*\{/g)) {
+    const open = t.index + t[0].length - 1;
+    bodies.push({ name: t[1], from: open, to: group(clean, open, '{', '}')[1], type: null });
+  }
   const re = /@objc(?:\(([^)]*)\))?\s*((?:public|open|final|static|class|override|@\w+|\s)*)\s*(class|func|var|let|init)\b\s*(\w*)/g;
-  for (const m of clean.matchAll(re)) {
+  const matches = [...clean.matchAll(re)];
+  const objcClass = m => m[3] === 'class' && !/\bstatic\b/.test(m[2]) && !/func/.test(m[2]);
+  for (const m of matches.filter(objcClass)) {
+    const name = m[1] || m[4];
+    const body = bodies.find(b => b.from > m.index && b.name === m[4]);
+    if (!body) throw new Error(`${file}: no body for @objc class ${name}`);
+    body.type = model.get(name) || emptyType('interface', name);
+    body.type.superclass = 'NSObject';
+    model.set(name, body.type);
+  }
+  for (const m of matches.filter(m => !objcClass(m))) {
     const [, explicit, modifiers, keyword, ident] = m;
-    if (keyword === 'class' && !/\bstatic\b/.test(modifiers) && !/func/.test(modifiers)) {
-      const name = explicit || ident;
-      current = model.get(name) || emptyType('interface', name);
-      current.superclass = 'NSObject';
-      model.set(name, current);
-      continue;
-    }
-    if (!current) continue;
+    const inner = bodies.filter(b => b.from < m.index && m.index < b.to).sort((a, b) => b.from - a.from)[0];
+    // An extension of an @objc class adds to it.
+    const current = inner && (inner.type || bodies.find(b => b.type && b.name === inner.name)?.type);
+    if (!current) throw new Error(`${file}: @objc ${keyword} ${ident} is not in an @objc class body (check-native-names.cjs cannot type it)`);
     const where = `${file}: ${current.name}.${ident || keyword}`;
     if (!explicit) throw new Error(`${where}: give it an explicit @objc(selector:) so its JS name is fixed`);
     if (keyword !== 'func') throw new Error(`${where}: only @objc funcs are typed (add var/let/init support to check-native-names.cjs)`);
@@ -211,9 +228,15 @@ function loadModel(kotlinHeader) {
   const model = new Map();
   const src = path.join(ROOT, 'App_Resources/iOS/src');
   if (kotlinHeader) parseHeader(fs.readFileSync(kotlinHeader, 'utf8'), model);
+  // NativeScript generates metadata only for the module map's headers: a .h only a .m imports is no JS global.
+  const modulemap = fs.readFileSync(path.join(src, 'module.modulemap'), 'utf8');
+  for (const [, file] of [...stripComments(modulemap).matchAll(/\bheader\s+"([^"]+)"/g)].sort((a, b) => (a[1] < b[1] ? -1 : 1))) {
+    const full = path.join(src, file);
+    if (!fs.existsSync(full)) throw new Error(`App_Resources/iOS/src/module.modulemap lists ${file}, which does not exist`);
+    parseHeader(fs.readFileSync(full, 'utf8'), model);
+  }
   for (const file of fs.readdirSync(src).sort()) {
     const full = path.join(src, file);
-    if (file.endsWith('.h')) parseHeader(fs.readFileSync(full, 'utf8'), model);
     if (file.endsWith('.swift')) parseSwift(fs.readFileSync(full, 'utf8'), model, path.relative(ROOT, full));
   }
   // Conformances a class extension in a .m declares (`@interface FaceclawSqlite () <FaceclawKitSqlPort>`): the ObjC
@@ -240,24 +263,29 @@ const RESERVED = new Set(['break', 'case', 'catch', 'class', 'const', 'continue'
   'switch', 'this', 'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with']);
 const NULLABILITY = /\b(_Nullable_result|_Nullable|_Nonnull|_Null_unspecified|nullable|nonnull|null_unspecified)\b/g;
 
-/** Kotlin's boxed numbers subclass NSNumber, which NativeScript marshals to and from JS numbers (as
- * @nativescript/types-ios types NSNumber), and Kotlin/Native accepts any NSNumber for them. */
+/** The JS type native code hands out for an NSNumber or one of Kotlin's boxed numbers (FaceclawKitInt ...,
+ * NSNumber subclasses): NativeScript converts NSNumber to a JS number, as @nativescript/types-ios types it.
+ * A KotlinBoolean is no CFBoolean, so it may arrive as 1/0. Where JS supplies one (see baseType) it is the class. */
 function boxedPrimitive(model, name) {
   for (let type = name, seen = 0; type && seen < 10; type = model.get(type)?.superclass, seen++) {
-    if (type === 'FaceclawKitBoolean') return 'boolean';
+    if (type === 'FaceclawKitBoolean') return 'boolean | number';
     if (type === 'FaceclawKitNumber' || type === 'NSNumber') return 'number';
   }
   return null;
 }
 
-/** The TypeScript type of an ObjC type. ctx: { model, self (the class's TS type), instance, generics }. */
+const flip = ctx => ({ ...ctx, dir: ctx.dir === 'in' ? 'out' : 'in' });
+
+/** The TypeScript type of an ObjC type. ctx: { model, self (the class's TS type), instance, generics, dir ('in': JS
+ * supplies the value, 'out': native code does), unspecified (outside NS_ASSUME_NONNULL: a bare pointer may be nil) }. */
 function tsType(raw, ctx) {
   let type = raw.trim();
   if (type.includes('(^')) {
     const open = type.indexOf('(^');
     return blockDeclarator(tsType(type.slice(0, open), ctx), type.slice(open), ctx);
   }
-  const nullable = /\b(_Nullable|_Nullable_result|nullable)\b/.test(type);
+  const nullable = /\b(_Nullable|_Nullable_result|nullable)\b/.test(type) ||
+    (ctx.unspecified && /\*\s*(const\s*)?$/.test(type) && !/\b(_Nonnull|nonnull)\b/.test(type));
   type = type.replace(NULLABILITY, ' ').replace(/\b(const|__kindof|__strong|__weak|__unsafe_unretained|__autoreleasing)\b/g, ' ').replace(/\s+/g, ' ').trim();
   const base = baseType(type, ctx, raw);
   return nullable && base !== 'any' ? `${base} | null` : base;
@@ -279,9 +307,13 @@ function baseType(type, ctx, raw) {
   if (!ptr) throw new Error(`no TypeScript type for the ObjC type "${raw}" (add it to check-native-names.cjs)`);
   const [, name, angle] = ptr;
   if (name === 'NSString') return 'string';
+  // JS cannot supply a Kotlin boxed number: a JS number arrives as [NSNumber numberWithDouble:], which Kotlin/Native
+  // boxes by its objCType (a Double), not as the Int/Long the parameter wants. The class (which nothing in JS can
+  // make) keeps such a call from compiling until someone verifies a way to pass one.
   const boxed = boxedPrimitive(ctx.model, name);
-  if (boxed) return boxed;
-  const args = angle ? splitTop(angle.slice(1, -1)).map(arg => tsType(arg, ctx)) : [];
+  if (boxed) return ctx.dir === 'in' && name !== 'NSNumber' ? name : boxed;
+  // A collection never holds nil, whatever the header's nullability.
+  const args = angle ? splitTop(angle.slice(1, -1)).map(arg => tsType(arg, { ...ctx, unspecified: false })) : [];
   const arity = ARITY[name] ?? ctx.model.get(name)?.generics.length ?? 0;
   while (args.length < arity) args.push('any'); // an unparameterized ObjC collection holds ids
   return args.length ? `${name}<${args.join(', ')}>` : name;
@@ -294,9 +326,9 @@ function blockDeclarator(ret, decl, ctx) {
   if (!rest.startsWith('(')) throw new Error(`unparsed block type: ${decl}`);
   const [args, argsEnd] = group(rest, 0);
   if (rest.slice(argsEnd).trim()) throw new Error(`unparsed block type: ${decl}`);
-  const fn = `(${blockParams(args, ctx)}) => ${ret}`;
+  const fn = `(${blockParams(args, flip(ctx))}) => ${ret}`; // whoever calls the block supplies its arguments
   let core = inner.trim().replace(/^\^/, '').trim();
-  const nullable = /\b(_Nullable|nullable)\b/.test(core);
+  const nullable = /\b(_Nullable|nullable)\b/.test(core) || (ctx.unspecified && !/\b(_Nonnull|nonnull)\b/.test(core));
   core = core.replace(NULLABILITY, '').trim();
   if (core.startsWith('(')) return blockDeclarator(`(${fn})`, core, ctx);
   return nullable ? `(${fn}) | null` : fn;
@@ -384,18 +416,25 @@ function memberLines(entries, ctx, indent) {
   for (const entry of entries) {
     const key = `${entry.isStatic}:${entry.name}`;
     if (!entry.property && properties.has(key)) continue; // a property and a same-named method: NativeScript exposes the property
-    if (!entry.isStatic && !entry.property && ctx.kind === 'interface' && NSOBJECT_PROPERTIES.has(entry.name)) continue;
+    if (!entry.isStatic && !entry.property && NSOBJECT_PROPERTIES.has(entry.name)) continue;
     if (entry.unavailable && !['alloc', 'new', 'init'].includes(entry.name)) continue; // never called from JS; alloc/new/init are
     const erased = entry.isStatic && !ctx.genericStatics;
-    const local = { ...ctx, instance: !entry.isStatic, generics: erased ? [] : ctx.generics, erased: erased ? ctx.generics : [] };
+    // JS calls a class's methods (it supplies the arguments) and implements a protocol's (native code does).
+    const implemented = ctx.kind === 'protocol';
+    const local = { ...ctx, instance: !entry.isStatic, generics: erased ? [] : ctx.generics, erased: erased ? ctx.generics : [],
+      unspecified: entry.unspecified, dir: implemented ? 'in' : 'out' };
+    const args = flip(local);
+    const supplied = type => (args.dir === 'in' ? input(type) : type);
     let line;
     if (entry.property) {
-      const type = tsType(entry.ret, local) + (entry.nullable ? ' | null' : '');
+      const orNull = type => (entry.nullable && !type.endsWith(' | null') ? `${type} | null` : type);
+      const type = orNull(tsType(entry.ret, local));
+      const set = implemented ? type : supplied(orNull(tsType(entry.ret, args)));
       const prefix = `${entry.isStatic ? 'static ' : ''}`;
-      if (!entry.readonly && !entry.optional && input(type) !== type) line = `${prefix}get ${entry.name}(): ${type}; ${prefix}set ${entry.name}(value: ${input(type)});`;
+      if (!entry.readonly && !entry.optional && set !== type) line = `${prefix}get ${entry.name}(): ${type}; ${prefix}set ${entry.name}(value: ${set});`;
       else line = `${prefix}${entry.readonly ? 'readonly ' : ''}${entry.name}${entry.optional ? '?' : ''}: ${type};`;
     } else {
-      const params = entry.params.map(p => `${paramName(p.name)}: ${entry.swiftRet ? swiftType(p.swift, local) : input(tsType(p.type, local))}`);
+      const params = entry.params.map(p => `${paramName(p.name)}: ${entry.swiftRet ? swiftType(p.swift, args) : supplied(tsType(p.type, args))}`);
       if (entry.unavailable) params.unshift('this: never'); // unavailable in ObjC: calling it is a compile error
       const ret = entry.swiftRet ? swiftType(entry.swiftRet, local) : tsType(entry.ret || 'id', local);
       let generics = '';
@@ -410,6 +449,8 @@ function memberLines(entries, ctx, indent) {
 }
 
 const isFaceclaw = name => /^Faceclaw/.test(name);
+// Names native/faceclaw-native.ts or @nativescript/types-ios declare; a local `declare const X: any` untypes them.
+const isTypedGlobal = name => isFaceclaw(name) || name === 'interop' || /^(NS|UI|CL|AV|UN|CB|WK|CG|CF|CA|EK|SF)[A-Z]/.test(name);
 
 /** native/faceclaw-native.ts for a model. Types sort by name; members keep header order. */
 function generate(model) {
@@ -417,15 +458,19 @@ function generate(model) {
     '// Generated by scripts/check-native-names.cjs from native/kotlin/FaceclawKit.h.snapshot, App_Resources/iOS/src/*.h',
     '// and the @objc members of App_Resources/iOS/src/*.swift. Do not edit: run `node scripts/check-native-names.cjs --write`',
     '// (`npm run kotlin-header` does it after regenerating the snapshot). A .ts, not a .d.ts, so that tsc checks it.',
-    '// Protocols outside these headers (NSCopying, WebKit delegates) are left off `implements`. FaceclawKitNumber and its',
-    '// subclasses (Kotlin\'s boxed numbers) are not declared: NativeScript marshals NSNumber to JS numbers and booleans, so',
-    '// they are typed number / boolean where they appear.',
+    '// Protocols outside these headers (NSCopying, WebKit delegates) are left off `implements`. Kotlin\'s boxed numbers',
+    '// (FaceclawKitNumber and its subclasses) are number where native code hands them out (NativeScript converts NSNumber)',
+    '// and their memberless classes where JS would supply one, which nothing in JS can make (see baseType).',
     '/* eslint-disable */',
     '',
   ];
   const types = [...model.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const type of types) {
-    if (boxedPrimitive(model, type.name)) continue;
+    if (boxedPrimitive(model, type.name)) {
+      // The brand keeps FaceclawKitInt and FaceclawKitLong (otherwise structurally equal) apart.
+      out.push(`declare class ${type.name} extends ${type.superclass} { private readonly _${type.name}: unknown }`, '');
+      continue;
+    }
     const generics = type.generics;
     const typeArgs = generics.length ? `<${generics.join(', ')}>` : '';
     // A class object has no element type (ObjC generics are erased), so its class methods return X<any>,
@@ -434,8 +479,10 @@ function generate(model) {
     const self = `${type.name}${generics.length && !genericStatics ? `<${generics.map(() => 'any').join(', ')}>` : typeArgs}`;
     const ctx = { model, self, generics, genericStatics, kind: type.kind };
     if (type.kind === 'protocol') {
+      // Every protocol object is an NSObject: without NSObjectProtocol a plain JS literal (which NativeScript passes
+      // as an NSDictionary) would type-check where Kotlin takes the protocol.
       const parents = type.supers.filter(name => model.get(name)?.kind === 'protocol');
-      out.push(`interface ${type.name}${parents.length ? ` extends ${parents.join(', ')}` : ''} {`);
+      out.push(`interface ${type.name} extends ${parents.length ? parents.join(', ') : 'NSObjectProtocol'} {`);
       out.push(...memberLines(type.members.filter(e => !e.isStatic), ctx, '  '));
       out.push('}', `declare var ${type.name}: { prototype: ${type.name} };`, '');
       continue;
@@ -487,8 +534,9 @@ function checkFile(file, report) {
         node.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword)) {
       const names = ts.isVariableStatement(node) ? node.declarationList.declarations.map(d => d.name) : [node.name];
       for (const name of names) {
-        if (name && ts.isIdentifier(name) && isFaceclaw(name.text)) {
-          report(where(node), `\`declare ${name.text}\` shadows its generated type in native/faceclaw-native.ts (and turns the native surface back to untyped): delete it`);
+        if (name && ts.isIdentifier(name) && isTypedGlobal(name.text)) {
+          const from = isFaceclaw(name.text) ? 'its generated type in native/faceclaw-native.ts' : 'its @nativescript/types-ios type';
+          report(where(node), `\`declare ${name.text}\` shadows ${from} (and turns the native surface back to untyped): delete it`);
         }
       }
     }
@@ -500,12 +548,21 @@ function checkFile(file, report) {
           .flatMap(h => h.types.map(t => t.expression.getText(source))));
         for (const element of member.initializer.elements) {
           const name = element.getText(source);
-          if (!implemented.has(name)) {
+          if (!isFaceclaw(name)) {
+            // tsc checks a class's required methods only; an SDK delegate's are optional, so a misspelled one compiles.
+            report(where(element), `class ${node.name ? node.name.text : '(anonymous)'} lists ${name} in ObjCProtocols: a misspelled optional ` +
+              'method compiles and NativeScript silently skips it. Use kotlinListener(Protocol, { ...inline literal })');
+          } else if (!implemented.has(name)) {
             report(where(element), `class ${node.name ? node.name.text : '(anonymous)'} lists ${name} in ObjCProtocols without \`implements ${name}\`: ` +
               'tsc cannot check its methods, and NativeScript silently skips a misnamed one ("unrecognized selector" when native code calls it)');
           }
         }
       }
+    }
+    // `global.FaceclawX` is `any` (`declare const global: any`): use the generated global.
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && ['global', 'globalThis'].includes(node.expression.text) &&
+        isTypedGlobal(node.name.text)) {
+      report(where(node), `\`${node.getText(source)}\` bypasses the declared type of ${node.name.text}: write \`${node.name.text}\``);
     }
     if (!helper && ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'extend' &&
         node.arguments.some(arg => ts.isObjectLiteralExpression(arg) && arg.properties.some(p => p.name && p.name.getText(source) === 'protocols'))) {
@@ -559,7 +616,7 @@ function write() {
   fs.writeFileSync(TYPES, generated());
 }
 
-module.exports = { run, parseHeader, jsNameOf, parseMethod, kotlinSourcesHash, generate, generated, loadModel, write, TYPES };
+module.exports = { run, parseHeader, parseSwift, jsNameOf, parseMethod, kotlinSourcesHash, generate, generated, loadModel, write, TYPES };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

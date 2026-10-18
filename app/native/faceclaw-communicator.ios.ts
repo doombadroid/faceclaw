@@ -552,8 +552,9 @@ export class FaceclawCommunicatorBridge {
 
   /** Capture the current composite into the active recording; no-op when idle. */
   recordScreenFrame(): void {
-    const frame = this.recorder && this.communicator.previewComposite();
-    if (frame) this.recorder.addGrayWidthHeightTimestampMs(frame.pixels, frame.width, frame.height, Date.now());
+    const recorder = this.recorder;
+    const frame = recorder && this.communicator.previewComposite();
+    if (recorder && frame) recorder.addGrayWidthHeightTimestampMs(frame.pixels, frame.width, frame.height, Date.now());
   }
 
   /** Finish the recording and save the GIF under Documents; returns the path (empty if no frames). */
@@ -773,7 +774,7 @@ export class FaceclawCommunicatorBridge {
   /** CFW mic_control field-104 status records (raw 21-byte bodies) per temple. */
   addMicStatusListener(listener: (body: Uint8Array, arm: string) => void): () => void {
     const proxy = kotlinListener(FaceclawKitFaceclawMicStatusListener, {
-      onMicStatusBodyArm: (body: any, arm: string) => listener(fromKotlinBytes(body), String(arm ?? "")),
+      onMicStatusBodyArm: (body, arm) => listener(fromKotlinBytes(body), String(arm ?? "")),
     });
     this.communicator.addMicStatusListenerListener(proxy);
     return () => { this.communicator.removeMicStatusListenerListener(proxy); };

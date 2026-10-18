@@ -133,7 +133,8 @@ function guarded(fn, siblings = new Set()) {
 function referencedNames() {
   const sources = [...walk(path.join(ROOT, 'app'), n => n.endsWith('.ts')), ...walk(path.join(ROOT, 'App_Resources/iOS/src'), n => /\.(m|h|swift)$/.test(n))];
   const names = new Set();
-  for (const file of sources) for (const m of fs.readFileSync(file, 'utf8').matchAll(/FaceclawKit(\w+)/g)) names.add(m[1]);
+  // FaceclawKitKotlin* are Kotlin/Native's stdlib exports (KotlinByteArray, KotlinUnit), not classes in these sources.
+  for (const file of sources) for (const m of fs.readFileSync(file, 'utf8').matchAll(/FaceclawKit(?!Kotlin[A-Z])(\w+)/g)) names.add(m[1]);
   return names;
 }
 

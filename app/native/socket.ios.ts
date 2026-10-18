@@ -4,7 +4,7 @@ export function openSocket(url: string, listener: SocketListener, header?: Socke
   let ended = false
   const close = () => { if (ended) return; ended = true; clearInterval(timer); native.close() }
   const timer = setInterval(() => {
-    for (const event of JSON.parse(native.takeEvents())) {
+    for (const event of JSON.parse(native.takeEvents() ?? '[]')) {
       if (ended) break
       if (event.kind === 'open') listener.onOpen()
       else if (event.kind === 'text') listener.onTextMessage(event.text)

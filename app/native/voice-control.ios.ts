@@ -168,7 +168,7 @@ export class IosVoiceControlBridge {
   stopContinuousCapture(): void {
     this.suspended.delete('continuous')
     if (!this.holders.delete('continuous')) return
-    if (this.holders.size) { this.native.continuous = false; return }
+    if (this.holders.size) { this.native!.continuous = false; return } // a holder keeps native alive
     this.teardown()
   }
   hasSuspendedCapture(): boolean { return this.suspended.size > 0 }
@@ -184,7 +184,7 @@ export class IosVoiceControlBridge {
     // STT preempts the raw tap; a glasses capture's own enable takes the mic over.
     this.endRawTap(!session)
     // Transcripts already reach every listener, so a second holder just joins.
-    if (this.capturing && this.holders.size) { this.holders.add(holder); this.native.continuous = this.holders.has('continuous'); return }
+    if (this.capturing && this.holders.size) { this.holders.add(holder); this.native!.continuous = this.holders.has('continuous'); return }
     this.teardown()
     this.holders.add(holder)
     const generation = this.generation
@@ -198,7 +198,7 @@ export class IosVoiceControlBridge {
         if (generation !== this.generation || !this.capturing) return
         this.packets++
         const copy = new Uint8Array(packet)
-        this.native.acceptPacket(NSData.dataWithBytesLength(interop.handleof(copy.buffer), copy.byteLength))
+        this.native!.acceptPacket(NSData.dataWithBytesLength(interop.handleof(copy.buffer), copy.byteLength))
       })
       if (generation !== this.generation || !this.capturing) return
       log(`Voice: glasses microphone enabled; using ${this.recognition} recognition`)

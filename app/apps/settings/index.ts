@@ -38,7 +38,8 @@ const settingsApp: AppDefinition = {
       ctx.setTextEditorHost(app);
       return app.inProcess;
     });
-    if (params?.section) activeSettingsApp?.focusSection(params.section);
+    // The launch callback set it; tsc still narrows it to the null of the check above.
+    if (params?.section) (activeSettingsApp as SettingsAppWindow | null)?.focusSection(params.section);
   },
 };
 

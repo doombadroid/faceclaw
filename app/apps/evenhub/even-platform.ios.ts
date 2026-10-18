@@ -1,7 +1,9 @@
 import { getStringSetting, setStringSetting } from "../../native/settings-store";
 
 export function hmacSha256Base64(secret: string, message: string): string {
-  return FaceclawCrypto.hmacSha256Message(secret, message);
+  const mac = FaceclawCrypto.hmacSha256Message(secret, message);
+  if (mac == null) throw new Error("FaceclawCrypto.hmacSha256 returned nil");
+  return mac;
 }
 
 /** A stable random terminal ID, independent of phone hardware identifiers. */

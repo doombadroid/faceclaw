@@ -105,7 +105,7 @@ export function createRecordingPlayer(path: string, onComplete: () => void): any
 
 export function recordingsDir(): string {
   const context = Utils.android.getApplicationContext();
-  return `${context.getExternalFilesDir(null).getAbsolutePath()}/mic-recordings`;
+  return `${context.getExternalFilesDir(null)!.getAbsolutePath()}/mic-recordings`;
 }
 
 export function deleteFile(path: string): void {
