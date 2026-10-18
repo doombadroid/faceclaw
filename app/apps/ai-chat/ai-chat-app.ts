@@ -102,7 +102,7 @@ class AiChatLayer implements Layer {
       }
       case "long-press":
         if (!this.conversations.current().session?.isTurnActive()) {
-          if (!shell.isAssistantAvailable()) { shell.showAlert(global.isIOS ? "Set an OpenAI or Anthropic API key in Settings." : "Set an API key or download the on-phone model in Settings."); return; }
+          if (!shell.isAssistantAvailable()) { shell.showAlert(global.isIOS ? "Set an OpenAI, Anthropic, xAI or Perplexity API key in Settings." : "Set an API key or download the on-phone model in Settings."); return; }
           void this.draft.start();
         }
         return;

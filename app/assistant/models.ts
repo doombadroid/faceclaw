@@ -62,8 +62,8 @@ const MODEL_DEFINITIONS: Record<Exclude<AssistantModel, "auto">, ModelDefinition
   qwen: { label: `${LOCAL_MODEL.label} (on-phone)`, provider: "local", model: LOCAL_MODEL.id },
   grok: { label: "Grok 4.3", provider: "xai", model: "grok-4.3", effort: "low" },
   "grok-best": { label: "Grok 4.7", provider: "xai", model: "grok-4.7", effort: "low" },
-  // Sent as Perplexity's "fast" preset (built-in web search); the model is unused.
-  perplexity: { label: "Perplexity", provider: "perplexity", model: "fast" },
+  // Sent as Perplexity's "low" preset (built-in web search); the model is unused.
+  perplexity: { label: "Perplexity", provider: "perplexity", model: "low" },
 };
 
 export function assistantModelLabel(value: AssistantModel): string {

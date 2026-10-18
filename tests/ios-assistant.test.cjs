@@ -40,13 +40,13 @@ function assistant(provider) {
       event(request, { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '60}' } });
     } else if (provider !== 'openai') {
       // xAI and Perplexity send each function call whole, never as argument deltas; Perplexity has no reasoning items.
-      if (provider === 'xai') event(request, { type: 'response.output_item.done', output_index: 1, item: { type: 'reasoning', id: 'reason', encrypted_content: 'opaque-fixture' } });
+      if (provider === 'xai') event(request, { type: 'response.output_item.done', output_index: 1, item: { type: 'reasoning', id: 'reason', encrypted_content: 'opaque-reasoning' } });
       else event(request, { type: 'response.output_item.done', output_index: 1, item: { type: 'search_results', results: [{ id: 1, url: 'https://fixture' }] } });
       const call = { type: 'function_call', call_id: 'tool-1', id: 'item-1', name: 'timer_set', arguments: '{"seconds":60}', thought_signature: 'opaque-fixture' };
       event(request, { type: 'response.output_item.added', output_index: 2, item: call });
       event(request, { type: 'response.output_item.done', output_index: 2, item: call });
     } else {
-      event(request, { type: 'response.output_item.done', output_index: 1, item: { type: 'reasoning', id: 'reason', encrypted_content: 'opaque-fixture' } });
+      event(request, { type: 'response.output_item.done', output_index: 1, item: { type: 'reasoning', id: 'reason', encrypted_content: 'opaque-reasoning' } });
       event(request, { type: 'response.output_item.added', output_index: 2, item: { type: 'function_call', call_id: 'tool-1', id: 'item-1', name: 'timer_set', arguments: '' } });
       event(request, { type: 'response.function_call_arguments.delta', output_index: 2, delta: '{"seconds":' });
       event(request, { type: 'response.function_call_arguments.delta', output_index: 2, delta: '60}' });
@@ -59,6 +59,9 @@ for (const provider of ['openai', 'anthropic', 'xai', 'perplexity']) {
   test(`iOS ${provider} streams, calls shared tools, continues with results, and preserves follow-up history`, async () => {
     const h = assistant(provider); h.send('Set a one-minute timer');
     const first = h.requests[0]; assert.equal(first.body.stream, true);
+    assert.equal(first.url, { openai: 'https://api.openai.com/v1/responses', anthropic: 'https://api.anthropic.com/v1/messages',
+      xai: 'https://api.x.ai/v1/responses', perplexity: 'https://api.perplexity.ai/v1/agent' }[provider]);
+    assert.deepEqual([first.body.model, first.body.preset], provider === 'perplexity' ? [undefined, 'low'] : ['fixture-model', undefined]);
     if (provider !== 'anthropic') { assert.equal(first.headers.Authorization, 'Bearer fixture-key'); assert.equal(first.body.store, false); }
     else assert.equal(first.headers['x-api-key'], 'fixture-key');
     h.text(first, 'Setting π 👓'); h.tool(first); h.finish(first, true); await flush();
@@ -66,7 +69,8 @@ for (const provider of ['openai', 'anthropic', 'xai', 'perplexity']) {
     assert.equal(h.requests.length, 2);
     const second = h.requests[1];
     assert.match(JSON.stringify(second.body), /Timer set/);
-    if (provider !== 'anthropic') assert.match(JSON.stringify(second.body), /opaque-fixture/);
+    if (provider === 'openai' || provider === 'xai') assert.match(JSON.stringify(second.body), /opaque-reasoning/);
+    if (provider === 'xai' || provider === 'perplexity') assert.match(JSON.stringify(second.body), /opaque-fixture/);
     if (provider === 'perplexity') assert.doesNotMatch(JSON.stringify(second.body), /search_results/);
     h.text(second, 'Your timer is running.'); h.finish(second);
     assert.equal(h.session.isTurnActive(), false); assert.equal(h.done.length, 1); assert.equal(h.errors.length, 0);
@@ -161,7 +165,7 @@ test('Responses providers get their endpoint, request fields and error wording',
   assert.deepEqual(xai, openai);
   assert.deepEqual([xai.model, xai.include, xai.reasoning, xai.instructions], ['m', ['reasoning.encrypted_content'], { effort: 'low' }, 'sys']);
   assert.deepEqual(xai.input, [{ type: 'message', role: 'user', content: 'hi' }]);
-  assert.equal(perplexity.preset, 'fast');
+  assert.equal(perplexity.preset, 'low');
   for (const field of ['model', 'include', 'reasoning']) assert.equal(field in perplexity, false, field);
   assert.match(perplexity.instructions, /^sys\n\nToday is .*web_search/);
   assert.deepEqual([perplexity.stream, perplexity.store, perplexity.tools[0].type, perplexity.input[0].type], [true, false, 'function', 'message']);
@@ -170,4 +174,28 @@ test('Responses providers get their endpoint, request fields and error wording',
   stream('xai', ' ');
   assert.deepEqual(errors, ['xAI: HTTP 400 (Model not found)', 'Perplexity: Quota exceeded', 'No xAI API key set']);
   assert.equal(requests.length, 3);
+  // A tool-less call (the calculator rewrite) is not nudged to search; truncation arrives as a completed event.
+  const results = [];
+  streamOpenAiResponse({ apiKey: 'k', model: 'm', system: 'calc', messages: [{ role: 'user', content: 'two plus two' }],
+    onDone: result => results.push(result), onError: message => errors.push(message) }, 'perplexity');
+  assert.doesNotMatch(requests[3].body.instructions, /web_search/);
+  requests[3].listener.onLine('data: ' + JSON.stringify({ type: 'response.completed', response: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } } }));
+  assert.equal(results[0].stopReason, 'max_output_tokens');
+});
+
+test('the calculator rewrite sends each provider its own key and endpoint', () => {
+  const sent = [];
+  const keys = { openai: 'ko', anthropic: 'ka', xai: 'kx', perplexity: 'kp' };
+  for (const [model, provider] of [['luna', 'openai'], ['sonnet', 'anthropic'], ['grok', 'xai'], ['perplexity', 'perplexity']]) {
+    const { rewriteSpokenProblem } = loader({ global: { isIOS: true } }, {
+      '../../native/openai': { streamOpenAiResponse: (options, via) => sent.push([via, options.apiKey]) },
+      '../../native/anthropic': { streamAnthropicMessage: options => sent.push(['anthropic', options.apiKey]) },
+      '../../native/llama': { streamLocalQwen: () => assert.fail('no local model on iOS') },
+      '../native/llama': { LOCAL_MODEL: { label: 'Qwen', id: 'qwen' }, isLocalModelReady: () => false },
+      '../../ui/dashboard-settings': { assistantApiKeys: () => keys, assistantModelSetting: { get: () => model } },
+      '../../prompts': { CALCULATOR_REWRITE_SYSTEM_PROMPT: 'calc', buildCalculatorRewriteUserMessage: text => text },
+    })('app/apps/calculator/calculator-llm.ts');
+    rewriteSpokenProblem('two plus two');
+    assert.deepEqual(sent.at(-1), [provider, keys[provider]]);
+  }
 });

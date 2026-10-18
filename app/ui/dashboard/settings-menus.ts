@@ -29,8 +29,6 @@ import { drawRightValueMenuItem, openModalMenu, submenuItem, type MenuItem } fro
 import { shell } from "../shell/shell";
 import {
   anthropicApiKeySetting,
-  perplexityApiKeySetting,
-  xaiApiKeySetting,
   appSwitcherPositionSetting,
   statusBarPositionSetting,
   statusBarVisibilitySetting,
@@ -58,6 +56,7 @@ import {
   mapboxApiKeySetting,
   mirrorTouchSetting,
   openAiApiKeySetting,
+  perplexityApiKeySetting,
   previewColorSetting,
   previewScalingSetting,
   phoneRotationSetting,
@@ -82,6 +81,7 @@ import {
   watchCrownClockwiseNextSetting,
   watchMirrorAssistantSetting,
   watchRemoteEnabledSetting,
+  xaiApiKeySetting,
 } from "../dashboard-settings";
 import { wearBridge } from "../../native/wear-bridge";
 import { openSettingsSubMenu, SettingsPanelLayer, type SettingsSection } from "./settings-panel";

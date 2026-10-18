@@ -920,7 +920,7 @@ export const assistantBackendSetting = new ConfigSettingEnum<AssistantBackendKin
   values: ["direct", "external"],
   formatValue: (value) => assistantBackendLabels[value] ?? value,
   description:
-    global.isIOS ? "Who answers assistant queries: cloud models called with your OpenAI or Anthropic API key (add it in Settings > API Keys), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin." : "Who answers assistant queries: an LLM called from the phone (a cloud API with your key, or the downloaded on-phone model), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin.",
+    global.isIOS ? "Who answers assistant queries: cloud models called with your OpenAI, Anthropic, xAI or Perplexity API key (add it in Settings > API Keys), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin." : "Who answers assistant queries: an LLM called from the phone (a cloud API with your key, or the downloaded on-phone model), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin.",
 });
 
 export const assistantBridgeHostSetting = new ConfigSettingString({

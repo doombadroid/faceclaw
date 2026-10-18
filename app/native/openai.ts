@@ -133,10 +133,11 @@ export function streamOpenAiResponse(options: LlmStreamOptions, provider: Respon
           refusal = true;
           return;
         case "response.completed":
-          done();
-          return;
         case "response.incomplete":
-          stopReason = String(event.response?.incomplete_details?.reason ?? "incomplete");
+          // Perplexity reports truncation as response.completed with status "incomplete".
+          if (event.type === "response.incomplete" || event.response?.status === "incomplete") {
+            stopReason = String(event.response?.incomplete_details?.reason ?? "incomplete");
+          }
           done();
           return;
         case "response.failed":
@@ -181,21 +182,22 @@ export function streamOpenAiResponse(options: LlmStreamOptions, provider: Respon
 }
 
 /**
- * Perplexity runs its "fast" preset (server-side web_search, which merges with
- * our function tools); our instructions replace the preset prompt, so restate
- * what it would have said. It has no `include` and the preset's effort is none.
+ * Perplexity runs its "low" preset (server-side web_search, which merges with
+ * our function tools; "fast" has one step, so a search there leaves no step to
+ * call our tool). Our instructions replace the preset prompt, so restate what
+ * it would have said. It has no `include` and keeps the preset's effort.
  */
 function buildResponsesBody(options: LlmStreamOptions, provider: ResponsesProvider): any {
   const perplexity = provider === "perplexity";
   const body: any = {
-    ...(perplexity ? { preset: "fast" } : { model: options.model, include: ["reasoning.encrypted_content"] }),
+    ...(perplexity ? { preset: "low" } : { model: options.model, include: ["reasoning.encrypted_content"] }),
     input: buildOpenAiInput(options.messages),
     stream: true,
     store: false,
     max_output_tokens: options.maxTokens ?? 8192,
   };
   const system = perplexity
-    ? `${options.system ? `${options.system}\n\n` : ""}Today is ${new Date().toDateString()}. Use web_search for current facts. Never add [n] citation markers.`
+    ? `${options.system ? `${options.system}\n\n` : ""}Today is ${new Date().toDateString()}.${options.tools?.length ? " Use web_search for current facts." : ""} Never add [n] citation markers.`
     : options.system;
   if (system) body.instructions = system;
   if (options.tools?.length) {

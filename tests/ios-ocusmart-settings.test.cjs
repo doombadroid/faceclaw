@@ -4,9 +4,10 @@ const fs = require('node:fs'), vm = require('node:vm'), ts = require('typescript
 const { loader } = require('./helpers/load-typescript.cjs');
 
 // The real dashboard-settings.ts (iOS) over an in-memory store, as in display-layout-setting.test.cjs.
-function settingsFixture(store = new Map()) {
+function settingsFixture(store = new Map(), mocks = {}) {
   const changed = new Set();
   const context = { exports: {}, global: { isIOS: true }, setTimeout: fn => fn(), require: id => {
+    if (id in mocks) return mocks[id];
     if (id.includes('settings-store')) return {
       onSettingsStoreChanged() {}, getStringSetting: (k, d) => store.get(k) ?? d,
       setStringSetting: (k, v) => store.set(k, v),
@@ -385,4 +386,13 @@ test('iOS offers the agent bridge backend and its connection rows on the glasses
   for (const name of ['assistantBridgeHostSetting', 'assistantBridgePortSetting', 'assistantBridgeTokenSetting', 'assistantAllowProactiveSetting']) {
     assert.ok(glasses.has(settings[name]) && phone.has(settings[name]), name);
   }
+});
+
+test('assistant keys come from their own settings and gate their models in the picker', () => {
+  const models = loader({ global: { isIOS: true } }, { '../native/llama': { LOCAL_MODEL: { label: 'Qwen', id: 'qwen' }, isLocalModelReady: () => false } })('app/assistant/models.ts');
+  const store = new Map([['voice.openAiApiKey', 'ko'], ['llm.anthropicApiKey', 'ka'], ['llm.xaiApiKey', 'kx']]);
+  const settings = settingsFixture(store, { '~/assistant/models': models });
+  assert.deepEqual({ ...settings.assistantApiKeys() }, { openai: 'ko', anthropic: 'ka', xai: 'kx', perplexity: '' });
+  const disabled = value => settings.assistantModelSetting.isDisabled(value);
+  assert.deepEqual(['auto', 'luna', 'sonnet', 'grok', 'grok-best', 'perplexity'].map(disabled), [false, false, false, false, false, true]);
 });

@@ -1,8 +1,6 @@
 import type { AsrModelId } from "../../native/asr-model";
 import {
   anthropicApiKeySetting,
-  perplexityApiKeySetting,
-  xaiApiKeySetting,
   appSwitcherPositionSetting,
   assistantAllowProactiveSetting,
   assistantBackendSetting,
@@ -26,6 +24,7 @@ import {
   menuAnimationSetting,
   mirrorTouchSetting,
   openAiApiKeySetting,
+  perplexityApiKeySetting,
   phoneBatteryVisibilitySetting,
   previewColorSetting,
   previewScalingSetting,
@@ -44,6 +43,7 @@ import {
   voiceProviderSetting,
   wakeWordActionSetting,
   windowBorderSetting,
+  xaiApiKeySetting,
   type ConfigSettingBoolean,
   type ConfigSettingEnum,
   type ConfigSettingString,

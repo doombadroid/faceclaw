@@ -1668,7 +1668,7 @@ class Shell {
       this.showAlert(
         assistantBackendSetting.get() === "external"
           ? "Configure the agent bridge host and token in Settings."
-          : global.isIOS ? "Set an OpenAI or Anthropic API key in Settings." : "Set an API key or download the on-phone model in Settings.",
+          : global.isIOS ? "Set an OpenAI, Anthropic, xAI or Perplexity API key in Settings." : "Set an API key or download the on-phone model in Settings.",
       );
       return;
     }
