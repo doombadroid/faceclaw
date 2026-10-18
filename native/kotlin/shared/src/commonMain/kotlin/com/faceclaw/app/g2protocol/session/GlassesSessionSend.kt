@@ -1288,9 +1288,18 @@ internal fun GlassesSessionCore.handleAckTimeoutLocked(message: OutboundMessage)
     }
 
     if (consecutiveAckTimeouts > ConnectionOptions.MAX_CONSECUTIVE_ACK_TIMEOUTS) {
-        handleTransportFailure("too many ack timeouts")
+        // EvenHub was entered (its ack set fixedLayoutCreated) but no heartbeat has ever been
+        // answered this session: the Even Realities app was holding the glasses' app screen
+        // (OcuSmart 10/18: every session looped until it was force-quit). Say so, or the user
+        // only ever sees reconnects.
+        val evenHubSilent = message.kind == "heartbeat" && fixedLayoutCreated && lastHeartbeatAckedAtMs == 0L
+        if (evenHubSilent) ConnectionCounters.increment("g2.heartbeat-never-acked")
+        handleTransportFailure("too many ack timeouts", if (evenHubSilent) EVENHUB_SILENT_STATUS else null)
     }
 }
+
+internal const val EVENHUB_SILENT_STATUS =
+    "The glasses are not answering the app screen. If the Even Realities app is open, force-quit it."
 
 internal fun GlassesSessionCore.clearMessagesOfKindLocked(kind: String) {
     val pendingIterator = pendingMessages.iterator()
