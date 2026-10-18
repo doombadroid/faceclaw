@@ -1,6 +1,7 @@
 import { Dialogs, knownFolders, Label, type Page } from '@nativescript/core'
 import { buttonRow, customRow, groupedPage, navRow, section, valueRow } from './ui-kit'
 import { getRuntime } from './runtime'
+import { presentOnTop } from './present'
 import { reportError } from '../../native/error-reports'
 import { guardCallback } from '../../native/callback-errors.ios'
 import { kotlinListener } from '../../native/kotlin-listener.ios'
@@ -329,10 +330,18 @@ export function createPage(): Page {
     container.addChild(section({ header: 'Results', rows: [customRow(output)] }))
     container.addChild(section({ rows: [
       valueRow({ title: `Documents/${LOG_NAME}`, value: `${logLineCount()} lines` }),
+      buttonRow({ title: 'Share Results', onTap: () => {
+        // The file itself (AirDrop, Messages, Files), not its text.
+        const url = NSURL.fileURLWithPath(knownFolders.documents().getFile(LOG_NAME).path)
+        const sheet = UIActivityViewController.alloc().initWithActivityItemsApplicationActivities([url], null)
+        // A popover (regular width) needs an anchor.
+        if (sheet.popoverPresentationController) sheet.popoverPresentationController.sourceView = page.ios.view
+        presentOnTop(sheet)
+      } }),
       buttonRow({ title: 'Clear Log', role: 'destructive', enabled: !busy, onTap: () => {
         knownFolders.documents().getFile(LOG_NAME).writeTextSync('', error => reportError('translate-tests.log', error)); refresh()
       } }),
-    ], footer: 'Every step is a JSON line {ts, test, step, ok, ms, detail}; pull the file over USB with afcclient.' }))
+    ], footer: 'Every step is a JSON line {ts, test, step, ok, ms, detail}; Share Results sends the file, or pull it over USB with afcclient.' }))
   } })
   refreshPage = refresh
   if (!output.text) output.text = busy ? `${busy} is still running from an earlier visit.` : 'No test run yet.'
