@@ -519,17 +519,24 @@ class GlassesSessionCoreTest {
     fun aYieldedDisplayIsNotReclaimedAfterTheFirmwareExitsThePage() {
         val s = Session()
         s.startAndAwaitLayout()
+        val fbOp = { op: Int -> s.link.writes.count { it.sid == BleProtocol.SID_UI_SETTING && it.pb.containsSequence(byteArrayOf(70, 67, 1, op.toByte())) } }
         val creates = s.link.writes.count { it.kind == "create-layout" }
-        s.core.displayYielded = true
-        // The firmware's own screen (T8 opens Translate) ends the page with SYSTEM_EXIT.
+        val acquires = fbOp(BleProtocol.FACECLAW_FB_OP_ACQUIRE)
+        // The CFW keeps the last Faceclaw frame on the panel while the framebuffer lease holds,
+        // so a firmware screen (T8 opens Translate) stays invisible until the lease is released.
+        assertTrue(s.core.yieldDisplay(true), s.host.logs().takeLast(10).toString())
+        assertEquals(2, fbOp(BleProtocol.FACECLAW_FB_OP_RELEASE), "lease released on both arms")
+        // That screen ends the page with SYSTEM_EXIT.
         val exit = BleProtocol.encodeVarintField(1, 2) + BleProtocol.encodeBytesField(13,
             BleProtocol.encodeBytesField(3, BleProtocol.encodeVarintField(1, BleProtocol.EVENT_SYSTEM_EXIT)))
         s.core.onNotification(RIGHT, BleProtocol.NOTIFY_CHAR_UUID, BleProtocol.framePb(exit, BleProtocol.SID_EVENHUB, BleProtocol.FLAG_NOTIFY, 9)[0])
+        s.platform.offsetMs += GlassesSessionCore.FACECLAW_WAKE_LEASE_RENEW_MS + 100L
         s.core.interruptibleSleep.interrupt()
         assertFalse(waitUntil(500) { s.link.writes.count { it.kind == "create-layout" } > creates }, s.host.logs().takeLast(10).toString())
-        s.core.displayYielded = false
-        s.core.interruptibleSleep.interrupt()
+        assertEquals(acquires, fbOp(BleProtocol.FACECLAW_FB_OP_ACQUIRE), "no lease renewal while yielded")
+        s.core.yieldDisplay(false)
         assertTrue(waitUntil(3_000) { s.layoutCreated() && s.link.writes.count { it.kind == "create-layout" } > creates }, s.host.logs().takeLast(10).toString())
+        assertEquals(acquires + 2, fbOp(BleProtocol.FACECLAW_FB_OP_ACQUIRE), "lease re-acquired on both arms")
         s.core.disconnect()
     }
 

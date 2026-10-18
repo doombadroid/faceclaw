@@ -118,7 +118,7 @@ class GlassesSessionCore(
     @Volatile internal var stockFrameTap: Pair<Int, (String, ByteArray) -> Unit>? = null
     /** Sees each EvenHub sys-event type except IMU samples (called under the monitor), while set. */
     @Volatile internal var sysEventTap: ((Int) -> Unit)? = null
-    /** While set, a page the firmware ended stays ended: a firmware screen (Translate, opened by T8) owns the display. */
+    /** Set by [yieldDisplay]: a firmware screen (Translate, opened by T8) owns the display. */
     @Volatile internal var displayYielded = false
     internal val imuListeners = CopyOnWriteList<FaceclawImuListener>(platform)
     /** A compass subscriber plus the dispatcher it registered from (see addCompassListener). */
@@ -528,6 +528,25 @@ class GlassesSessionCore(
         monitor.withLock {
             return running && sessionReady && !shutdownRequested && audioCaptureActive
         }
+    }
+
+    /**
+     * Hands the display to a firmware screen (Translate) or takes it back. The CFW keeps the last
+     * Faceclaw frame on the panel while the framebuffer lease holds, so yielding releases it (and
+     * waits for delivery, like the lease calls) and stops its renewal; nor is a page the firmware
+     * ended re-entered. Taking it back renews the lease at once, and the send loop re-enters
+     * EvenHub. False when the release was not delivered.
+     */
+    internal fun yieldDisplay(yielded: Boolean): Boolean {
+        monitor.withLock {
+            displayYielded = yielded
+            if (!yielded) lastFaceclawFramebufferLeaseQueuedAtMs = Long.MIN_VALUE / 2
+        }
+        if (!yielded) {
+            interruptibleSleep.interrupt()
+            return true
+        }
+        return releaseFaceclawFramebufferLease()
     }
 
     /**

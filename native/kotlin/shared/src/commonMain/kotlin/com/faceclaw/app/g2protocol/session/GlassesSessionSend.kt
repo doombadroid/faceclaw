@@ -65,6 +65,7 @@ internal fun GlassesSessionCore.driveSession(): Long {
                 return 250
             }
             if (sessionReady
+                    && !displayYielded
                     && now - lastFaceclawFramebufferLeaseQueuedAtMs >= FACECLAW_WAKE_LEASE_RENEW_MS
                     && !hasPendingOrInflightKindLocked("framebuffer-lease-control")) {
                 enqueueFaceclawFramebufferControlLocked(
