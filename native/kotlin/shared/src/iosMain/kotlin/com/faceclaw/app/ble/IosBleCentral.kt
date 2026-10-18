@@ -47,7 +47,7 @@ interface IosBleScanListener {
     fun onAdvertisement(identifier: String, name: String, manufacturerDataHex: String, rssi: Int, connectable: Boolean)
 }
 
-/** ANCS authorization changes for a connected peripheral; delivered on the BLE queue. */
+/** ANCS authorization changes for a connected peripheral; delivered on the callback queue. */
 fun interface IosAncsAuthorizationListener {
     fun onAncsAuthorization(identifier: String, authorized: Boolean)
 }
@@ -61,8 +61,12 @@ private val UUID_STRING = Regex("^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[
  * blocks the calling (worker) thread until the delegate reports completion or the timeout
  * elapses. CoreBluetooth runs on a private serial queue; the calling thread hands it work
  * with dispatch_sync and waits on a condition the delegate signals. Addresses are peripheral
- * identifier UUID strings (case-insensitive). Inbound notifications and connection-state
- * changes go to the registered listeners on the BLE queue; scan events go to the main queue.
+ * identifier UUID strings (case-insensitive). Inbound notifications, connection-state and
+ * ANCS changes go to the registered listeners on a second serial callback queue, in order;
+ * scan events go to the main queue. Listeners never run on the BLE queue: they may call back
+ * into this class (a teardown disconnects), and a dispatch_sync onto the queue already
+ * running traps in libdispatch (build 42 crash). Android's FaceclawBleManager does the same
+ * with its callback executor.
  *
  * Locking: [cond] (non-reentrant) guards all peer state. It is never held across a
  * dispatch_sync or a listener callback.
@@ -91,11 +95,14 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
         var readyForWriteWithoutResponse = false
         var requiresAncs = false
         var reportedConnected = false
+        /** Bumped on every connect, so a queued connection-state change for an older link is dropped. */
+        var generation = 0
     }
 
     private class Advertisement(var name: String, var manufacturerDataHex: String)
 
     private val queue = dispatch_queue_create("com.faceclaw.ble", null)
+    private val callbacks = dispatch_queue_create("com.faceclaw.ble.callbacks", null)
     private val cond: ProtocolCondition = platform.createCondition()
     private val peers = HashMap<String, Peer>()
     private val advertisements = LinkedHashMap<String, Advertisement>()
@@ -112,7 +119,7 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
 
     // ----- listeners ------------------------------------------------------------------
 
-    /** The session core (a FaceclawBleListener); called on the BLE queue. */
+    /** The session core (a FaceclawBleListener); called on the callback queue. */
     fun setSessionListener(listener: FaceclawBleListener?) {
         sessionListener = listener
     }
@@ -510,7 +517,7 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
 
     /** Marks the peer disconnected, wakes every waiter and (optionally) tells the listeners. */
     private fun failPeer(peer: Peer, reason: String, notifyListeners: Boolean) {
-        val wasReported = cond.withLock {
+        val (wasReported, generation) = cond.withLock {
             val reported = peer.reportedConnected
             peer.failure = reason
             peer.connectPending = false
@@ -522,14 +529,22 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
             peer.readyForWriteWithoutResponse = false
             peer.characteristics.clear()
             cond.signalAll()
-            reported
+            reported to peer.generation
         }
-        if (notifyListeners && wasReported) emitConnectionState(peer.identifier, false)
+        if (notifyListeners && wasReported) emitConnectionState(peer, generation, false)
     }
 
-    private fun emitConnectionState(identifier: String, connected: Boolean) {
-        sessionListener?.onConnectionStateChange(identifier, connected)
-        stockListener?.onConnectionStateChange(identifier, connected)
+    /** Runs [action] on the callback queue; the listeners are read when it runs, as on Android. */
+    private fun deliver(name: String, action: () -> Unit) {
+        dispatch_async(callbacks) { boundary(name, Unit) { action() } }
+    }
+
+    private fun emitConnectionState(peer: Peer, generation: Int, connected: Boolean) {
+        deliver("IosBleCentral.connectionState") {
+            if (cond.withLock { peer.generation } != generation) return@deliver // a newer connect replaced this link
+            sessionListener?.onConnectionStateChange(peer.identifier, connected)
+            stockListener?.onConnectionStateChange(peer.identifier, connected)
+        }
     }
 
     private fun log(message: String) = PlatformLog.i(TAG, message)
@@ -576,14 +591,15 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
 
     private fun onConnected(peripheral: CBPeripheral) {
         val peer = remember(peripheral)
-        cond.withLock {
+        val generation = cond.withLock {
             peer.connected = true
             peer.connectPending = false
             peer.failure = null
             peer.reportedConnected = true
             cond.signalAll()
+            ++peer.generation
         }
-        emitConnectionState(peer.identifier, true)
+        emitConnectionState(peer, generation, true)
     }
 
     private fun onDisconnected(peripheral: CBPeripheral, error: NSError?) {
@@ -642,8 +658,10 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
         val identifier = peripheral.identifier.UUIDString.uppercase()
         val uuid = characteristic.UUID.UUIDString.lowercase()
         IosBleTraffic.recordRead(data.size)
-        sessionListener?.onNotification(identifier, uuid, data)
-        stockListener?.onNotification(identifier, uuid, data)
+        deliver("IosBleCentral.notification") {
+            sessionListener?.onNotification(identifier, uuid, data)
+            stockListener?.onNotification(identifier, uuid, data)
+        }
     }
 
     private fun onWrote(peripheral: CBPeripheral, error: NSError?) {
@@ -665,7 +683,8 @@ class IosBleCentral(private val platform: ProtocolPlatform = IosProtocolPlatform
 
     private fun onAncsAuthorization(peripheral: CBPeripheral) {
         val identifier = peripheral.identifier.UUIDString.uppercase()
-        ancsListener?.onAncsAuthorization(identifier, peripheral.ancsAuthorized)
+        val authorized = peripheral.ancsAuthorized
+        deliver("IosBleCentral.ancsAuthorization") { ancsListener?.onAncsAuthorization(identifier, authorized) }
     }
 
     private class Delegate(private val owner: IosBleCentral) : NSObject(), CBCentralManagerDelegateProtocol, CBPeripheralDelegateProtocol {
