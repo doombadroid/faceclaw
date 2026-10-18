@@ -118,6 +118,8 @@ class GlassesSessionCore(
     @Volatile internal var stockFrameTap: Pair<Int, (String, ByteArray) -> Unit>? = null
     /** Sees each EvenHub sys-event type except IMU samples (called under the monitor), while set. */
     @Volatile internal var sysEventTap: ((Int) -> Unit)? = null
+    /** While set, a page the firmware ended stays ended: a firmware screen (Translate, opened by T8) owns the display. */
+    @Volatile internal var displayYielded = false
     internal val imuListeners = CopyOnWriteList<FaceclawImuListener>(platform)
     /** A compass subscriber plus the dispatcher it registered from (see addCompassListener). */
     internal class CompassSubscription(

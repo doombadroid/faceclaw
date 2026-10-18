@@ -170,8 +170,12 @@ export function createPage(): Page {
     const t0 = Date.now()
     const mode = strategyName(prepareStrategy)
     const before = (await availability([pair], prepareStrategy)).pairs[pair]
+    rec('status before', true, 0, { pair, mode, status: before })
+    // prepareTranslation can download the languages and still never answer (build 50 with the app
+    // left mid-download), so a timeout is reported and the status below says what really happened.
     const error = await nativeCall<string | null>('translate-tests.prepare', 10 * 60_000,
       done => FaceclawTranslateSpike.prepareSourceTargetStrategyCompletion(source, target, prepareStrategy, done))
+      .catch((e: unknown) => String(e))
     rec('prepareTranslation', !error, Date.now() - t0, { pair, mode, before, error })
     const after = (await availability([pair], prepareStrategy)).pairs[pair]
     rec('status after', after === 'installed', 0, { pair, mode, status: after })

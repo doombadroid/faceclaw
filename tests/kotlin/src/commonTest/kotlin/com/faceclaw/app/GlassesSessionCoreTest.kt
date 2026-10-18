@@ -516,6 +516,24 @@ class GlassesSessionCoreTest {
     }
 
     @Test
+    fun aYieldedDisplayIsNotReclaimedAfterTheFirmwareExitsThePage() {
+        val s = Session()
+        s.startAndAwaitLayout()
+        val creates = s.link.writes.count { it.kind == "create-layout" }
+        s.core.displayYielded = true
+        // The firmware's own screen (T8 opens Translate) ends the page with SYSTEM_EXIT.
+        val exit = BleProtocol.encodeVarintField(1, 2) + BleProtocol.encodeBytesField(13,
+            BleProtocol.encodeBytesField(3, BleProtocol.encodeVarintField(1, BleProtocol.EVENT_SYSTEM_EXIT)))
+        s.core.onNotification(RIGHT, BleProtocol.NOTIFY_CHAR_UUID, BleProtocol.framePb(exit, BleProtocol.SID_EVENHUB, BleProtocol.FLAG_NOTIFY, 9)[0])
+        s.core.interruptibleSleep.interrupt()
+        assertFalse(waitUntil(500) { s.link.writes.count { it.kind == "create-layout" } > creates }, s.host.logs().takeLast(10).toString())
+        s.core.displayYielded = false
+        s.core.interruptibleSleep.interrupt()
+        assertTrue(waitUntil(3_000) { s.layoutCreated() && s.link.writes.count { it.kind == "create-layout" } > creates }, s.host.logs().takeLast(10).toString())
+        s.core.disconnect()
+    }
+
+    @Test
     fun ackTimeoutOnTheLayoutReconnects() {
         val s = Session()
         s.link.muted.add("create-layout")

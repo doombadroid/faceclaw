@@ -142,6 +142,9 @@ class IosGlassesSession internal constructor(
                     core.setStockFrameTap(TranslateProtocol.SID, null)
                     core.sysEventTap = null
                     translateProbe = null
+                    // The Translate screen ended the EvenHub page (SYSTEM_EXIT); re-enter it now.
+                    core.displayYielded = false
+                    core.interruptibleSleep.interrupt()
                     dispatch_async(dispatch_get_main_queue()) { listener.onFinished(ok, detail) }
                 }
             }
@@ -168,6 +171,8 @@ class IosGlassesSession internal constructor(
                 }
             }
             core.sysEventTap = { type -> probe.noteSessionEvent("EvenHub sys-event type=$type") }
+            // Opening Translate ends the EvenHub page; re-entering it would close Translate again.
+            core.displayYielded = true
             val thread = NSThread { probe.run() }
             thread.name = "faceclaw-translate-probe"
             thread.start()

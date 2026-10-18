@@ -150,6 +150,7 @@ internal fun GlassesSessionCore.driveSession(): Long {
                 if (messageToPrewrite == null
                         && !shutdownRequested
                         && !fixedLayoutCreated
+                        && !displayYielded
                         && pendingMessages.isEmpty()
                         && inFlightMessages.isEmpty()) {
                     logLine("enqueueing create layout")
