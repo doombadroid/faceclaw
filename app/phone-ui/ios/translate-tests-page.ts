@@ -114,21 +114,24 @@ let refreshPage = () => {}
 export function createPage(): Page {
   let pair = 'es>en'
   const results = new Map<string, string>()
-  const output = new Label()
-  output.className = 'os-error-stack'; output.textWrap = true
+  // A new label per build: refresh() empties the container but the old section keeps its row,
+  // so re-adding one label throws "View already has a parent".
+  let output = new Label()
+  let idle = ''
+  const resultsText = () => [...results].map(([name, value]) => `${name}  ${value}`).join('\n\n') || idle
   const show = (test: string, text: string) => {
     results.set(test, text)
-    output.text = [...results].map(([name, value]) => `${name}  ${value}`).join('\n\n')
+    output.text = resultsText()
   }
 
   async function run(test: string, body: (rec: Rec) => Promise<string>): Promise<void> {
     if (busy) { show('Busy', `${busy} is still running.`); return }
     busy = test
-    refreshPage()
     const started = Date.now()
     const rec: Rec = (step, ok, ms, detail) => appendLog(spikeLine(test, step, ok, ms, detail))
-    show(test, 'running…')
     try {
+      refreshPage()
+      show(test, 'running…')
       const summary = await body(rec)
       rec('done', true, Date.now() - started, summary)
       show(test, summary)
@@ -327,6 +330,9 @@ export function createPage(): Page {
     container.addChild(section({ rows: [navRow({ title: 'Pair (T2)', value: pair, onTap: () => { pair = nextPair(pair); refresh() } })],
       footer: 'Tap to cycle the language pair T2 asks to download.' }))
     container.addChild(section({ rows: tests.map(([title, onTap]) => buttonRow({ title, enabled: !busy, onTap })) }))
+    output = new Label()
+    output.className = 'os-error-stack'; output.textWrap = true
+    output.text = resultsText()
     container.addChild(section({ header: 'Results', rows: [customRow(output)] }))
     container.addChild(section({ rows: [
       valueRow({ title: `Documents/${LOG_NAME}`, value: `${logLineCount()} lines` }),
@@ -344,6 +350,7 @@ export function createPage(): Page {
     ], footer: 'Every step is a JSON line {ts, test, step, ok, ms, detail}; Share Results sends the file, or pull it over USB with afcclient.' }))
   } })
   refreshPage = refresh
-  if (!output.text) output.text = busy ? `${busy} is still running from an earlier visit.` : 'No test run yet.'
+  idle = busy ? `${busy} is still running from an earlier visit.` : 'No test run yet.'
+  output.text = resultsText()
   return page
 }

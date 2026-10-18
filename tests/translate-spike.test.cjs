@@ -83,3 +83,40 @@ test('the page is registered and reached from General, and every test is on it',
     assert.ok(new RegExp(`\\['T${i} [^']+', \\(\\) => \\{ void (run|confirmThen)\\('T${i}', (?:'[^']*', )?T${i}\\) \\}\\]`).test(page), `T${i} has a button`);
   }
 });
+
+test('the page rebuilds and runs a test without re-parenting a view (build 44 left every button grey)', async () => {
+  const { loader } = require('./helpers/load-typescript.cjs');
+  // Views that, like NativeScript's, refuse a second parent.
+  class View { constructor() { this.parent = null; this.children = []; }
+    addChild(child) { if (child.parent) throw new Error('View already has a parent.'); child.parent = this; this.children.push(child); }
+    removeChildren() { this.children = []; } }
+  class Label extends View {}
+  const rows = [];
+  let refresh = () => {};
+  const uiKit = {
+    groupedPage: ({ build }) => { const container = new View(); refresh = () => { container.removeChildren(); build(container); }; refresh(); return { page: {}, refresh }; },
+    section: ({ rows: list }) => { const box = new View(); for (const row of list) box.addChild(row.view); return box; },
+    customRow: view => ({ view }), buttonRow: o => { rows.push(o); return { view: new View() }; },
+    navRow: () => ({ view: new View() }), valueRow: () => ({ view: new View() }),
+  };
+  const lines = [];
+  const file = { appendTextSync: line => lines.push(line), readTextSync: () => lines.join(''), writeTextSync: () => {}, path: '/x' };
+  const errors = [];
+  const load = loader({ UIDevice: { currentDevice: { systemVersion: '27.0', model: 'iPhone' } }, setTimeout, clearTimeout }, {
+    '@nativescript/core': { Dialogs: {}, knownFolders: { documents: () => ({ getFile: () => file }) }, Label },
+    './ui-kit': uiKit, './runtime': { getRuntime: () => ({}) }, './present': { presentOnTop() {} },
+    '../../native/error-reports': { reportError: (where, error) => errors.push(`${where}: ${error}`) },
+    '../../native/callback-errors.ios': { guardCallback: (_w, fn) => fn() }, '../../native/kotlin-listener.ios': {},
+    '../../native/faceclaw-communicator.ios': {}, '../../graphics/image': {}, '../../graphics/bdffont': {}, '../../graphics/evenhub-font': {},
+    '../../graphics/ui-fonts': {}, '../../ui/shell/shell': {}, '../../apps/microphones/captions-layer': { wrapWords() {} },
+  });
+  load('app/phone-ui/ios/translate-tests-page.ts').createPage();
+  refresh(); refresh();
+  const t5 = rows.find(o => o.title.startsWith('T5'));
+  t5.onTap();
+  await new Promise(resolve => setTimeout(resolve, 50));
+  // NLLanguageRecognizer is native, so T5 itself fails here; the page must still run it, log it and unlock.
+  assert.ok(!errors.some(error => /parent/.test(error)), errors.join('\n'));
+  assert.ok(lines.some(line => line.includes('"test":"T5"') && line.includes('"step":"done"')), 'T5 ran and logged done');
+  assert.ok(rows.filter(o => o.title.startsWith('T5')).at(-1).enabled, 'buttons enabled again after the run');
+});
