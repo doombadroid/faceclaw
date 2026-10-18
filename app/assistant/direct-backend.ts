@@ -128,8 +128,8 @@ export class DirectAssistantBackend {
         },
       };
       streamHandle =
-        options.provider === "openai"
-          ? streamOpenAiResponse(streamOptions)
+        options.provider === "openai" || options.provider === "xai" || options.provider === "perplexity"
+          ? streamOpenAiResponse(streamOptions, options.provider)
           : options.provider === "local"
             ? streamLocalQwen(streamOptions)
             : streamAnthropicMessage(streamOptions);

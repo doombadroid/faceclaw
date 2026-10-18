@@ -117,11 +117,14 @@ provider; Faceclaw does not manage accounts or process billing information.
 ## AI Assistant Transcripts
 
 Faceclaw has a builtin AI voice assistant. Using the voice assistant requires
-providing an API key for a model provider such as Anthropic or OpenAI. Prompts
-and responses are subject to that model provider's privacy policy:
+providing an API key for a model provider such as Anthropic, OpenAI, xAI or
+Perplexity. Prompts and responses are subject to that model provider's privacy
+policy; Perplexity also runs web searches based on your prompts:
 
   OpenAI: https://openai.com/policies/row-privacy-policy/
   Anthropic: https://www.anthropic.com/legal/privacy
+  xAI: https://x.ai/legal/privacy-policy
+  Perplexity: https://www.perplexity.ai/hub/legal/privacy-notice
 
 AI conversation histories and memory files may be stored on your phone.
 Faceclaw does not transmit voice-assistant prompts or responses to any party

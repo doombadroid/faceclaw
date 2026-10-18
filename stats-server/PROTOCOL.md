@@ -82,7 +82,7 @@ Full level adds:
 
 | Name | Kind | Meaning |
 | --- | --- | --- |
-| `apikey.<kind>` | snapshot | Whether an API key or token of that kind is set (`anthropic`, `openai`, `elevenlabs`, `soniox`, `mapbox`, `roam`, `nightscout`, `agent-bridge`, `evenhub`), never the key |
+| `apikey.<kind>` | snapshot | Whether an API key or token of that kind is set (`anthropic`, `openai`, `xai`, `perplexity`, `elevenlabs`, `soniox`, `mapbox`, `roam`, `nightscout`, `agent-bridge`, `evenhub`), never the key |
 | `config.nightscout-site` | snapshot | Whether a Nightscout site is set (not its URL) |
 | `config.terminal-connections`, `config.t3code-environments` | snapshot | How many are configured |
 | `config.ui-font` | snapshot | The UI font: a bundled font's name and size, `installed:<size>` for a user-installed one, or the bitmap face |

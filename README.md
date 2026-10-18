@@ -64,7 +64,8 @@ import it into the new version.
  * **A voice assistant** that wakes up when you say "Hey Even", transcribes
    text with an on-device model, OpenAI Whisper, ElevenLabs, or Soniox API,
    and responds to queries and commands using an onboard model (Qwen3 4B,
-   slow) or with an Anthropic or OpenAI model (requires an API key), or using
+   slow) or with an Anthropic, OpenAI, xAI (Grok) or Perplexity model (requires
+   an API key), or using
    your own long-running OpenClaw agent.
  * **Multitasking**, with an app-switcher sidebar and app launcher.
  * **Glanceboard**, a dashboard with widgets that you can quickly view with a

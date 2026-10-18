@@ -56,6 +56,7 @@ import {
   mapboxApiKeySetting,
   mirrorTouchSetting,
   openAiApiKeySetting,
+  perplexityApiKeySetting,
   previewColorSetting,
   previewScalingSetting,
   phoneRotationSetting,
@@ -80,6 +81,7 @@ import {
   watchCrownClockwiseNextSetting,
   watchMirrorAssistantSetting,
   watchRemoteEnabledSetting,
+  xaiApiKeySetting,
 } from "../dashboard-settings";
 import { wearBridge } from "../../native/wear-bridge";
 import { openSettingsSubMenu, SettingsPanelLayer, type SettingsSection } from "./settings-panel";
@@ -153,6 +155,8 @@ function settingsSections(): SettingsSection[] {
         textSettingMenuItem(openAiApiKeySetting),
         textSettingMenuItem(sonioxApiKeySetting),
         textSettingMenuItem(anthropicApiKeySetting),
+        textSettingMenuItem(xaiApiKeySetting),
+        textSettingMenuItem(perplexityApiKeySetting),
         textSettingMenuItem(mapboxApiKeySetting),
       ],
     },

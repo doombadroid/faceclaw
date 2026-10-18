@@ -11,18 +11,11 @@ import { streamLocalQwen } from "../../native/llama";
 import { streamOpenAiResponse } from "../../native/openai";
 import { resolveAssistantModel } from "../../assistant/models";
 import { type LlmStreamOptions } from "../../assistant/llm-protocol";
-import {
-  anthropicApiKeySetting,
-  assistantModelSetting,
-  openAiApiKeySetting,
-} from "../../ui/dashboard-settings";
+import { assistantApiKeys, assistantModelSetting } from "../../ui/dashboard-settings";
 import { CALCULATOR_REWRITE_SYSTEM_PROMPT, buildCalculatorRewriteUserMessage } from "../../prompts";
 
 export function rewriteSpokenProblem(spoken: string): Promise<string | null> {
-  const resolved = resolveAssistantModel(assistantModelSetting.get(), {
-    anthropic: anthropicApiKeySetting.get(),
-    openai: openAiApiKeySetting.get(),
-  });
+  const resolved = resolveAssistantModel(assistantModelSetting.get(), assistantApiKeys());
   if (!resolved) return Promise.resolve(null);
 
   return new Promise((resolve) => {
@@ -38,7 +31,9 @@ export function rewriteSpokenProblem(spoken: string): Promise<string | null> {
     };
     switch (resolved.provider) {
       case "openai":
-        streamOpenAiResponse(options);
+      case "xai":
+      case "perplexity":
+        streamOpenAiResponse(options, resolved.provider);
         break;
       case "local":
         streamLocalQwen(options);

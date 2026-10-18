@@ -10,6 +10,9 @@ export const ASSISTANT_MODEL_VALUES = [
   "terra",
   "sol",
   "qwen",
+  "grok",
+  "grok-best",
+  "perplexity",
 ] as const;
 
 export type AssistantModel = (typeof ASSISTANT_MODEL_VALUES)[number];
@@ -20,11 +23,13 @@ export function supportedAssistantModel(value: AssistantModel): AssistantModel {
   return global.isIOS && value === "qwen" ? "auto" : value;
 }
 
-export type AssistantProvider = "anthropic" | "openai" | "local";
+export type AssistantProvider = "anthropic" | "openai" | "xai" | "perplexity" | "local";
 
 export type AssistantApiKeys = {
   anthropic: string;
   openai: string;
+  xai: string;
+  perplexity: string;
 };
 
 export type ResolvedAssistantModel = {
@@ -55,6 +60,10 @@ const MODEL_DEFINITIONS: Record<Exclude<AssistantModel, "auto">, ModelDefinition
   // Runs on the phone itself (llama.cpp); needs the downloaded model file,
   // not an API key. The default for users who haven't set any key.
   qwen: { label: `${LOCAL_MODEL.label} (on-phone)`, provider: "local", model: LOCAL_MODEL.id },
+  grok: { label: "Grok 4.3", provider: "xai", model: "grok-4.3", effort: "low" },
+  "grok-best": { label: "Grok 4.7", provider: "xai", model: "grok-4.7", effort: "low" },
+  // Sent as Perplexity's "low" preset (built-in web search); the model is unused.
+  perplexity: { label: "Perplexity", provider: "perplexity", model: "low" },
 };
 
 export function assistantModelLabel(value: AssistantModel): string {
@@ -67,9 +76,9 @@ export function assistantModelProvider(value: AssistantModel): AssistantProvider
 
 /**
  * Resolve Auto and attach the credential needed by the chosen provider.
- * Auto intentionally prefers Terra over Sonnet when both keys are available,
- * and falls back to the on-phone model when no key is set but the model file
- * has been downloaded.
+ * Auto intentionally prefers Terra, then Sonnet, then Grok 4.3, then Perplexity
+ * (search-first, so last of the cloud models), and falls back to the on-phone
+ * model when no key is set but the model file has been downloaded.
  */
 export function resolveAssistantModel(
   selection: AssistantModel,
@@ -78,6 +87,8 @@ export function resolveAssistantModel(
   const normalizedKeys: AssistantApiKeys = {
     anthropic: keys.anthropic.trim(),
     openai: keys.openai.trim(),
+    xai: keys.xai.trim(),
+    perplexity: keys.perplexity.trim(),
   };
   let resolvedSelection = selection;
   if (selection === "auto") {
@@ -85,6 +96,10 @@ export function resolveAssistantModel(
       resolvedSelection = "terra";
     } else if (normalizedKeys.anthropic) {
       resolvedSelection = "sonnet";
+    } else if (normalizedKeys.xai) {
+      resolvedSelection = "grok";
+    } else if (normalizedKeys.perplexity) {
+      resolvedSelection = "perplexity";
     } else if (isLocalModelReady()) {
       resolvedSelection = "qwen";
     } else {
