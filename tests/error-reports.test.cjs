@@ -42,7 +42,7 @@ function harness({ files = new Map(), failWrite = false, main = true, logThrows 
     global: { isIOS: true, postMessage: message => h.posted.push(JSON.parse(JSON.stringify(message))) }, Date: FakeDate, console: quiet,
     setTimeout: fn => { h.timers.push(fn); return h.timers.length; }, clearTimeout: () => {},
     FaceclawKitIosErrorReports: { shared: { forgetRepeats: () => { h.kotlinForgot = (h.kotlinForgot ?? 0) + 1; } } },
-    FaceclawLog: { log: line => { if (logThrows) throw new Error('native log failed'); h.logged.push(line); } },
+    FaceclawLog: { logFromJs: line => { if (logThrows) throw new Error('native log failed'); h.logged.push(line); } },
     NSBundle: { mainBundle: { infoDictionary: { objectForKey: key => ({ CFBundleShortVersionString: '0.8.3', CFBundleVersion: '42' })[key] } } },
   }, { '@nativescript/core': core })('app/native/error-reports.ts');
   // Plain copies: the vm context's objects and arrays fail deepEqual's prototype check.

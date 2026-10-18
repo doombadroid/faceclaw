@@ -3876,6 +3876,8 @@ declare class FaceclawLog extends NSObject {
   static alloc(): FaceclawLog;
   static new(): FaceclawLog;
   static log(message: string | null): void;
+  static logFromJs(message: string | null): void;
+  static setSink(sink: ((line: string | null) => void) | null): void;
 }
 
 declare class FaceclawParakeet extends NSObject {

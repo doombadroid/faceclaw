@@ -5,15 +5,18 @@ const { loader } = require('./helpers/load-typescript.cjs');
 const QUEUE = '/lib/remote-log-queue.jsonl';
 
 /** remote-log.ios.ts over an in-memory file, a settable clock, manual timers and a scripted Http. */
-function harness({ url = 'https://sink.example/abc', files = new Map(), secrets = [] } = {}) {
-  const h = { url, files, secrets, now: Date.parse('2026-10-17T12:00:00Z'), timers: [], requests: [], tasks: [], events: {}, reports: [], printed: [], respond: () => Promise.resolve({ statusCode: 200 }) };
+function harness({ url = 'https://sink.example/abc', files = new Map(), secrets = [], native = false } = {}) {
+  const h = { url, files, secrets, sink: null, now: Date.parse('2026-10-17T12:00:00Z'), timers: [], requests: [], tasks: [], events: {}, reports: [], printed: [], respond: () => Promise.resolve({ statusCode: 200 }) };
   const core = {
     File: {
       exists: path => h.files.has(path),
       fromPath: path => ({
         readTextSync: () => h.files.get(path) ?? '',
         writeTextSync: text => { h.files.set(path, text); },
-        appendTextSync: text => { h.files.set(path, (h.files.get(path) ?? '') + text); },
+        // NSFileHandle.fileHandleForWritingAtPath is nil for a missing file.
+        appendTextSync: text => { if (!h.files.has(path)) throw new Error('no file'); h.files.set(path, h.files.get(path) + text); },
+        removeSync: () => { h.files.delete(path); },
+        renameSync: name => { const to = path.replace(/[^/]+$/, name); if (h.files.has(to)) throw new Error('exists'); h.files.set(to, h.files.get(path)); h.files.delete(path); },
       }),
     },
     Http: { request: options => { h.requests.push(options); return h.respond(options); } },
@@ -30,6 +33,7 @@ function harness({ url = 'https://sink.example/abc', files = new Map(), secrets 
     clearTimeout: t => { h.timers = h.timers.filter(x => x !== t); },
     UIDevice: { currentDevice: { systemVersion: '26.4', model: 'iPhone' } },
     UIBackgroundTaskInvalid: 0,
+    ...(native ? { FaceclawLog: { setSink: fn => { h.sink = fn; } } } : {}),
     UIApplication: { sharedApplication: { beginBackgroundTaskWithExpirationHandler: () => { h.tasks.push('begin'); return 7; }, endBackgroundTask: task => h.tasks.push(`end ${task}`) } },
   }, {
     '@nativescript/core': core,
@@ -60,6 +64,8 @@ function harness({ url = 'https://sink.example/abc', files = new Map(), secrets 
   };
   h.sentRecords = () => h.requests.flatMap(r => JSON.parse(r.content));
   h.status = () => JSON.parse(JSON.stringify(h.module.remoteLogStatus()));
+  /** A request that answers when [resolve] is called. */
+  h.hold = () => { let resolve; h.respond = () => new Promise(r => { resolve = r; }); return code => resolve({ statusCode: code }); };
   h.stored = () => (h.files.get(QUEUE) ?? '').split('\n').filter(Boolean).map(line => JSON.parse(line));
   return h;
 }
@@ -262,4 +268,135 @@ test('an oversized line is truncated, not dropped', () => {
   assert.equal(typeof record.data, 'string');
   assert.ok(record.truncated > 200_000);
   assert.ok(h.files.get(QUEUE).split('\n')[1].length <= 33_000);
+});
+
+test('a console line logged while one is being forwarded is not forwarded (no re-entry)', async () => {
+  const h = harness();
+  h.install();
+  h.console.log('outer', { toJSON() { h.console.log('inner'); return 'x'; } });
+  await h.advance(2_000);
+  assert.deepEqual(h.sentRecords().map(r => r.msg), ['session start', 'outer "x"']);
+  // Both still print.
+  assert.deepEqual(h.printed.map(a => a[0]), ['outer', 'inner']);
+});
+
+test('a send under way is never doubled: Send Test Line and the tick wait for it', async () => {
+  const h = harness();
+  const answer = h.hold();
+  h.install();
+  h.module.remoteLog('test', 'info', 'one');
+  await h.advance(2_000);
+  assert.equal(h.requests.length, 1);
+  h.module.sendRemoteLogTest();
+  await h.advance(10_000);
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.status().sending, true);
+  h.respond = () => Promise.resolve({ statusCode: 200 });
+  answer(200);
+  await h.advance(2_000);
+  assert.equal(h.requests.length, 2);
+  const seqs = h.sentRecords().map(r => r.seq);
+  assert.deepEqual(seqs, [1, 2, 3]);
+  assert.equal(h.status().sent, 3);
+});
+
+test('going to the background mid-send keeps a background task until that send ends, without a second send', async () => {
+  const h = harness();
+  const answer = h.hold();
+  h.install();
+  h.module.remoteLog('test', 'info', 'one');
+  await h.advance(2_000);
+  for (const fn of h.events.suspend) fn();
+  assert.equal(h.requests.length, 1);
+  assert.deepEqual(h.tasks, ['begin']);
+  answer(200);
+  await h.advance(0);
+  assert.deepEqual(h.tasks, ['begin', 'end 7']);
+  assert.equal(h.status().queued, 0);
+});
+
+test('lines dropped during a send are not counted as sent, and the unsent lines after them still go', async () => {
+  const h = harness();
+  const answer = h.hold();
+  h.install();
+  h.module.remoteLog('test', 'info', 'early');
+  await h.advance(2_000);
+  assert.equal(JSON.parse(h.requests[0].content).length, 2);
+  for (let i = 0; i < 6_000; i++) h.module.remoteLog('test', 'info', `line ${i}`);
+  h.respond = () => Promise.resolve({ statusCode: 200 });
+  answer(200);
+  for (let i = 0; i < 30; i++) await h.advance(2_000);
+  const status = h.status();
+  assert.equal(status.queued, 0);
+  const later = h.requests.slice(1).flatMap(r => JSON.parse(r.content)).map(r => r.seq);
+  assert.equal(later.length, status.sent);
+  assert.equal(later.at(-1), 6_002);
+  assert.ok(later.every((seq, i) => !i || seq === later[i - 1] + 1));
+  assert.equal(status.sent + status.dropped, 6_002);
+});
+
+test('a queue already on disk is rewritten after a drop, so the file stays within the cap', async () => {
+  const h = harness();
+  h.respond = () => Promise.reject(new Error('offline'));
+  h.install();
+  h.module.remoteLog('test', 'info', 'first');
+  await h.advance(2_000);
+  for (let i = 0; i < 6_000; i++) h.module.remoteLog('test', 'info', `line ${i}`);
+  await h.advance(2_000);
+  assert.equal(h.stored().length, h.status().queued);
+  assert.ok(!h.files.has(`${QUEUE}.tmp`));
+});
+
+test('lines are ASCII on disk and on the wire, and decode to the text logged', async () => {
+  const h = harness();
+  h.install();
+  const text = '翻訳 テスト ✓ 😀 cut \ud83d';
+  h.module.remoteLog('test', 'info', text, { note: 'é' });
+  await h.advance(0);
+  for (const fn of h.events.exit) fn();
+  assert.match(h.files.get(QUEUE), /^[\x00-\x7f]*$/);
+  await h.advance(2_000);
+  assert.match(h.requests[0].content, /^[\x00-\x7f]*$/);
+  const record = h.sentRecords()[1];
+  assert.equal(record.msg, text);
+  assert.deepEqual(record.data, { note: 'é' });
+});
+
+test('a torn line with a closing brace inside is skipped on load', async () => {
+  const files = new Map([[QUEUE, '{"msg":"whole","seq":1}\n{"msg":"torn {x}\n{"ts":"20}\n']]);
+  const h = harness({ files });
+  h.install();
+  await h.advance(2_000);
+  assert.deepEqual(h.sentRecords().map(r => r.msg), ['whole', 'session start']);
+});
+
+test('an error line reaches the file at once, before the tick', () => {
+  const h = harness();
+  h.install();
+  h.module.remoteLog('test', 'info', 'quiet');
+  assert.equal(h.files.has(QUEUE), false);
+  h.module.remoteLog('test', 'error', 'boom');
+  assert.deepEqual(h.stored().map(r => r.msg), ['session start', 'quiet', 'boom']);
+});
+
+test('a secret is redacted across the truncation cut and in its JSON-escaped form', async () => {
+  const key = 'sk-ant-api03-SECRETSECRET', password = 'pa"ss\\word12';
+  const h = harness({ secrets: [key, password] });
+  h.respond = () => Promise.reject(new Error('offline'));
+  h.install();
+  h.module.remoteLog('test', 'info', 'y'.repeat(16_000 - 5) + key + 'y'.repeat(20_000));
+  h.module.remoteLog('test', 'info', 'pw', { password });
+  for (const fn of h.events.exit) fn();
+  const stored = h.files.get(QUEUE);
+  assert.ok(!stored.includes(key.slice(0, 5)), 'the start of the key survived the cut');
+  assert.ok(!stored.includes('SECRET'));
+  assert.deepEqual(h.stored()[2].data, { password: '[redacted]' });
+});
+
+test('Objective-C FaceclawLog lines are forwarded through its sink', async () => {
+  const h = harness({ native: true });
+  h.install();
+  h.sink('FaceclawSherpa: no Whisper model in /x');
+  await h.advance(2_000);
+  assert.deepEqual(h.sentRecords().slice(1).map(r => [r.source, r.msg]), [['native', 'FaceclawSherpa: no Whisper model in /x']]);
 });

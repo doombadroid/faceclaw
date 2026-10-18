@@ -301,7 +301,7 @@ function log(report: ErrorReport): void {
   const line = `[error-report] ${report.source}: ${report.message}` + (report.count > 1 ? ` (x${report.count})` : `\n${report.stack}`)
   console.error(line)
   // Release builds drop console output; idevicesyslog reads the system log.
-  if (typeof FaceclawLog !== 'undefined') FaceclawLog.log(line)
+  if (typeof FaceclawLog !== 'undefined') FaceclawLog.logFromJs(line)
 }
 
 export function appBuild(): string {

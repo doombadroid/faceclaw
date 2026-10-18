@@ -1,9 +1,12 @@
 /**
  * Wireless logging for development (Settings > General > Developer > Remote Log URL): error
- * reports, the app log FaceclawLog gets (IosPreviewController.logBluetooth), console output (debug
+ * reports, the app log FaceclawLog gets (IosPreviewController.logBluetooth, and native code through
+ * FaceclawLog's sink), console output (debug
  * builds only: release builds strip console calls), Translate Tests lines and a session-start line go out as batched JSON POSTs to <url>/log, e.g. phone-log-sink.py behind
  * `tailscale serve`. Off while the URL is empty. Lines wait in Library/remote-log-queue.jsonl
- * (bounded, oldest dropped first) so they survive offline spells, relaunches and crashes.
+ * (bounded, oldest dropped first) so they survive offline spells, relaunches and crashes. Lines are
+ * ASCII (non-ASCII escaped as \uXXXX): a length is a UTF-8 byte count, so a batch stays under the
+ * sink's 1 MB body cap, and a write torn by a crash cannot leave the file undecodable.
  * Main isolate only: workers' console output is not forwarded (their error reports are).
  *
  * Never-silent exception (tests/never-silent.test.cjs): nothing here calls reportError. The error
@@ -37,11 +40,12 @@ let url = '', secrets: string[] = [], refreshedAt = -Infinity
 let queue: string[] = [], queueChars = 0, inFlight = 0
 /** Newest lines not yet appended to the file; [rewrite]: lines left the front, so the file is rewritten. */
 let unpersisted = 0, rewrite = false
-let timer: ReturnType<typeof setTimeout> | null = null, sending = false, backoffMs = 0, retryAt = 0
+let timer: ReturnType<typeof setTimeout> | null = null, sending: Promise<void> | null = null, backoffMs = 0, retryAt = 0
 let sent = 0, dropped = 0, lastError = '', lastErrorAt = '', lastSuccessAt = ''
 
 const now = () => new Date().getTime()
 const filePath = () => fsPath.join(knownFolders.ios.library().path, FILE_NAME)
+const tmpPath = () => `${filePath()}.tmp`
 
 /** [url]: the Remote Log URL setting; [secretValues]: every API key or token, never sent. */
 export function installRemoteLog(options: { url: () => string; secretValues: () => string[] }): void {
@@ -55,6 +59,8 @@ export function installRemoteLog(options: { url: () => string; secretValues: () 
   })
   Application.on(Application.suspendEvent, flushInBackground)
   Application.on(Application.exitEvent, persist)
+  // Objective-C callers of FaceclawLog (speech, model loads); the JS callers forward their own lines.
+  if (typeof FaceclawLog !== 'undefined') FaceclawLog.setSink(line => guardCallback('remote log native line', () => remoteLog('native', 'info', line ?? '')))
   refresh()
   // Last: a console that cannot be replaced must not cost the rest.
   hookConsole()
@@ -80,7 +86,7 @@ export function sendRemoteLogTest(): void {
 
 export function remoteLogStatus(): RemoteLogStatus {
   refresh()
-  return { on: !!url, sending, sent, queued: queue.length, dropped, lastError, lastErrorAt, lastSuccessAt, retryInMs: Math.max(0, retryAt - now()) }
+  return { on: !!url, sending: !!sending, sent, queued: queue.length, dropped, lastError, lastErrorAt, lastSuccessAt, retryInMs: Math.max(0, retryAt - now()) }
 }
 
 /** Every catch here ends in this, never in reportError (see the top of the file). */
@@ -97,7 +103,8 @@ function refresh(): boolean {
   const was = url
   try {
     url = readUrl().trim().replace(/\/+$/, '')
-    secrets = readSecrets().filter(value => value.length >= MIN_SECRET)
+    // Raw and JSON-escaped: a password can hold a quote or a backslash, and a line is scrubbed as JSON.
+    secrets = url ? [...new Set(readSecrets().filter(value => value.length >= MIN_SECRET).flatMap(value => [value, JSON.stringify(value).slice(1, -1)]))] : []
   } catch (error) { url = ''; noteFailure('reading settings', error) }
   if (url && !was) turnedOn()
   return !!url
@@ -118,20 +125,27 @@ function enqueue(source: string, level: string, msg: string, data?: unknown): vo
   try {
     const record: Record<string, unknown> = { ts: new Date().toISOString(), seq: ++seq, session, build: appBuild(), source, level, msg: String(msg) }
     if (data !== undefined) record.data = data
-    let line = JSON.stringify(record)
+    let line = scrub(JSON.stringify(record))
     if (line.length > MAX_LINE) {
-      record.msg = String(msg).slice(0, MAX_LINE / 2)
-      if (data !== undefined) record.data = JSON.stringify(data).slice(0, MAX_LINE / 2)
+      // Scrubbed before the cut, so a secret across it cannot leave its start in clear.
+      record.msg = scrub(String(msg)).slice(0, MAX_LINE / 2)
+      if (data !== undefined) record.data = scrub(JSON.stringify(data)).slice(0, MAX_LINE / 2)
       record.truncated = line.length
-      line = JSON.stringify(record)
+      line = scrub(JSON.stringify(record))
     }
-    // Secrets are [A-Za-z0-9._-] tokens: JSON escaping leaves them as they are, and the mark is valid JSON.
-    line = scrub(line)
+    line = ascii(line)
     queue.push(line); queueChars += line.length + 1; unpersisted++
     if (queue.length > MAX_LINES || queueChars > MAX_CHARS) dropOldest()
     if (queue.length - inFlight >= SEND_AT && !sending && now() >= retryAt) reschedule(0)
     else schedule(TICK_MS)
+    // An error is often what comes right before a crash: on disk now, not at the next tick.
+    if (level === 'error') persist()
   } catch (error) { noteFailure('queueing a line', error) }
+}
+
+/** Non-ASCII as \uXXXX: still the same JSON, one byte per char (lone surrogates are escaped already). */
+function ascii(line: string): string {
+  return line.replace(/[\u0080-\uffff]/g, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`)
 }
 
 function dropOldest(): void {
@@ -146,25 +160,34 @@ function dropOldest(): void {
 
 function load(): void {
   loaded = true
+  // The file is missing or holds a subset of the queue: write it whole next time (append needs a file).
+  rewrite = true
   try {
     if (!File.exists(filePath())) return
     const text: unknown = File.fromPath(filePath()).readTextSync(error => { throw error })
-    // NativeScript returns undefined for a file it cannot decode (a crash mid-write).
-    const lines = typeof text === 'string' ? text.split('\n').filter(line => line.startsWith('{') && line.endsWith('}')) : []
+    // A crash mid-append leaves a torn last line: keep only whole records.
+    const lines = typeof text === 'string' ? text.split('\n').filter(isRecord) : []
     queue = [...lines, ...queue]
     queueChars = queue.reduce((sum, line) => sum + line.length + 1, 0)
     if (queue.length > MAX_LINES || queueChars > MAX_CHARS) dropOldest()
   } catch (error) { noteFailure('reading the queue', error) }
-  // The file now holds a subset of the queue: write it whole next time.
-  rewrite = true
+}
+
+function isRecord(line: string): boolean {
+  if (!line.startsWith('{') || !line.endsWith('}')) return false
+  try { JSON.parse(line); return true } catch (error) { noteFailure('a torn queue line', error); return false }
 }
 
 function persist(): void {
   if (!rewrite && !unpersisted) return
   try {
-    const file = File.fromPath(filePath()), fail = (error: unknown) => { throw error }
-    if (rewrite) file.writeTextSync(queue.length ? queue.join('\n') + '\n' : '', fail)
-    else file.appendTextSync(queue.slice(-unpersisted).join('\n') + '\n', fail)
+    const fail = (error: unknown) => { throw error }
+    if (rewrite) {
+      // As error-reports.ts saves: a crash mid-rewrite leaves the old file, not half of the new one.
+      File.fromPath(tmpPath()).writeTextSync(queue.length ? queue.join('\n') + '\n' : '', fail)
+      if (File.exists(filePath())) File.fromPath(filePath()).removeSync(fail)
+      File.fromPath(tmpPath()).renameSync(FILE_NAME, fail)
+    } else File.fromPath(filePath()).appendTextSync(queue.slice(-unpersisted).join('\n') + '\n', fail)
     rewrite = false; unpersisted = 0
   } catch (error) { noteFailure('saving the queue', error) }
 }
@@ -189,12 +212,11 @@ function tick(): void {
 }
 
 function send(): Promise<void> {
-  sending = true
   let chars = 0
   inFlight = 0
   while (inFlight < Math.min(BATCH_LINES, queue.length) && (inFlight === 0 || chars + queue[inFlight]!.length < BATCH_CHARS)) chars += queue[inFlight++]!.length + 1
   const content = `[${queue.slice(0, inFlight).join(',')}]`
-  return Http.request({ url: `${url}/log`, method: 'POST', headers: { 'Content-Type': 'application/json' }, content, timeout: TIMEOUT_MS })
+  return sending = Http.request({ url: `${url}/log`, method: 'POST', headers: { 'Content-Type': 'application/json' }, content, timeout: TIMEOUT_MS })
     .then(response => {
       if (response.statusCode < 200 || response.statusCode >= 300) throw new Error(`HTTP ${response.statusCode}`)
       for (const line of queue.splice(0, inFlight)) queueChars -= line.length + 1
@@ -209,7 +231,7 @@ function send(): Promise<void> {
       retryAt = now() + backoffMs
     })
     .then(() => {
-      sending = false; inFlight = 0
+      sending = null; inFlight = 0
       persist()
       if (queue.length) schedule(queue.length >= SEND_AT ? 0 : TICK_MS)
     })
@@ -218,14 +240,15 @@ function send(): Promise<void> {
 /** Going to the background: save the queue and send it while iOS allows (a short background task). */
 function flushInBackground(): void {
   persist()
-  if (!refresh() || sending || !queue.length || typeof UIApplication === 'undefined') return
+  if (!refresh() || !(sending || queue.length) || typeof UIApplication === 'undefined') return
   const app = UIApplication.sharedApplication
   let task = UIBackgroundTaskInvalid
   const end = () => { if (task !== UIBackgroundTaskInvalid) app.endBackgroundTask(task); task = UIBackgroundTaskInvalid }
   task = app.beginBackgroundTaskWithExpirationHandler(() => guardCallback('remote log background task', end))
   if (timer !== null) clearTimeout(timer)
   timer = null
-  void send().then(end)
+  // A send already under way is waited for, not doubled.
+  void (sending ?? send()).then(end)
 }
 
 function hookConsole(): void {

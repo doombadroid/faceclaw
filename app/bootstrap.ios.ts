@@ -19,7 +19,9 @@ try { installKotlinErrorReports() } catch (error) { logJsError('error reports in
 try {
   const settings = () => require('./ui/dashboard-settings') as typeof import('./ui/dashboard-settings')
   const { installRemoteLog } = require('./native/remote-log.ios') as typeof import('./native/remote-log.ios')
-  installRemoteLog({ url: () => settings().remoteLogUrlSetting.get(), secretValues: () => settings().secretSettingValues() })
+  // The Even Hub token too: a This Session Only one is in memory, not in a setting.
+  const evenHub = () => require('./apps/evenhub/credentials') as typeof import('./apps/evenhub/credentials')
+  installRemoteLog({ url: () => settings().remoteLogUrlSetting.get(), secretValues: () => [...settings().secretSettingValues(), evenHub().getEvenHubToken()] })
 } catch (error) { logJsError('remote log install', error) }
 require('./phone-ui/onboarding-register.ios')
 require('./phone-ui/ios/register')

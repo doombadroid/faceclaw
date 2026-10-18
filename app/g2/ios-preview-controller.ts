@@ -1153,7 +1153,7 @@ export class IosPreviewController {
     const line = `${new Date().toISOString()} [${this.active ? 'foreground' : 'background'}${UIApplication.sharedApplication.protectedDataAvailable ? '' : ',protected-data-unavailable'}] ${message}`
     console.log(`[ios-ble] ${line}`); this.logLines.push(line)
     // Release builds drop console output; the system log is what idevicesyslog can read.
-    if (typeof FaceclawLog !== 'undefined') FaceclawLog.log(line)
+    if (typeof FaceclawLog !== 'undefined') FaceclawLog.logFromJs(line)
     remoteLog('ios-ble', 'info', line)
     if (this.logLines.length > 1000) this.logLines.shift()
     if (this.logTimer !== null) return
