@@ -15,6 +15,12 @@ const { installErrorNotice } = require('./phone-ui/ios/error-reports-page') as t
 // and either failure still reaches disk and Settings > General > Error Reports.
 try { installErrorNotice() } catch (error) { logJsError('error reports install', error) }
 try { installKotlinErrorReports() } catch (error) { logJsError('error reports install', error) }
+// Wireless logging while Settings > General > Developer > Remote Log URL is set; settings load on first use.
+try {
+  const settings = () => require('./ui/dashboard-settings') as typeof import('./ui/dashboard-settings')
+  const { installRemoteLog } = require('./native/remote-log.ios') as typeof import('./native/remote-log.ios')
+  installRemoteLog({ url: () => settings().remoteLogUrlSetting.get(), secretValues: () => settings().secretSettingValues() })
+} catch (error) { logJsError('remote log install', error) }
 require('./phone-ui/onboarding-register.ios')
 require('./phone-ui/ios/register')
 // After the transferred preferences, before anything reads the provider.

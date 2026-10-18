@@ -114,3 +114,15 @@ test('Kotlin catches reach IosErrorReports', () => {
   const reporter = definition(/^object IosErrorReports \{/gm).body;
   assert.doesNotMatch(reporter, /\bboundary(?:Error)?\(|CaughtErrors\.report\(/);
 });
+
+test('the one exception: remote log failures go to its status row, never to reportError', () => {
+  // The error report listener forwards every report through remote-log, so a send failure filed
+  // as a report would queue a line about itself (native/remote-log.ios.ts, top comment).
+  const { text } = sources.find(s => s.file === 'app/native/remote-log.ios.ts');
+  assert.doesNotMatch(text, /\breportError\(|\blogJsError\(|import \{[^}]*\breportError\b/);
+  // Every catch except the console formatter's JSON.stringify fallback records the failure.
+  const found = catches(text).filter(c => !/return String\(arg\)/.test(c));
+  assert.ok(found.length >= 5, `only ${found.length} catches found`);
+  for (const c of found) assert.match(c, /\bnoteFailure\(/, `remote-log: a catch neither reports nor records:\n${c}`);
+  assert.match(text, /\.catch\(\(error: unknown\) => \{\s*noteFailure\('sending', error\)/, 'a failed send');
+});

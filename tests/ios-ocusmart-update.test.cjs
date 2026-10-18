@@ -291,10 +291,23 @@ test('Device, Settings and General read firmware and battery through the same ru
   assert.equal(device.deviceLine({ ...HALTED, battery: 50 }), 'Connection Failed · Stock firmware 2.3.3.0', 'a halted link froze its battery reading');
   assert.equal(device.deviceLine({ ...OTHER, battery: 80 }), 'Connected · 80% · Third-party firmware · base 2.3.0.24', "Software Update's word for the kind");
 
-  const general = uiHarness(OTHER, { './settings-category-page': { documentPage() {} }, '../../version': { FACECLAW_VERSION: 'test' } });
+  let remoteLogUrl = '';
+  const about = { './settings-category-page': { documentPage() {} }, '../../version': { FACECLAW_VERSION: 'test' },
+    '../../ui/dashboard-settings': { remoteLogUrlSetting: { get: () => remoteLogUrl } },
+    '../../native/remote-log.ios': { remoteLogStatus: () => ({ on: !!remoteLogUrl, sent: 3, queued: 1, dropped: 0, lastError: '', lastSuccessAt: '', retryInMs: 0 }) } };
+  const general = uiHarness(OTHER, about);
   general.load('app/phone-ui/ios/about-page.ts').createPage();
   assert.equal(titled(general.rows(), 'Firmware').value, 'Third-party', "Software Update's word for it");
-  const stale = uiHarness({ ...OTHER, phase: 'disconnected' }, { './settings-category-page': { documentPage() {} }, '../../version': { FACECLAW_VERSION: 'test' } });
+  assert.equal(titled(general.rows(), 'Remote Log URL'), undefined, 'Developer stays hidden without the five taps or a URL');
+  // A set URL keeps Developer (and its status) shown after a relaunch; the row names only the host, not the token path.
+  remoteLogUrl = 'https://tcrmm-arcturus.example.ts.net/secret-log';
+  const developer = uiHarness(OTHER, about);
+  developer.load('app/phone-ui/ios/about-page.ts').createPage();
+  assert.equal(titled(developer.rows(), 'Remote Log URL').value, 'tcrmm-arcturus.example.ts.net');
+  assert.match(developer.rows().find(row => row.kind === 'custom' && /Sent 3/.test(row.view.text ?? '')).view.text, /^On\. Sent 3, queued 1\nLast success: never\nLast error: none$/);
+  assert.equal(titled(developer.rows(), 'Send Test Line').enabled, true);
+  remoteLogUrl = '';
+  const stale = uiHarness({ ...OTHER, phase: 'disconnected' }, about);
   stale.load('app/phone-ui/ios/about-page.ts').createPage();
   assert.deepEqual(['Left', 'Right', 'Firmware'].map(title => titled(stale.rows(), title).value), ['Not reported', 'Not reported', 'Not reported']);
 });

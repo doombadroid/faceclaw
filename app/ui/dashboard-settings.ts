@@ -215,6 +215,11 @@ export function getStringSettingById(id: string): ConfigSettingString | null {
   return stringSettingsById.get(id) ?? null;
 }
 
+/** The value of every secret string setting this isolate has loaded (ConfigSettingString.isSecret). */
+export function secretSettingValues(): string[] {
+  return [...stringSettingsById.values()].filter((setting) => setting.isSecret).map((setting) => setting.get());
+}
+
 export class ConfigSettingString<TId extends string = string> extends ConfigSetting<string, TId> {
   readonly editorTitle: string;
   readonly glassesEditTitle: string;
@@ -248,6 +253,9 @@ export class ConfigSettingString<TId extends string = string> extends ConfigSett
   }
 
   validationError(value = this.get()): string | null { return this.validator?.(value) ?? null; }
+
+  /** An API key, token or password: never logged, never sent (remote-log scrubs these values). */
+  get isSecret(): boolean { return /apikey|token|password/i.test(this.storageKey); }
 
   getValidValue(): string {
     const value = this.get();
@@ -1029,6 +1037,18 @@ export const perplexityApiKeySetting = new ConfigSettingString({
   glassesEditTitle: "Edit Perplexity key",
   formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
   description: "Perplexity API key, used when Perplexity is selected for the voice assistant.",
+});
+
+// Developer: where native/remote-log.ios.ts sends the app's logs (Settings > General > Developer).
+export const remoteLogUrlSetting = new ConfigSettingString({
+  id: "remote-log-url",
+  label: "Remote Log URL",
+  storageKey: "dev.remoteLogUrl",
+  defaultValue: "",
+  editorTitle: "Remote log URL (empty = off)",
+  normalize: (value) => (value ?? "").trim(),
+  validate: (value) => (!value || /^https?:\/\/\S+$/.test(value) ? null : "Paste a URL starting with https://, or leave it empty to stop sending."),
+  description: "Error reports, the app log and console output are sent to <URL>/log as JSON while this is set. API keys and tokens are redacted.",
 });
 
 export function assistantApiKeys(): AssistantApiKeys {

@@ -304,7 +304,7 @@ function log(report: ErrorReport): void {
   if (typeof FaceclawLog !== 'undefined') FaceclawLog.log(line)
 }
 
-function appBuild(): string {
+export function appBuild(): string {
   if (build) return build
   try {
     if (global.isIOS) {

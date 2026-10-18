@@ -18,6 +18,7 @@ import { bindCompassSession, receiveCompassEvent } from '../native/compass.ios'
 import { bindImuSession, imuSessionReady, receiveImuReading } from '../native/imu.ios'
 import { Dialogs, File, knownFolders, path, Utils, type ImageSource } from '@nativescript/core'
 import { reportError } from '../native/error-reports'
+import { remoteLog } from '../native/remote-log.ios'
 import { iosVoiceInput } from '../native/ios-voice-input'
 import { nightscoutBridge } from '../native/nightscout-bridge'
 import { weatherBridge } from '../native/weather'
@@ -1153,6 +1154,7 @@ export class IosPreviewController {
     console.log(`[ios-ble] ${line}`); this.logLines.push(line)
     // Release builds drop console output; the system log is what idevicesyslog can read.
     if (typeof FaceclawLog !== 'undefined') FaceclawLog.log(line)
+    remoteLog('ios-ble', 'info', line)
     if (this.logLines.length > 1000) this.logLines.shift()
     if (this.logTimer !== null) return
     this.logTimer = setTimeout(() => {

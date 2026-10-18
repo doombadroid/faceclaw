@@ -157,6 +157,7 @@ function fixture() {
     '../native/nightscout-bridge': { nightscoutBridge: { async start() {}, async stop() {} } },
     '../native/weather': { weatherBridge: { setSessionActive() {} } },
     '../native/error-reports': { reportError: (source, error) => errors.push(`report ${source}: ${error}`) },
+    '../native/remote-log.ios': { remoteLog() {} },
     './glance-host': { GlanceHost }, './events': events,
     // The shared suspender runs for real with its setting off (the iOS default): it stays idle.
     './evenhub-suspend': load('app/g2/evenhub-suspend.ts', { '../native/frame-timings': timings,

@@ -3,6 +3,7 @@ import { buttonRow, customRow, groupedPage, navRow, section, valueRow } from './
 import { getRuntime } from './runtime'
 import { presentOnTop } from './present'
 import { reportError } from '../../native/error-reports'
+import { remoteLog } from '../../native/remote-log.ios'
 import { guardCallback } from '../../native/callback-errors.ios'
 import { kotlinListener } from '../../native/kotlin-listener.ios'
 import { FaceclawCommunicatorBridge } from '../../native/faceclaw-communicator.ios'
@@ -37,6 +38,7 @@ type Translated = { ready: boolean; rows: { text: string; out?: string; error?: 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 function appendLog(line: string): void {
+  remoteLog('translate-tests', 'info', line)
   // getFile creates the file, which appendTextSync's NSFileHandle needs.
   knownFolders.documents().getFile(LOG_NAME).appendTextSync(line + '\n', error => reportError('translate-tests.log', error))
 }
