@@ -1437,7 +1437,9 @@ class GlassesSessionCore(
             stockTap.second(address, data.copyOf())
             return
         }
-        logDebug("onNotification: address=" + address + " characteristicUuid=" + characteristicUuid + " data.length=" + data.size)
+        // Short frames in hex: an unexpected reply (a heartbeat nobody acks) is unreadable by length alone.
+        logDebug("onNotification: address=" + address + " characteristicUuid=" + characteristicUuid + " data.length=" + data.size +
+            (if (data.size <= 64) " hex=" + BinaryEncoding.bytesToHex(data) else ""))
         val frame = BleProtocol.parseFrame(data)
         val decodedWearState = BleProtocol.parseWearState(frame)
         val compassEvent = if (address.equals(rightAddress, ignoreCase = true))
