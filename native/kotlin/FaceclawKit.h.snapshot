@@ -3660,7 +3660,7 @@ __attribute__((swift_name("InterruptibleSleep")))
 @end
 
 
-/** ANCS authorization changes for a connected peripheral; delivered on the BLE queue. */
+/** ANCS authorization changes for a connected peripheral; delivered on the callback queue. */
 __attribute__((swift_name("IosAncsAuthorizationListener")))
 @protocol FaceclawKitIosAncsAuthorizationListener
 @required
@@ -3764,8 +3764,12 @@ __attribute__((swift_name("StockLink")))
  * blocks the calling (worker) thread until the delegate reports completion or the timeout
  * elapses. CoreBluetooth runs on a private serial queue; the calling thread hands it work
  * with dispatch_sync and waits on a condition the delegate signals. Addresses are peripheral
- * identifier UUID strings (case-insensitive). Inbound notifications and connection-state
- * changes go to the registered listeners on the BLE queue; scan events go to the main queue.
+ * identifier UUID strings (case-insensitive). Inbound notifications, connection-state and
+ * ANCS changes go to the registered listeners on a second serial callback queue, in order;
+ * scan events go to the main queue. Listeners never run on the BLE queue: they may call back
+ * into this class (a teardown disconnects), and a dispatch_sync onto the queue already
+ * running traps in libdispatch (build 42 crash). Android's FaceclawBleManager does the same
+ * with its callback executor.
  *
  * Locking: [cond] (non-reentrant) guards all peer state. It is never held across a
  * dispatch_sync or a listener callback.
@@ -3813,7 +3817,7 @@ __attribute__((swift_name("IosBleCentral")))
  */
 - (void)setScanListenerListener:(id<FaceclawKitIosBleScanListener> _Nullable)listener __attribute__((swift_name("setScanListener(listener:)")));
 
-/** The session core (a FaceclawBleListener); called on the BLE queue. */
+/** The session core (a FaceclawBleListener); called on the callback queue. */
 - (void)setSessionListenerListener:(id<FaceclawKitFaceclawBleListener> _Nullable)listener __attribute__((swift_name("setSessionListener(listener:)")));
 
 /** Starts (or keeps) scanning for all peripherals with duplicates; events reach the scan listener on main. */
@@ -4175,7 +4179,7 @@ __attribute__((swift_name("IosGlassesSession")))
 - (BOOL)startBandwidthBenchmarkMessageSize:(int32_t)messageSize windowSize:(int32_t)windowSize durationMs:(int32_t)durationMs __attribute__((swift_name("startBandwidthBenchmark(messageSize:windowSize:durationMs:)")));
 - (BOOL)startBandwidthBenchmarkWithLinkModeMessageSize:(int32_t)messageSize windowSize:(int32_t)windowSize durationMs:(int32_t)durationMs linkMode:(int32_t)linkMode __attribute__((swift_name("startBandwidthBenchmarkWithLinkMode(messageSize:windowSize:durationMs:linkMode:)")));
 
-/** The packet listener is invoked on the main queue (the core delivers on the BLE queue). */
+/** The packet listener is invoked on the main queue (the core delivers on the BLE callback queue). */
 - (BOOL)startG2AudioCaptureListener:(id<FaceclawKitFaceclawAudioPacketListener> _Nullable)listener __attribute__((swift_name("startG2AudioCapture(listener:)")));
 
 /** As [startG2AudioCapture], with packets delivered as NSData on the main queue. */

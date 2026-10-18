@@ -500,6 +500,22 @@ class GlassesSessionCoreTest {
     }
 
     @Test
+    fun heartbeatsNeverAnsweredAfterEnteringEvenHubNameTheEvenApp() {
+        val s = Session()
+        s.link.muted.add("heartbeat")
+        s.startAndAwaitLayout()
+        for (i in 1..ConnectionOptions.MAX_CONSECUTIVE_ACK_TIMEOUTS + 1) {
+            assertTrue(waitUntil(3_000) { s.link.writes.count { it.kind == "heartbeat" } >= i }, s.host.logs().takeLast(10).toString())
+            s.platform.offsetMs += 1_600L
+            s.core.interruptibleSleep.interrupt()
+        }
+        assertTrue(waitUntil(3_000) { s.listener.phases.contains("retrying") }, s.host.logs().takeLast(10).toString())
+        assertTrue(s.host.hasLog("Transport failure: too many ack timeouts"))
+        assertTrue(s.listener.lastStatus.startsWith(EVENHUB_SILENT_STATUS), s.listener.lastStatus)
+        s.core.disconnect()
+    }
+
+    @Test
     fun ackTimeoutOnTheLayoutReconnects() {
         val s = Session()
         s.link.muted.add("create-layout")
