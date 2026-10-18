@@ -124,7 +124,7 @@ class IosGlassesSession internal constructor(
 
     fun setFirmwareDebugFlags(enabled: Boolean) = boundary("IosGlassesSession.setFirmwareDebugFlags", Unit) { core.setFirmwareDebugFlags(enabled) }
 
-    /** The packet listener is invoked on the main queue (the core delivers on the BLE queue). */
+    /** The packet listener is invoked on the main queue (the core delivers on the BLE callback queue). */
     fun startG2AudioCapture(listener: FaceclawAudioPacketListener?): Boolean = boundary("IosGlassesSession.startG2AudioCapture", false) {
         core.startG2AudioCapture(listener?.let { MainQueueAudioListener(it) })
     }
