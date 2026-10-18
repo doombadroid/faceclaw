@@ -3970,7 +3970,7 @@ declare class FaceclawTranslateSpike extends NSObject {
   static alloc(): FaceclawTranslateSpike;
   static new(): FaceclawTranslateSpike;
   static availabilityPairsStrategyCompletion(pairs: string, strategy: number, done: (p0: string) => void): void;
-  static prepareSourceTargetCompletion(source: string, target: string, done: (p0: string | null) => void): void;
+  static prepareSourceTargetStrategyCompletion(source: string, target: string, strategy: number, done: (p0: string | null) => void): void;
   static translateLinesSourceTargetStrategyCompletion(linesJson: string, source: string, target: string, strategy: number, done: (p0: string) => void): void;
   static speechLocales(done: (p0: string) => void): void;
 }

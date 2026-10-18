@@ -27,6 +27,7 @@ import {
 
 const LOG_NAME = 'translate-spike.jsonl'
 const STRATEGIES = [[0, 'default'], [1, 'lowLatency'], [2, 'highFidelity']] as const
+const strategyName = (code: number) => STRATEGIES.find(([c]) => c === code)?.[1] ?? 'default'
 const WINDOW_ID = 'translate-tests'
 const T4_TICKS = 30, T4_EVERY_MS = 3_000
 const T7_HOLD_MS = 8_000
@@ -115,6 +116,9 @@ let refreshPage = () => {}
 
 export function createPage(): Page {
   let pair = 'es>en'
+  // lowLatency by default: it is the strategy that downloads language packs (default and
+  // highFidelity were already usable for every pair in T1 on iOS 27).
+  let prepareStrategy = 1
   const results = new Map<string, string>()
   // A new label per build: refresh() empties the container but the old section keeps its row,
   // so re-adding one label throws "View already has a parent".
@@ -164,12 +168,14 @@ export function createPage(): Page {
   const T2 = async (rec: Rec) => {
     const [source, target] = pair.split('>') as [string, string]
     const t0 = Date.now()
+    const mode = strategyName(prepareStrategy)
+    const before = (await availability([pair], prepareStrategy)).pairs[pair]
     const error = await nativeCall<string | null>('translate-tests.prepare', 10 * 60_000,
-      done => FaceclawTranslateSpike.prepareSourceTargetCompletion(source, target, done))
-    rec('prepareTranslation', !error, Date.now() - t0, { pair, error })
-    const after = (await availability([pair], 0)).pairs[pair]
-    rec('status after', after === 'installed', 0, { pair, status: after })
-    return `${pair}: ${error ? `failed: ${error}` : 'prepared'} in ${Date.now() - t0} ms; status now ${after}`
+      done => FaceclawTranslateSpike.prepareSourceTargetStrategyCompletion(source, target, prepareStrategy, done))
+    rec('prepareTranslation', !error, Date.now() - t0, { pair, mode, before, error })
+    const after = (await availability([pair], prepareStrategy)).pairs[pair]
+    rec('status after', after === 'installed', 0, { pair, mode, status: after })
+    return `${pair} ${mode}: was ${before}; ${error ? `failed: ${error}` : 'prepared'} in ${Date.now() - t0} ms; status now ${after}`
   }
 
   const installedPairs = async (rec: Rec) => {
@@ -329,8 +335,9 @@ export function createPage(): Page {
   ]
 
   const { page, refresh } = groupedPage({ title: 'Translate Tests', largeTitle: false, build: container => {
-    container.addChild(section({ rows: [navRow({ title: 'Pair (T2)', value: pair, onTap: () => { pair = nextPair(pair); refresh() } })],
-      footer: 'Tap to cycle the language pair T2 asks to download.' }))
+    container.addChild(section({ rows: [navRow({ title: 'Pair (T2)', value: pair, onTap: () => { pair = nextPair(pair); refresh() } }),
+      navRow({ title: 'Mode (T2)', value: strategyName(prepareStrategy), onTap: () => { prepareStrategy = (prepareStrategy + 1) % STRATEGIES.length; refresh() } })],
+      footer: 'Tap to cycle the language pair and the mode T2 asks to download (lowLatency is the one with language packs).' }))
     container.addChild(section({ rows: tests.map(([title, onTap]) => buttonRow({ title, enabled: !busy, onTap })) }))
     output = new Label()
     output.className = 'os-error-stack'; output.textWrap = true

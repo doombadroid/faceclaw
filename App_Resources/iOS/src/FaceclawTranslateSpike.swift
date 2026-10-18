@@ -33,10 +33,12 @@ import UIKit
   }
 
   /// Presents a sheet whose SwiftUI .translationTask calls prepareTranslation(), the only route to the
-  /// system's language-download consent. done gets nil, or the error (a Cancel button gives up).
-  @objc(prepareSource:target:completion:)
-  public static func prepare(_ source: String, target: String, completion done: @escaping (String?) -> Void) {
-    Task { @MainActor in FaceclawTranslateSpike.presentPrepare(source, target, done) }
+  /// system's language-download consent. strategy as for availability: lowLatency (1) is the one
+  /// that downloads language packs; highFidelity uses Apple Intelligence models when it can.
+  /// done gets nil, or the error (a Cancel button gives up).
+  @objc(prepareSource:target:strategy:completion:)
+  public static func prepare(_ source: String, target: String, strategy: Int, completion done: @escaping (String?) -> Void) {
+    Task { @MainActor in FaceclawTranslateSpike.presentPrepare(source, target, strategy, done) }
   }
 
   /// Translates linesJson (a JSON array of strings) one line at a time with an installed-languages
@@ -129,11 +131,11 @@ import UIKit
     return String(decoding: data, as: UTF8.self)
   }
 
-  @MainActor private static func presentPrepare(_ source: String, _ target: String, _ done: @escaping (String?) -> Void) {
+  @MainActor private static func presentPrepare(_ source: String, _ target: String, _ strategy: Int, _ done: @escaping (String?) -> Void) {
     guard let top = topViewController() else { return done("no view controller to present from") }
     let state = PrepareState(done)
     let view = PrepareView(source: Locale.Language(identifier: source), target: Locale.Language(identifier: target),
-                           label: "\(source) → \(target)", finish: { state.finish($0) })
+                           strategy: preferred(strategy), label: "\(source) → \(target)", finish: { state.finish($0) })
     let host = UIHostingController(rootView: view)
     host.isModalInPresentation = true
     state.host = host
@@ -176,6 +178,7 @@ import UIKit
 private struct PrepareView: View {
   let source: Locale.Language
   let target: Locale.Language
+  let strategy: TranslationSession.Strategy?
   let label: String
   let finish: @MainActor (String?) -> Void
 
@@ -186,15 +189,33 @@ private struct PrepareView: View {
       Button("Cancel") { finish("cancelled on the phone") }
     }
     .padding(32)
-    .translationTask(source: source, target: target) { session in
-      let failure: String?
-      do {
-        try await session.prepareTranslation()
-        failure = nil
-      } catch {
-        failure = FaceclawTranslateSpike.describe(error)
-      }
-      await MainActor.run { finish(failure) }
+    .modifier(PrepareTask(source: source, target: target, strategy: strategy, finish: finish))
+  }
+}
+
+/// .translationTask with the strategy when one is asked for (the framework default otherwise).
+private struct PrepareTask: ViewModifier {
+  let source: Locale.Language
+  let target: Locale.Language
+  let strategy: TranslationSession.Strategy?
+  let finish: @MainActor (String?) -> Void
+
+  @ViewBuilder func body(content: Content) -> some View {
+    if let strategy {
+      content.translationTask(source: source, target: target, preferredStrategy: strategy) { session in await run(session) }
+    } else {
+      content.translationTask(source: source, target: target) { session in await run(session) }
     }
+  }
+
+  private func run(_ session: TranslationSession) async {
+    let failure: String?
+    do {
+      try await session.prepareTranslation()
+      failure = nil
+    } catch {
+      failure = FaceclawTranslateSpike.describe(error)
+    }
+    await MainActor.run { finish(failure) }
   }
 }
