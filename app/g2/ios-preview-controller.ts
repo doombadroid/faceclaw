@@ -44,7 +44,7 @@ import { flattenPlanesWithDraws, planesFingerprint, type Plane } from '../graphi
 import { prepareFrameDraws } from '../graphics/glyph-wire'
 import { G2_LENS_WIDTH, G2_LENS_HEIGHT } from '../graphics/image'
 import { makeInputEvent, type InputEvent, type InputEventPayload } from '../ui/gestures'
-import { noopLayerActions, type LayerActions } from '../ui/layers'
+import { noopLayerActions, type Layer, type LayerActions } from '../ui/layers'
 import { voiceActivity } from '../ui/shell/voice-activity'
 import { TextViewerLayer } from '../apps/files/text-viewer'
 import { shell, rawInputEventToInputEvent, type ShellWindow } from '../ui/shell/shell'
@@ -734,6 +734,18 @@ export class IosPreviewController {
       } else await app.launch(this.buildAppContext(app), params)
       console.log(`[ios-preview] Launched ${id}`)
     } catch (error) { this.fail(error) }
+  }
+  /**
+   * A developer harness's full-screen window showing `layer` (Settings > General > Translate Tests);
+   * a window still open under this id is closed first, so the new layer shows.
+   */
+  async openHarnessWindow(windowId: string, title: string, layer: Layer): Promise<InProcessWindow | null> {
+    if (this.inProcessApps.has(windowId)) shell.closeWindow(windowId)
+    await this.launchInProcessApp(windowId, `window:${windowId}`, options => createInProcessWindow({
+      ...options, appId: windowId, windowId, title, iconLetter: title[0] ?? '?', closeable: true, heightMode: 'max',
+      baseLayer: new YieldAtRootLayer(layer),
+    }))
+    return this.inProcessApps.get(windowId) ?? null
   }
   /** Fires when a glasses window opens, closes or comes to the front. */
   onWindowsChanged(listener: () => void): () => void {

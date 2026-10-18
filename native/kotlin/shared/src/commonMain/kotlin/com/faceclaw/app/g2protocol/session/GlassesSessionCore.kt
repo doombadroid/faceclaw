@@ -114,6 +114,8 @@ class GlassesSessionCore(
      * fall through to the normal frame parser exactly as before. Called on the BLE thread.
      */
     @Volatile internal var rawFrameTap: ((ByteArray) -> Unit)? = null
+    /** (sid, tap): every control-characteristic frame of that stock service goes to tap (address, frame) instead of the session. */
+    @Volatile internal var stockFrameTap: Pair<Int, (String, ByteArray) -> Unit>? = null
     internal val imuListeners = CopyOnWriteList<FaceclawImuListener>(platform)
     /** A compass subscriber plus the dispatcher it registered from (see addCompassListener). */
     internal class CompassSubscription(
@@ -348,6 +350,11 @@ class GlassesSessionCore(
     /** See [rawFrameTap]; null restores the default (frames parsed by the session). */
     fun setRawFrameTap(tap: ((ByteArray) -> Unit)?) {
         rawFrameTap = tap
+    }
+
+    /** See [stockFrameTap] (the Translate screen spike reads service 0x05); null tap restores the default. */
+    fun setStockFrameTap(sid: Int, tap: ((String, ByteArray) -> Unit)?) {
+        stockFrameTap = tap?.let { sid to it }
     }
 
     /**
@@ -1419,6 +1426,12 @@ class GlassesSessionCore(
                 && address.equals(rightAddress, ignoreCase = true)) {
             monitor.withLock { lastIncomingAtMs = now() }
             tap(data.copyOf())
+            return
+        }
+        val stockTap = stockFrameTap
+        if (stockTap != null && data.size >= 8 && (data[6].toInt() and 255) == stockTap.first) {
+            monitor.withLock { lastIncomingAtMs = now() }
+            stockTap.second(address, data.copyOf())
             return
         }
         logDebug("onNotification: address=" + address + " characteristicUuid=" + characteristicUuid + " data.length=" + data.size)

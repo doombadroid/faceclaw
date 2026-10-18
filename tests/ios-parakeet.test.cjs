@@ -9,14 +9,14 @@ const read = file => fs.readFileSync(file, 'utf8');
 const BUILD_YML = ['../faceclaw-ios-build', '../../faceclaw-ios-build']
   .map(dir => path.join(dir, '.github/workflows/build.yml')).find(file => fs.existsSync(file));
 
-test('every place that sets the minimum iOS says 17.0, which FluidAudio needs', () => {
-  assert.match(read('App_Resources/iOS/build.xcconfig'), /^IPHONEOS_DEPLOYMENT_TARGET = 17\.0;$/m);
+test('every place that sets the minimum iOS says 26.4 (Translation strategies; FluidAudio needs 17)', () => {
+  assert.match(read('App_Resources/iOS/build.xcconfig'), /^IPHONEOS_DEPLOYMENT_TARGET = 26\.4;$/m);
   assert.doesNotMatch(read('App_Resources/iOS/build.xcconfig'), /iOS 15/);
-  assert.match(read('App_Resources/iOS/Podfile'), /^platform :ios, '17\.0'$/m);
+  assert.match(read('App_Resources/iOS/Podfile'), /^platform :ios, '26\.4'$/m);
   if (!BUILD_YML) return;
   const yml = read(BUILD_YML);
-  assert.deepEqual([...yml.matchAll(/IPHONEOS_DEPLOYMENT_TARGET=([\d.]+)/g)].map(m => m[1]), ['17.0']);
-  assert.match(yml, /"minOSVersion": "17\.0"/);
+  assert.deepEqual([...yml.matchAll(/IPHONEOS_DEPLOYMENT_TARGET=([\d.]+)/g)].map(m => m[1]), ['26.4']);
+  assert.match(yml, /"minOSVersion": "26\.4"/);
   // The ObjC loader imports faceclaw-Swift.h: NativeScript names the product after the checkout folder.
   assert.match(yml, /path: faceclaw\s/);
 });

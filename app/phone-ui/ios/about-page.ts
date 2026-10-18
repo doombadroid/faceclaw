@@ -17,6 +17,9 @@ export const PARAKEET_CREDIT = 'On-device (Parakeet) transcription uses NVIDIA\'
   'licensed under CC BY 4.0 (creativecommons.org/licenses/by/4.0), as converted to Core ML by FluidInference ' +
   '(huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml). It runs with FluidAudio by FluidInference, under the Apache License 2.0.'
 
+// Five taps on the app name show Translate Tests (the translation spike's checks) until relaunch.
+let nameTaps = 0
+
 export function createPage(): Page {
   const runtime = getRuntime(), controller = runtime.controller
   let shown = '', shownReports = 0
@@ -30,6 +33,7 @@ export function createPage(): Page {
     name.text = APP_NAME; name.className = 'os-about-name'
     version.text = `Version ${FACECLAW_VERSION}`; version.className = 'os-row-subtitle'
     head.addChild(name); head.addChild(version)
+    head.on('tap', () => { if (++nameTaps === 5) refresh() })
     container.addChild(section({ rows: [customRow(head)],
       footer: 'By James Babcock and other contributors. Distributed under the GNU General Public License, version 3.' }))
     container.addChild(section({ header: 'Glasses firmware', rows: [
@@ -40,7 +44,8 @@ export function createPage(): Page {
     container.addChild(section({ header: 'Documents', rows: DOCUMENTS.map(([fileName, title]) =>
       navRow({ title, onTap: () => page.frame?.navigate({ create: () => documentPage(fileName, title) }) })), footer: PARAKEET_CREDIT }))
     container.addChild(section({ rows: [navRow({ title: 'Error Reports', value: String(shownReports),
-      onTap: () => page.frame?.navigate({ moduleName: 'ocusmart/error-reports' }) })],
+      onTap: () => page.frame?.navigate({ moduleName: 'ocusmart/error-reports' }) }),
+    ...nameTaps >= 5 ? [navRow({ title: 'Translate Tests', onTap: () => page.frame?.navigate({ moduleName: 'ocusmart/translate-tests' }) })] : []],
       footer: `Errors ${APP_NAME} caught and recovered from, kept for bug reports.` }))
     // The old menu opened Permissions without dropping the connection.
     container.addChild(section({ rows: [navRow({ title: 'Permissions', onTap: () => { void presentDetour('phone-ui/permissions-page', undefined, false) } })] }))

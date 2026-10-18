@@ -1,15 +1,16 @@
-// 17.0: FluidAudio (the Parakeet speech model, SPMPackages in nativescript.config.ts) declares iOS 17;
-// Podfile and the CI build's command-line override must say the same.
-IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+// 26.4: the translation work uses iOS 26.4's Translation strategies (FluidAudio, the Parakeet
+// speech model in nativescript.config.ts, needs only 17). Podfile and the CI build's command-line
+// override must say the same.
+IPHONEOS_DEPLOYMENT_TARGET = 26.4;
 TARGETED_DEVICE_FAMILY = 1;
 CODE_SIGN_STYLE = Automatic;
 
 // Set IOS_TEAM_ID in build_paths.sh (or pass --teamId) to choose the signing team.
-OTHER_LDFLAGS = $(inherited) -framework CoreBluetooth -framework CoreLocation -framework CoreText -framework Speech -framework AVFoundation -framework WebKit -framework UniformTypeIdentifiers -framework ImageIO -framework EventKit -framework Network -framework CoreMedia -framework CoreVideo -framework QuartzCore -framework UserNotifications -framework NaturalLanguage -framework Accelerate -lsqlite3 -lc++ -framework CoreML -weak_framework AlarmKit
+OTHER_LDFLAGS = $(inherited) -framework CoreBluetooth -framework CoreLocation -framework CoreText -framework Speech -framework AVFoundation -framework WebKit -framework UniformTypeIdentifiers -framework ImageIO -framework EventKit -framework Network -framework CoreMedia -framework CoreVideo -framework QuartzCore -framework UserNotifications -framework NaturalLanguage -framework Translation -framework Accelerate -lsqlite3 -lc++ -framework CoreML -weak_framework AlarmKit
 
 // Language mode for src/*.swift (the runtime template says 4.2). ns build passes SWIFT_ENABLE_EXPLICIT_MODULES=NO
 // unless this file sets it; CI calls xcodebuild directly, so set it here too.
-// AlarmKit (iOS 26+) is weak-linked above so iOS 17-25 still launch.
+// AlarmKit is weak-linked above from when the minimum was iOS 17; harmless at 26.4.
 SWIFT_VERSION = 5.0;
 SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 

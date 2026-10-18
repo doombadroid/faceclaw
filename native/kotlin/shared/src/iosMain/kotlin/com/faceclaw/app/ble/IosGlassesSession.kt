@@ -3,6 +3,7 @@
 package com.faceclaw.app
 
 import platform.Foundation.NSData
+import platform.Foundation.NSThread
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_queue_create
@@ -117,6 +118,44 @@ class IosGlassesSession internal constructor(
             if (!core.writeRawPacket("R", bytes)) PlatformLog.w(TAG, "relay packet dropped (${bytes.size} bytes)")
         }
     }
+
+    // ----- firmware Translate screen spike (Settings > General > Translate Tests, T8) -------------
+
+    @kotlin.concurrent.Volatile private var translateProbe: TranslateScreenProbe? = null
+
+    /**
+     * Runs [TranslateScreenProbe] (source>target, e.g. "es", "en") over this session on its own
+     * thread, its 0x05 packets written to the right arm outside the scheduler and every 0x05 frame
+     * routed to it; listener calls arrive on the main queue. Null, or why it did not start.
+     */
+    fun startTranslateProbe(source: String, target: String, listener: FaceclawTranslateProbeListener): String? =
+        boundaryError("IosGlassesSession.startTranslateProbe") {
+            check(core.isSessionReady()) { "the glasses session is not ready" }
+            check(translateProbe == null) { "a translate probe is already running" }
+            val limit = rightWriteLimit()
+            var seq = 0
+            val onMain = object : FaceclawTranslateProbeListener {
+                override fun onStep(step: String?, ok: Boolean, ms: Int, detail: String?) =
+                    dispatch_async(dispatch_get_main_queue()) { listener.onStep(step, ok, ms, detail) }
+
+                override fun onFinished(ok: Boolean, detail: String?) {
+                    core.setStockFrameTap(TranslateProtocol.SID, null)
+                    translateProbe = null
+                    dispatch_async(dispatch_get_main_queue()) { listener.onFinished(ok, detail) }
+                }
+            }
+            val probe = TranslateScreenProbe({ pb ->
+                // ponytail: single-frame replies assumed (they are a few bytes); a fragmented one decodes partially.
+                BleProtocol.framePb(pb, TranslateProtocol.SID, BleProtocol.FLAG_REQUEST, seq++ and 0xff, limit).all { core.writeRawPacket("R", it) }
+            }, onMain, source, target)
+            translateProbe = probe
+            core.setStockFrameTap(TranslateProtocol.SID) { _, frame -> probe.onFrame(BleProtocol.stripTrailingCrc(BleProtocol.parseFrame(frame).pb)) }
+            val thread = NSThread { probe.run() }
+            thread.name = "faceclaw-translate-probe"
+            thread.start()
+        }
+
+    fun cancelTranslateProbe() = boundary("IosGlassesSession.cancelTranslateProbe", Unit) { translateProbe?.cancel() }
 
     // ----- controls -------------------------------------------------------------------
 

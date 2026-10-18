@@ -1368,6 +1368,12 @@ interface FaceclawKitFaceclawSseListener extends NSObjectProtocol {
 }
 declare var FaceclawKitFaceclawSseListener: { prototype: FaceclawKitFaceclawSseListener };
 
+interface FaceclawKitFaceclawTranslateProbeListener extends NSObjectProtocol {
+  onFinishedOkDetail(ok: boolean, detail: string | null): void;
+  onStepStepOkMsDetail(step: string | null, ok: boolean, ms: number, detail: string | null): void;
+}
+declare var FaceclawKitFaceclawTranslateProbeListener: { prototype: FaceclawKitFaceclawTranslateProbeListener };
+
 interface FaceclawKitFaceclawVoiceControllerListener extends NSObjectProtocol {
   onFrameMetaAngleDegreesSsr(angleDegrees: number, ssr: number): void;
   onPcmPcm16le(pcm16le: FaceclawKitKotlinByteArray | null): void;
@@ -1636,6 +1642,7 @@ declare class FaceclawKitGlassesSessionCore extends FaceclawKitBase implements F
   setRawFrameTapTap(tap: ((p0: FaceclawKitKotlinByteArray) => void) | null): void;
   setRequiredFirmwareRevisionRevision(revision: number): void;
   setScreenBlankedBlanked(blanked: boolean): void;
+  setStockFrameTapSidTap(sid: number, tap: ((p0: string, p1: FaceclawKitKotlinByteArray) => void) | null): void;
   setSurfaceDepthIdDepth(id: string, depth: number): void;
   setSurfaceVisibleIdVisible(id: string, visible: boolean): void;
   setUnderlayDimBelowZOrderFactor256(belowZOrder: number, factor256: number): void;
@@ -2002,6 +2009,7 @@ declare class FaceclawKitIosGlassesSession extends FaceclawKitBase {
   addMicStatusListenerListener(listener: FaceclawKitFaceclawMicStatusListener | null): void;
   awaitEvenHubSessionReadyTimeoutMs(timeoutMs: number): boolean;
   cancelBandwidthBenchmark(): void;
+  cancelTranslateProbe(): FaceclawKitKotlinUnit | null;
   close(): void;
   compositeHeight(): number;
   compositeWidth(): number;
@@ -2055,6 +2063,7 @@ declare class FaceclawKitIosGlassesSession extends FaceclawKitBase {
   startG2AudioCaptureNsDataListener(listener: FaceclawKitIosAudioPacketListener): boolean;
   startG2AudioForwardingListener(listener: FaceclawKitFaceclawAudioPacketListener | null): boolean;
   startG2AudioForwardingNsDataListener(listener: FaceclawKitIosAudioPacketListener): boolean;
+  startTranslateProbeSourceTargetListener(source: string, target: string, listener: FaceclawKitFaceclawTranslateProbeListener): string | null;
   stopG2AudioCapture(): void;
   stopG2AudioForwarding(): void;
   submitShellSceneBytesPaintMsFrameId(bytes: NSData, paintMs: number, frameId: number): string | null;
@@ -3942,6 +3951,15 @@ declare class FaceclawSqlite extends NSObject implements FaceclawKitSqlPort {
   static new(): FaceclawSqlite;
   initWithPath(path: string): this | null;
   querySqlArgs(sql: string, args: NSArray<any> | any[]): NSArray<NSArray<any>> | null;
+}
+
+declare class FaceclawTranslateSpike extends NSObject {
+  static alloc(): FaceclawTranslateSpike;
+  static new(): FaceclawTranslateSpike;
+  static availabilityPairsStrategyCompletion(pairs: string, strategy: number, done: (p0: string) => void): void;
+  static prepareSourceTargetCompletion(source: string, target: string, done: (p0: string | null) => void): void;
+  static translateLinesSourceTargetStrategyCompletion(linesJson: string, source: string, target: string, strategy: number, done: (p0: string) => void): void;
+  static speechLocales(done: (p0: string) => void): void;
 }
 
 interface NSError {
