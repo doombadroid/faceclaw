@@ -74,7 +74,8 @@ export class DirectionPicker {
     this.langs = [a, b]
     this.cur = opts.initial
     this.scorer = opts.scorer
-    this.waitMs = opts.waitMs ?? 1500
+    // Only a backstop: Listen's forced finalize at each pause releases clusters well before this.
+    this.waitMs = opts.waitMs ?? 4000
     this.minWords = opts.minWords ?? 4
     this.margin = opts.margin ?? 0.15
     this.now = opts.now ?? Date.now
@@ -93,6 +94,12 @@ export class DirectionPicker {
     if (end > this.mark[lang]!) this.mark[lang] = end
     const text = String(f.text ?? '').trim()
     if (text) this.pending.push({ lang, text, conf: f.conf, start, end, at: this.now(), seq: this.seq++ })
+    return this.drain(false)
+  }
+
+  /** That transcriber has finalized everything through `t` (Listen forces it at each pause): it has heard up to there. */
+  finalized(lang: string, t: number): Decision[] {
+    if (lang in this.mark && Number.isFinite(t) && t > this.mark[lang]!) this.mark[lang] = t
     return this.drain(false)
   }
 

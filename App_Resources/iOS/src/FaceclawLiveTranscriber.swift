@@ -77,6 +77,14 @@ import Speech
     lock.withLock { sessions[handle] }?.finish()
   }
 
+  /// Finalizes everything up to `seconds` (this session's audio clock) now, rather than when the
+  /// transcriber decides to; then events gets {"kind":"finalized","through"} after those finals.
+  /// Listen calls it at each pause it detects, so both languages' finals cover the same stretch.
+  @objc(finalizeHandle:through:)
+  public static func finalize(_ handle: Int, through seconds: Double) {
+    lock.withLock { sessions[handle] }?.finalize(through: seconds)
+  }
+
   /// Stops at once, dropping unfinished results, then ended.
   @objc(cancelHandle:)
   public static func cancel(_ handle: Int) {
@@ -262,6 +270,20 @@ private final class LiveTranscription: @unchecked Sendable {
       case .starting: finishRequested = true
       case .running: beginFinish()
       case .finishing, .ended: break
+      }
+    }
+  }
+
+  func finalize(through seconds: Double) {
+    queue.async { [self] in
+      guard phase == .running, let analyzer, let format, seconds.isFinite, seconds > 0 else { return }
+      let time = CMTime(value: Int64((seconds * format.sampleRate).rounded()), timescale: CMTimeScale(format.sampleRate))
+      Task { [self] in
+        do { try await analyzer.finalize(through: time) } catch { return }  // finishing or cancelled: ended follows
+        // finalize publishes the finals to the results stream before returning, but read() may not
+        // have taken them yet. ponytail: a short sleep orders them first; a handshake if it ever doesn't.
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        queue.async { [self] in post(["kind": "finalized", "through": seconds]) }
       }
     }
   }

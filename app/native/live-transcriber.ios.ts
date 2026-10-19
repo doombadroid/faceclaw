@@ -66,6 +66,7 @@ export function startLiveTranscriber(language: string, onEvent: (e: TranscriberE
   return {
     language,
     accept: pcm => { if (!ended && pcm.byteLength >= 2) FaceclawLiveTranscriber.acceptHandlePcm(handle, toData(pcm)) },
+    finalize: seconds => { if (!ended && seconds > 0) FaceclawLiveTranscriber.finalizeHandleThrough(handle, seconds) },
     finish: () => { if (!ended) FaceclawLiveTranscriber.finishHandle(handle) },
     cancel: () => { if (!ended) FaceclawLiveTranscriber.cancelHandle(handle) },
   }

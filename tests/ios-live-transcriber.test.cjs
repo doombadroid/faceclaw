@@ -18,6 +18,7 @@ test('the Swift class exposes the selectors live-transcriber.ios.ts calls, typed
     'static startLanguageEvents(language: string, events: (p0: string) => void): number;',
     'static acceptHandlePcm(handle: number, pcm: NSData): void;',
     'static finishHandle(handle: number): void;',
+    'static finalizeHandleThrough(handle: number, seconds: number): void;',
     'static cancelHandle(handle: number): void;',
   ]);
   // Speech, AVFoundation and Locale stay out of the @objc surface (faceclaw-Swift.h never imports them).
@@ -35,6 +36,8 @@ test('the Swift side uses only iOS 26 SDK API, as documented', () => {
   assert.match(swift, /AsyncStream\.makeStream\(of: AnalyzerInput\.self\)/);
   assert.match(swift, /try await analyzer\.start\(inputSequence: stream\)/);
   assert.match(swift, /try await analyzer\?\.finalizeAndFinishThroughEndOfInput\(\)/);
+  // finalize(through: CMTime?) async throws (iOS 26.0): Listen forces finals at each pause it detects.
+  assert.match(swift, /try await analyzer\.finalize\(through: time\)/);
   assert.equal(swift.match(/try await analyzer\.cancelAndFinishNow|try analyzer\.cancelAndFinishNow/g), null, 'cancelAndFinishNow is async, not throws');
   assert.doesNotMatch(swift, /NSLog/);
 });

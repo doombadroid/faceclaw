@@ -19,7 +19,7 @@ function scorer(text) {
 
 function picker(opts = {}) {
   const clock = { t: 0 };
-  const p = new direction.DirectionPicker({ langs: ['es', 'en'], initial: 'es', scorer, now: () => clock.t, ...opts });
+  const p = new direction.DirectionPicker({ langs: ['es', 'en'], initial: 'es', scorer, waitMs: 1500, now: () => clock.t, ...opts });
   return { p, clock };
 }
 const fin = (text, start, end, conf = 0.9) => ({ text, conf, start, end });
@@ -296,4 +296,33 @@ test('a long Chinese utterance switches a zh-Hans/en pair; "谢谢" alone does n
   p.pushFinal('zh-Hans', fin('我们明天早上九点在火车站门口见面', 1, 4));
   const [long] = p.pushFinal('en', fin('women ming tian zao shang', 1, 4, 0.3));
   eq([long.lang, long.switched, p.current], ['zh-Hans', true, 'zh-Hans']);
+});
+
+test('finalized() releases a cluster at once: the silent transcriber heard the stretch', () => {
+  const { p } = picker();
+  // Spanish speech: only es produced text; en finalized through the pause with nothing.
+  assert.equal(p.pushFinal('es', fin('hola cómo estás hoy amigo', 0.5, 2.0)).length, 0);
+  const out = p.finalized('en', 2.2);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].lang, 'es');
+  assert.equal(out[0].switched, false);
+});
+
+test('finalized() alone (no text from either) decides nothing; ignores unknown languages and NaN', () => {
+  const { p } = picker();
+  assert.equal(p.finalized('en', 3).length, 0);
+  assert.equal(p.finalized('fr', 3).length, 0);
+  assert.equal(p.finalized('es', NaN).length, 0);
+  assert.equal(p.pushFinal('es', fin('hola amigo', 3.5, 4)).length, 0);
+  assert.equal(p.finalized('en', 4.2).length, 1);
+});
+
+test('the default backstop waits 4 s, not 1.5 s', () => {
+  const clock = { t: 0 };
+  const p = new direction.DirectionPicker({ langs: ['es', 'en'], initial: 'es', scorer, now: () => clock.t });
+  p.pushFinal('es', fin('hola cómo estás hoy amigo', 0.5, 2.0));
+  clock.t = 2000;
+  assert.equal(p.tick().length, 0);
+  clock.t = 4100;
+  assert.equal(p.tick().length, 1);
 });

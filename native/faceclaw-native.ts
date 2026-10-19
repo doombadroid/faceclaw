@@ -3874,6 +3874,7 @@ declare class FaceclawLiveTranscriber extends NSObject {
   static startLanguageEvents(language: string, events: (p0: string) => void): number;
   static acceptHandlePcm(handle: number, pcm: NSData): void;
   static finishHandle(handle: number): void;
+  static finalizeHandleThrough(handle: number, seconds: number): void;
   static cancelHandle(handle: number): void;
 }
 

@@ -9,6 +9,7 @@ import {
 } from "../../native/live-transcriber";
 import { appleTranslateAvailable, translateText } from "../../native/apple-translate";
 import { countWords, DirectionPicker, type Decision } from "./direction";
+import { Endpointer } from "./endpoint";
 import { scorePair } from "./language-id";
 import { languageName, translateMyLanguageSetting, translateTheirLanguageSetting } from "./translate-settings";
 
@@ -58,7 +59,8 @@ const RAW_CAPTURE_OWNER = "translate";
 const WAITING_MIC = "Waiting for the glasses microphone…";
 
 /** One picker and the transcribers feeding it; a pause closes it and resume opens another. */
-type Run = { picker: DirectionPicker; ready: Set<string>; closed: boolean };
+/** startS: the session audio time (samplesFed) when the run opened, the endpointer's 0. */
+type Run = { picker: DirectionPicker; endpointer: Endpointer; startS: number; ready: Set<string>; closed: boolean };
 type Slot = { id: number; lang: string; run: Run; transcriber: LiveTranscriber | null; offsetS: number; finishing: boolean };
 
 // all-apps imports this on Android too: load the iOS-only logger lazily.
@@ -169,6 +171,8 @@ class ListenSession {
     const langs: [string, string] = [their, mine];
     const run: Run = {
       picker: new DirectionPicker({ langs, initial, scorer: (text) => scorePair(text, langs) }),
+      endpointer: new Endpointer(),
+      startS: this.samplesFed / SAMPLE_RATE,
       ready: new Set(),
       closed: false,
     };
@@ -247,6 +251,9 @@ class ListenSession {
             end: event.end + slot.offsetS,
           }),
         );
+        return;
+      case "finalized":
+        this.applyDecisions(slot.run, slot.run.picker.finalized(slot.lang, event.through + slot.offsetS));
         return;
       case "error":
         logError("transcriber error", { lang: slot.lang, message: event.message });
@@ -395,10 +402,19 @@ class ListenSession {
   // ---- glasses mic (the raw tap Microphones uses) ----
 
   private handlePcm(pcm: Uint8Array): void {
-    if (!this.run) return;
+    const run = this.run;
+    if (!run) return;
     this.samplesFed += pcm.length >> 1;
     for (const slot of this.slots.values()) {
-      if (slot.run === this.run && !slot.finishing) slot.transcriber?.accept(pcm);
+      if (slot.run === run && !slot.finishing) slot.transcriber?.accept(pcm);
+    }
+    // At each pause, make both transcribers finalize through it: their finals then cover the same stretch.
+    for (const at of run.endpointer.push(pcm)) {
+      const through = run.startS + at;
+      log("pause", { at: through });
+      for (const slot of this.slots.values()) {
+        if (slot.run === run && !slot.finishing) slot.transcriber?.finalize(through - slot.offsetS);
+      }
     }
   }
 

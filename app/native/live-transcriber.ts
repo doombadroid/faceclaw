@@ -5,10 +5,18 @@ export interface SpeechLocaleStatus { supported: boolean; installed: boolean; lo
 export type TranscriberEvent =
   | { kind: 'ready'; locale: string }
   | { kind: 'partial' | 'final'; text: string; conf: number; start: number; end: number }
+  | { kind: 'finalized'; through: number }
   | { kind: 'error'; message: string }
   | { kind: 'ended' }
 /** A running transcriber; events stop after { kind: 'ended' }. */
-export interface LiveTranscriber { readonly language: string; accept(pcm: Uint8Array): void; finish(): void; cancel(): void }
+export interface LiveTranscriber {
+  readonly language: string
+  accept(pcm: Uint8Array): void
+  /** Finalize all results through `seconds` (its own audio clock); a 'finalized' event follows them. */
+  finalize(seconds: number): void
+  finish(): void
+  cancel(): void
+}
 
 export const liveTranscriberAvailable = (): boolean => false
 export const speechLanguageStatus = (language: string, _timeoutMs?: number): Promise<SpeechLocaleStatus> =>
