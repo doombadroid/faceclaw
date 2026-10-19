@@ -236,6 +236,8 @@ class ListenSession {
         // It works: a later failure gets a fresh set of restarts.
         this.restarts.delete(slot.lang);
         if (slot.run === this.run && slot.lang === this.st.live?.lang) this.liveClosed = true;
+        // ponytail: debug — speech text in the LAN log while the picker is tuned; drop before merging.
+        log("final", { lang: slot.lang, start: event.start + slot.offsetS, end: event.end + slot.offsetS, conf: event.conf, text: event.text });
         this.applyDecisions(
           slot.run,
           slot.run.picker.pushFinal(slot.lang, {
@@ -345,6 +347,7 @@ class ListenSession {
       if (this.st.live && this.liveEndS <= decision.end + LIVE_PAD_S) {
         this.st.live = null;
       }
+      log("decision", { lang: decision.lang, start: decision.start, end: decision.end, scores: decision.scores, words: decision.words, text: decision.text });
       if (!decision.text.trim()) continue;
       const line: ListenLine = {
         id: this.nextLineId++,
@@ -375,7 +378,7 @@ class ListenSession {
         }
         return;
       }
-      log("translate", { from: line.lang, to: line.target, strategy: result.strategy, ms: result.ms });
+      log("translate", { from: line.lang, to: line.target, strategy: result.strategy, ms: result.ms, out: result.out });
       const index = this.st.lines.findIndex((entry) => entry.id === line.id);
       if (index < 0) return;
       const lines = this.st.lines.slice();
