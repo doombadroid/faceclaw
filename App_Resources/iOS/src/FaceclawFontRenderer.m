@@ -74,6 +74,15 @@ static CTLineRef CreateLine(CTFontRef font, NSString *text, BOOL glyphLayout) CF
     CFRelease(line);
     return CreateRawLine(font, preferred, glyphLayout);
 }
+// Paragraph text (ligatures/shaping on) plus caption attributes, so wrapped and truncated lines match.
+static NSAttributedString *Styled(CTFontRef font, NSString *text, NSDictionary *style) {
+    NSMutableAttributedString *attributed = [Attributed(font, text, NO) mutableCopy];
+    [attributed addAttributes:style range:NSMakeRange(0, attributed.length)];
+    return attributed;
+}
+static CTLineRef CreateStyledLine(CTFontRef font, NSString *text, NSDictionary *style) CF_RETURNS_RETAINED {
+    return CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)Styled(font, text, style));
+}
 static BOOL ValidText(NSString *text) { return text != nil && text.length <= 100000; }
 static BOOL ValidRaster(NSInteger width, NSInteger height) {
     return width > 0 && height > 0 && width <= 65535 && height <= 65535 && width * height <= 4000000;
@@ -231,6 +240,72 @@ static NSData *ImagePacket(NSData *pixels, NSInteger width, NSInteger height, do
             CTLineDraw((__bridge CTLineRef)lines[i], ctx);
         }
         CGContextRelease(ctx); result = ImagePacket(pixels, width, height, gamma);
+    }
+    CFRelease(typesetter); CFRelease(font); return result;
+}
++ (NSData *)renderCaption:(NSString *)path text:(NSString *)text size:(double)size width:(NSInteger)width gamma:(double)gamma maxLines:(NSInteger)maxLines language:(NSString *)language {
+    if (!ValidText(text) || width <= 0 || width > 65535 || maxLines <= 0) return [NSData data];
+    CTFontRef font = CreateFont(path, size);
+    if (!font) return [NSData data];
+    NSInteger ascent = ceil(CTFontGetAscent(font)), descent = ceil(CTFontGetDescent(font));
+    NSInteger leading = ceil(MAX(0, CTFontGetLeading(font))), step = MAX(1, ascent + descent + leading);
+    maxLines = MIN(maxLines, MIN(65535 / step, 4000000 / width / step)); // Taller fallback lines: ValidRaster below.
+    if (maxLines <= 0) { CFRelease(font); return [NSData data]; }
+    BOOL rtl = language.length && [NSLocale characterDirectionForLanguage:language] == NSLocaleLanguageDirectionRightToLeft;
+    CTWritingDirection direction = rtl ? kCTWritingDirectionRightToLeft : kCTWritingDirectionNatural;
+    CTParagraphStyleSetting setting = { kCTParagraphStyleSpecifierBaseWritingDirection, sizeof(direction), &direction };
+    NSMutableDictionary *style = [NSMutableDictionary new];
+    id paragraph = CFBridgingRelease(CTParagraphStyleCreate(&setting, 1));
+    if (paragraph) style[(__bridge id)kCTParagraphStyleAttributeName] = paragraph;
+    // Han glyph forms (ja vs zh-Hans), fallback font choice and line-break rules follow the language.
+    if (language.length) style[(__bridge id)kCTLanguageAttributeName] = language;
+    CTLineRef probe = CreateStyledLine(font, text, style);
+    text = PreferTextPresentation(font, text, probe, NO); // Before any index math below.
+    CFRelease(probe);
+    CTTypesetterRef typesetter = CTTypesetterCreateWithAttributedString((__bridge CFAttributedStringRef)Styled(font, text, style));
+    NSMutableArray *lines = [NSMutableArray new];
+    CFIndex start = 0;
+    while (start < (CFIndex)text.length && lines.count < (NSUInteger)maxLines) {
+        CFIndex count = CTTypesetterSuggestLineBreak(typesetter, start, width);
+        if (count <= 0) count = [text rangeOfComposedCharacterSequenceAtIndex:start].length;
+        CTLineRef line;
+        if (lines.count == (NSUInteger)maxLines - 1 && start + count < (CFIndex)text.length) {
+            NSString *rest = [[text substringFromIndex:start] stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
+            CTLineRef full = CreateStyledLine(font, rest, style);
+            CTLineRef token = CreateStyledLine(font, @"…", style);
+            line = CTLineCreateTruncatedLine(full, width, kCTLineTruncationEnd, token);
+            if (!line) line = CFRetain(token);
+            CFRelease(full); CFRelease(token);
+        } else {
+            // Drop the break space/newline: in RTL it sits at the visual left and flush may not discount it.
+            CFIndex drawn = count;
+            while (drawn > 1 && [NSCharacterSet.whitespaceAndNewlineCharacterSet characterIsMember:[text characterAtIndex:start + drawn - 1]]) drawn--;
+            line = CTTypesetterCreateLine(typesetter, CFRangeMake(start, drawn));
+        }
+        [lines addObject:CFBridgingRelease(line)]; start += count;
+    }
+    // Each line is as tall as its tallest run: PingFang, SF Arabic etc. exceed the face's own metrics.
+    NSMutableArray<NSNumber *> *baselines = [NSMutableArray new]; // From the top.
+    NSInteger height = lines.count ? 0 : step;
+    for (id line in lines) {
+        CGFloat a = 0, d = 0;
+        CTLineGetTypographicBounds((__bridge CTLineRef)line, &a, &d, NULL);
+        NSInteger lineAscent = MAX(ascent, (NSInteger)ceil(a));
+        [baselines addObject:@(height + lineAscent)];
+        height += lineAscent + MAX(descent, (NSInteger)ceil(d)) + leading;
+    }
+    NSData *result = [NSData data];
+    if (ValidRaster(width, height)) {
+        NSMutableData *pixels = [NSMutableData dataWithLength:width * height];
+        CGContextRef ctx = CreateContext(pixels, width, height);
+        if (ctx) {
+            for (NSUInteger i = 0; i < lines.count; i++) {
+                CTLineRef line = (__bridge CTLineRef)lines[i];
+                CGContextSetTextPosition(ctx, rtl ? CTLineGetPenOffsetForFlush(line, 1.0, width) : 0, height - baselines[i].integerValue);
+                CTLineDraw(line, ctx);
+            }
+            CGContextRelease(ctx); result = ImagePacket(pixels, width, height, gamma);
+        }
     }
     CFRelease(typesetter); CFRelease(font); return result;
 }

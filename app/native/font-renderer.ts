@@ -9,4 +9,6 @@ export const fontRenderer = {
   renderGlyphCell: (path: string, size: number, cp: number, gamma: number): Uint8Array => toUint8Array(com.faceclaw.app.FontFileRenderer.renderGlyphCell(path, size, cp, gamma)),
   renderText: (path: string, text: string, size: number, gamma: number): Uint8Array => toUint8Array(com.faceclaw.app.FontFileRenderer.renderText(path, text, size, gamma)),
   renderWrapped: (path: string, text: string, size: number, width: number, gamma: number, lines: number): Uint8Array => toUint8Array(com.faceclaw.app.FontFileRenderer.renderWrapped(path, text, size, width, gamma, lines)),
+  // ponytail: Android wraps without language/RTL handling (iOS-only Translate is the sole caller); add a FontFileRenderer.renderCaption when Android ships it.
+  renderCaption: (path: string, text: string, size: number, width: number, gamma: number, lines: number, _language: string): Uint8Array => toUint8Array(com.faceclaw.app.FontFileRenderer.renderWrapped(path, text, size, width, gamma, lines)),
 }

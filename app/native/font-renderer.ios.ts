@@ -9,4 +9,5 @@ export const fontRenderer = {
   renderGlyphCell: (path: string, size: number, cp: number, gamma: number): Uint8Array => bytes(FaceclawFontRenderer.renderGlyphCellSizeCodePointGamma(path, size, cp, gamma)),
   renderText: (path: string, text: string, size: number, gamma: number): Uint8Array => bytes(FaceclawFontRenderer.renderTextTextSizeGamma(path, text, size, gamma)),
   renderWrapped: (path: string, text: string, size: number, width: number, gamma: number, lines: number): Uint8Array => bytes(FaceclawFontRenderer.renderWrappedTextSizeWidthGammaMaxLines(path, text, size, width, gamma, lines)),
+  renderCaption: (path: string, text: string, size: number, width: number, gamma: number, lines: number, language: string): Uint8Array => bytes(FaceclawFontRenderer.renderCaptionTextSizeWidthGammaMaxLinesLanguage(path, text, size, width, gamma, lines, language)),
 }

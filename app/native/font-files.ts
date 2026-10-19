@@ -123,3 +123,36 @@ export function renderFontFileWrapped(opts: {
     return null;
   }
 }
+
+/**
+ * renderFontFileWrapped for live captions in any language: `language` (BCP 47,
+ * e.g. "ja", "zh-Hans", "ar") selects localized glyphs and line breaking, and
+ * right-to-left languages are flushed right. Lines grow to fit fallback fonts.
+ */
+export function renderFontFileCaption(opts: {
+  path: string;
+  text: string;
+  sizePx: number;
+  maxWidth: number;
+  maxLines: number;
+  language: string;
+  gamma?: number;
+}): GrayImage | null {
+  if (!global.isAndroid && !global.isIOS) return null;
+  try {
+    return grayImageFromPacket(
+      fontRenderer.renderCaption(
+        opts.path,
+        opts.text,
+        opts.sizePx,
+        Math.round(opts.maxWidth),
+        opts.gamma ?? DEFAULT_FONT_GAMMA,
+        Math.round(opts.maxLines),
+        opts.language ?? "",
+      ),
+    );
+  } catch (error) {
+    console.warn(`renderFontFileCaption failed for ${opts.path}: ${error}`);
+    return null;
+  }
+}

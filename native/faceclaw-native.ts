@@ -67,6 +67,7 @@ declare class FaceclawFontRenderer extends NSObject {
   static renderGlyphCellSizeCodePointGamma(path: string | null, size: number, codePoint: number, gamma: number): NSData | null;
   static renderTextTextSizeGamma(path: string | null, text: string | null, size: number, gamma: number): NSData | null;
   static renderWrappedTextSizeWidthGammaMaxLines(path: string | null, text: string | null, size: number, width: number, gamma: number, maxLines: number): NSData | null;
+  static renderCaptionTextSizeWidthGammaMaxLinesLanguage(path: string | null, text: string | null, size: number, width: number, gamma: number, maxLines: number, language: string | null): NSData | null;
 }
 
 declare class FaceclawGraphics extends NSObject {
@@ -3865,6 +3866,17 @@ declare class FaceclawLc3Decoder extends NSObject {
   readonly errors: number;
 }
 
+declare class FaceclawLiveTranscriber extends NSObject {
+  static alloc(): FaceclawLiveTranscriber;
+  static new(): FaceclawLiveTranscriber;
+  static statusLanguageCompletion(language: string, done: (p0: string) => void): void;
+  static installLanguageCompletion(language: string, done: (p0: string | null) => void): void;
+  static startLanguageEvents(language: string, events: (p0: string) => void): number;
+  static acceptHandlePcm(handle: number, pcm: NSData): void;
+  static finishHandle(handle: number): void;
+  static cancelHandle(handle: number): void;
+}
+
 declare class FaceclawLocation extends NSObject {
   static alloc(): FaceclawLocation;
   static new(): FaceclawLocation;
@@ -3964,6 +3976,15 @@ declare class FaceclawSqlite extends NSObject implements FaceclawKitSqlPort {
   static new(): FaceclawSqlite;
   initWithPath(path: string): this | null;
   querySqlArgs(sql: string, args: NSArray<any> | any[]): NSArray<NSArray<any>> | null;
+}
+
+declare class FaceclawTranslate extends NSObject {
+  static alloc(): FaceclawTranslate;
+  static new(): FaceclawTranslate;
+  static translateTextSourceTargetCompletion(text: string, source: string, target: string, done: (p0: string) => void): void;
+  static statusSourceTargetCompletion(source: string, target: string, done: (p0: string) => void): void;
+  static prepareSourceTargetCompletion(source: string, target: string, done: (p0: string | null) => void): void;
+  static supportedLanguages(done: (p0: string) => void): void;
 }
 
 declare class FaceclawTranslateSpike extends NSObject {

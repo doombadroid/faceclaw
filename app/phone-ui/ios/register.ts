@@ -11,6 +11,7 @@ global.registerModule('ocusmart/settings-choice', () => require('./settings-choi
 global.registerModule('ocusmart/device', () => require('./device-page'))
 global.registerModule('ocusmart/about', () => require('./about-page'))
 global.registerModule('ocusmart/error-reports', () => require('./error-reports-page'))
+global.registerModule('ocusmart/translate', () => require('./translate-page'))
 global.registerModule('ocusmart/translate-tests', () => require('./translate-tests-page'))
 global.registerModule('ocusmart/update', () => require('./update-page'))
 global.registerModule('ocusmart/firmware-channel', () => require('./firmware-channel-page'))
