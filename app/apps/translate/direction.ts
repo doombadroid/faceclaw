@@ -2,7 +2,8 @@
  * Listen's direction picker. Two SpeechTranscribers (one per language of the pair) hear the same audio, so every
  * utterance arrives as finals from both, with different text. Overlapping finals are grouped into clusters; each
  * language is scored on its own text (transcription confidence + language ID) and one wins per cluster, with
- * hysteresis so a stray "sí" in an English conversation does not flip the direction.
+ * hysteresis so a stray "sí" in an English conversation does not flip the direction (one word never switches;
+ * 2-3 words only on a decisive lead or a second win in a row).
  * Pure (no NativeScript imports) so it runs under plain node for the tests.
  */
 import { LETTER_CLASS, NUMBER_CLASS } from '../../util/unicode-class'
@@ -15,6 +16,8 @@ export interface Decision { lang: string; text: string; start: number; end: numb
 
 /** Finals closer than this (seconds) belong to the same utterance. */
 const PAD = 0.25
+/** A score lead this large switches with as few as 2 words (device trials: real 3-word switches led by 0.57-0.79). */
+const DECISIVE = 0.5
 const CJK = /[ᄀ-ᇿ぀-ヿ㄰-㆏㐀-䶿一-鿿가-힯豈-﫿]/g // BMP only, so no /u
 /** Languages written without spaces between words: finals join with ''. */
 const UNSPACED = /^(ja|zh)\b/i
@@ -93,7 +96,8 @@ export class DirectionPicker {
     const end = Number.isFinite(f.end) ? Math.max(f.end, start) : start
     if (end > this.mark[lang]!) this.mark[lang] = end
     const text = String(f.text ?? '').trim()
-    if (text) this.pending.push({ lang, text, conf: f.conf, start, end, at: this.now(), seq: this.seq++ })
+    // Punctuation-only finals ("." ", .." from the other language's transcriber) still advance the watermark above.
+    if (WORDISH.test(text)) this.pending.push({ lang, text, conf: f.conf, start, end, at: this.now(), seq: this.seq++ })
     return this.drain(false)
   }
 
@@ -159,7 +163,8 @@ export class DirectionPicker {
     const leads = lead > 0 && so.words >= 2
     // C silent only because it lags (timeout path): its absence is no evidence, so only a streak can switch.
     const lagging = !sc.text && !this.caughtUp(c, C)
-    const switched = (!lagging && so.words >= this.minWords && lead >= this.margin - 1e-9) || (this.streak === O && leads)
+    const switched = (!lagging && ((so.words >= this.minWords && lead >= this.margin - 1e-9) || (leads && lead >= DECISIVE)))
+      || (this.streak === O && leads)
     this.streak = !switched && leads ? O : null
     if (switched) this.cur = O
     // Not switching, but the current language heard nothing: show the other one's text, in its language.

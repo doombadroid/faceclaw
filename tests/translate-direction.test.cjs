@@ -77,11 +77,31 @@ test('a short "sí" in an English conversation does not switch', () => {
   eq([again.lang, again.switched, p.current], ['en', false, 'en']);
 });
 
+// Device trials 10/20: after an English line, "Hola, buenas tardes" (3 words) lost to the English transcriber's junk.
+test('a short utterance with a decisive lead switches at once', () => {
+  const nl = { 'Hola, buenas tardes.': { es: 1, en: 0 }, 'hola, Buena Stardis.': { es: 0.9, en: 0.1 } };
+  const { p } = picker({ initial: 'en', scorer: text => nl[text] ?? {} });
+  p.pushFinal('es', fin('Hola, buenas tardes.', 0.8, 3.2, 0.88));
+  const [d] = p.pushFinal('en', fin('hola, Buena Stardis.', 0, 3.2, 0.29));
+  assert.ok(d.scores.es - d.scores.en >= 0.5, JSON.stringify(d.scores));
+  eq([d.lang, d.text, d.switched, p.current], ['es', 'Hola, buenas tardes.', true, 'es']);
+});
+
+test('punctuation-only finals advance the watermark but never become a caption', () => {
+  const { p } = picker({ initial: 'en' });
+  p.pushFinal('es', fin('Hola, buenas tardes.', 0, 2.4, 0.98));
+  const [d] = p.pushFinal('en', fin('.', 2.0, 2.3, 0.34));
+  eq([d.lang, d.text, d.switched], ['es', 'Hola, buenas tardes.', true], 'the "." counted as en having heard it, but not as text');
+  eq(p.pushFinal('en', fin(', ..', 3, 4, 0.2)), []);
+  eq(p.pushFinal('en', fin('...', 4, 5, 0.1)), []);
+  eq(p.flush(), [], 'nothing pending: punctuation was never queued');
+});
+
 test('two short wins in a row for the other language switch', () => {
   const { p } = picker();
-  p.pushFinal('en', fin('yes of course', 0, 1));
+  p.pushFinal('en', fin('yes of course', 0, 1, 0.5));
   const [first] = p.pushFinal('es', fin('jes off cors', 0, 1, 0.3));
-  eq([first.lang, first.switched, p.current], ['es', false, 'es'], '3 words: not yet');
+  eq([first.lang, first.switched, p.current], ['es', false, 'es'], '3 words, lead 0.4: not yet');
   p.pushFinal('en', fin('okay sure', 2, 3));
   const [second] = p.pushFinal('es', fin('oquei shur', 2, 3, 0.3));
   eq([second.lang, second.text, second.switched, p.current], ['en', 'okay sure', true, 'en']);
@@ -89,12 +109,12 @@ test('two short wins in a row for the other language switch', () => {
 
 test('a win for the current language in between breaks the streak', () => {
   const { p } = picker();
-  p.pushFinal('en', fin('yes of course', 0, 1));
+  p.pushFinal('en', fin('yes of course', 0, 1, 0.5));
   p.pushFinal('es', fin('jes off cors', 0, 1, 0.3));
   p.pushFinal('es', fin('muy bien gracias', 2, 3));
   const [mid] = p.pushFinal('en', fin('mui bien gracias', 2, 3, 0.3));
   assert.equal(mid.lang, 'es');
-  p.pushFinal('en', fin('okay sure', 4, 5));
+  p.pushFinal('en', fin('okay sure', 4, 5, 0.5));
   const [last] = p.pushFinal('es', fin('oquei shur', 4, 5, 0.3));
   eq([last.lang, last.switched, p.current], ['es', false, 'es']);
 });
