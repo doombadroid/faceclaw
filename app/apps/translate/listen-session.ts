@@ -234,6 +234,8 @@ class ListenSession {
         }
         return;
       case "partial":
+        // ponytail: debug — see "final" below.
+        log("partial", { lang: slot.lang, start: event.start + slot.offsetS, end: event.end + slot.offsetS, text: event.text });
         this.handlePartial(slot, event.text, event.end + slot.offsetS);
         return;
       case "final":
@@ -253,6 +255,7 @@ class ListenSession {
         );
         return;
       case "finalized":
+        log("finalized", { lang: slot.lang, through: event.through + slot.offsetS });
         this.applyDecisions(slot.run, slot.run.picker.finalized(slot.lang, event.through + slot.offsetS));
         return;
       case "error":
@@ -411,7 +414,7 @@ class ListenSession {
     // At each pause, make both transcribers finalize through it: their finals then cover the same stretch.
     for (const at of run.endpointer.push(pcm)) {
       const through = run.startS + at;
-      log("pause", { at: through });
+      log("pause", { at: through, floor: Math.round(run.endpointer.floorDb), db: run.endpointer.recentDb.join(" ") });
       for (const slot of this.slots.values()) {
         if (slot.run === run && !slot.finishing) slot.transcriber?.finalize(through - slot.offsetS);
       }

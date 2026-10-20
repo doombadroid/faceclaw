@@ -32,6 +32,9 @@ export class Endpointer {
   private silenceMs = 0
   private segmentStart = -1 // first speech frame of the open utterance, -1 when none
   private lastSpeechEnd = 0
+  /** ponytail: debug — last 2 s of frame levels (dBFS) and the floor, logged at each pause while tuning; drop before merging. */
+  readonly recentDb: number[] = []
+  get floorDb(): number { return this.floor }
 
   constructor(opts: EndpointOptions = {}) {
     this.frame = Math.round(SAMPLE_RATE * (opts.frameMs ?? 50) / 1000)
@@ -61,6 +64,8 @@ export class Endpointer {
     let sum = 0
     for (let i = 0; i < frame.length; i++) sum += frame[i]! * frame[i]!
     const db = 10 * Math.log10(sum / frame.length / (32768 * 32768) + 1e-12)
+    this.recentDb.push(Math.round(db))
+    if (this.recentDb.length > 40) this.recentDb.shift()
     const ms = frame.length * 1000 / SAMPLE_RATE
     const start = this.t
     this.t += frame.length / SAMPLE_RATE
