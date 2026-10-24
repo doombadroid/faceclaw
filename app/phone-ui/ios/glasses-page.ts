@@ -1,5 +1,5 @@
 import { GridLayout, Image, Label, StackLayout, type Page } from '@nativescript/core'
-import { groupedPage, section, navRow, buttonRow, switchRow, customRow, tile, type Row } from './ui-kit'
+import { groupedPage, section, navRow, buttonRow, switchRow, customRow, tile, foldColumns, READABLE_WIDTH, type Row } from './ui-kit'
 import { getRuntime } from './runtime'
 import { showConnectionDetails } from './connection-details'
 import type { SessionState } from '../../g2/ios-preview-controller'
@@ -96,10 +96,22 @@ export function createPage(): Page {
   let mirror: Image | null = null
   // The last capped width, so a rebuilt mirror starts at it rather than card-wide for a frame.
   let lensWidth = 0
-  const { page, refresh } = groupedPage({ title: 'My Glasses', build: container => {
+  // Wide enough (the iPhone Duo inner display, a landscape iPhone): glasses and lens lead,
+  // the rest trails, split on the fold. `split` is the leading column's width, null for one column.
+  let root: StackLayout | null = null, columns: GridLayout | null = null, split: number | null = null
+  const { page, refresh } = groupedPage({ title: 'My Glasses', maxWidth: 2 * READABLE_WIDTH, build: container => {
     const state = controller.connectionState, connected = runtime.connected, warning = reportedState(state)?.firmwareWarning
     shown = shownKey(state, runtime.evenHubButton)
-    container.addChild(spaced(section({ rows: [customRow(deviceCard(state))] }), 6))
+    root = container; columns = null
+    let lead = container, trail = container
+    if (split !== null) {
+      const grid = columns = new GridLayout()
+      grid.columns = `${split},*`
+      lead = new StackLayout(); trail = new StackLayout()
+      GridLayout.setColumn(trail, 1)
+      grid.addChild(lead); grid.addChild(trail); container.addChild(grid)
+    }
+    lead.addChild(spaced(section({ rows: [customRow(deviceCard(state))] }), 6))
 
     const top: Row[] = []
     if (warning) top.push(navRow({ tile: tile('exclamationmark.triangle.fill', 'red'), title: 'Attention Needed',
@@ -113,7 +125,7 @@ export function createPage(): Page {
       ;(appTile.getChildAt(0) as Image).src = phoneUi.icon
       top.push(navRow({ tile: appTile, title: `Open ${phoneUi.title} on iPhone`, onTap: () => controller.showEvenHubPhoneUi(phoneUi.windowId) }))
     }
-    if (top.length) container.addChild(section({ rows: top }))
+    if (top.length) lead.addChild(section({ rows: top }))
 
     const view = mirror = new Image()
     view.className = 'os-lens-mirror'; view.stretch = 'fill'
@@ -136,7 +148,7 @@ export function createPage(): Page {
     }, 0))
     const lens = new StackLayout()
     lens.className = 'os-lens'; lens.addChild(slot)
-    container.addChild(section({ header: 'Lens', rows: [
+    lead.addChild(section({ header: 'Lens', rows: [
       customRow(lens),
       switchRow({ title: phoneTitle(mirrorTouchSetting), value: mirrorTouchSetting.get(), onChange: value => {
         // The switch already shows it; a rebuild would cut its animation.
@@ -146,7 +158,8 @@ export function createPage(): Page {
       ? 'A live copy of what the glasses show. Tap it to open Remote. With touch input on, touches on the Remote mirror act on the glasses: tap selects, double-tap goes back, hold opens the menu, swipes navigate.'
       : 'What OcuSmart draws for the glasses, running as a preview while no glasses are connected. Tap it to open Remote.' }))
 
-    container.addChild(section({ rows: [
+    // Level with the device card when it heads its own column.
+    const features = section({ rows: [
       navRow({ tile: tile('sun.max.fill', 'blue'), title: 'Display & Brightness', value: brightnessLabel(brightnessSetting.get()),
         onTap: () => pushInTab('glasses', 'ocusmart/settings-category', { category: 'display' }) }),
       navRow({ tile: tile('bell.badge.fill', 'red'), title: 'Notifications', value: categoryValue('notifications'),
@@ -159,7 +172,8 @@ export function createPage(): Page {
       navRow({ tile: tile('hand.tap.fill', 'green'), title: 'Remote & Touchpads', onTap: () => pushInTab('glasses', 'ocusmart/remote') }),
       navRow({ tile: tile('arrow.down.circle.fill', 'gray'), title: 'Software Update', badge: warning ? '1' : undefined,
         onTap: () => pushInTab('glasses', 'ocusmart/update') }),
-    ] }))
+    ] })
+    trail.addChild(trail === lead ? features : spaced(features, 6))
 
     const rows: Row[] = []
     if (!deviceAddressError(loadDeviceAddresses())) rows.push(buttonRow({ title: connected ? 'Disconnect' : 'Connect', onTap: () => {
@@ -172,7 +186,7 @@ export function createPage(): Page {
       // Configure, firmware check/install/uninstall and Permissions live there.
       navRow({ title: 'Even G2', onTap: () => pushInTab('glasses', 'ocusmart/device') }),
     )
-    container.addChild(section({ header: 'Connection', footer: state?.status, rows }))
+    trail.addChild(section({ header: 'Connection', footer: state?.status, rows }))
   } })
   const refreshIfChanged = () => { if (shownKey(controller.connectionState, runtime.evenHubButton) !== shown) refresh() }
   let offs: (() => void)[] = []
@@ -190,6 +204,16 @@ export function createPage(): Page {
     // The paired identity is not evented.
     refresh()
   })
+  // Fold, unfold, rotation and Split View resize the page: crossing two columns' width rebuilds,
+  // a move of the fold within them only re-splits. Deferred out of UIKit's layout pass.
+  page.on('layoutChanged', () => setTimeout(() => {
+    const next = root ? foldColumns(root) : null
+    if (next === split) return
+    const rebuild = (next === null) !== (split === null)
+    split = next
+    if (rebuild) refresh()
+    else if (columns) columns.columns = `${next},*`
+  }, 0))
   page.on('unloaded', () => { for (const off of offs) off(); offs = []; releaseMirror?.(); releaseMirror = null })
   return page
 }

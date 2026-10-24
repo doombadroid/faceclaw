@@ -7,8 +7,9 @@ export type TileColor = 'blue' | 'red' | 'purple' | 'green' | 'orange' | 'gray' 
 /** A row and the separator inset under it (to the text). */
 export type Row = { view: View; inset: number }
 
-export function groupedPage({ title, largeTitle = true, build }: {
-  title: string; largeTitle?: boolean; build: (container: StackLayout) => void
+/** `maxWidth`: the widest the column gets; a page that splits into fold columns allows two readable widths. */
+export function groupedPage({ title, largeTitle = true, maxWidth = READABLE_WIDTH, build }: {
+  title: string; largeTitle?: boolean; maxWidth?: number; build: (container: StackLayout) => void
 }): { page: Page; refresh: () => void } {
   const page = new Page()
   page.className = 'os-page'
@@ -22,7 +23,7 @@ export function groupedPage({ title, largeTitle = true, build }: {
   scroll.content = container
   page.content = scroll
   // scroll.content, read when applied: Hub swaps in its own column holding the search bar and this container.
-  readableColumn(scroll, () => [scroll.content])
+  readableColumn(scroll, () => [scroll.content], maxWidth)
   const refresh = () => { container.removeChildren(); build(container) }
   refresh()
   return { page, refresh }
@@ -59,6 +60,27 @@ export function readableColumn(measured: View, targets: () => View[], max = READ
       }
     }, 0)
   })
+}
+
+/** The narrowest a fold column gets: below twice this a page stays one column. */
+export const FOLD_COLUMN_MIN = 340
+
+/**
+ * The leading column's width when a `width`-wide column starting `left` points
+ * into a `windowWidth`-wide window splits in two, or null when it is too narrow.
+ * The split sits on the window's centre line, which is the iPhone Duo fold when
+ * the app has the whole inner display; the cards' own 16pt margins make the gap.
+ */
+export function foldColumnWidth(width: number, left: number, windowWidth: number): number | null {
+  if (width < 2 * FOLD_COLUMN_MIN) return null
+  return Math.round(Math.min(width - FOLD_COLUMN_MIN, Math.max(FOLD_COLUMN_MIN, windowWidth / 2 - left)))
+}
+
+/** foldColumnWidth for a laid-out view, in its window; null before it has one. */
+export function foldColumns(view: View): number | null {
+  const native = view.ios as UIView | undefined, window = native?.window
+  if (!native || !window) return null
+  return foldColumnWidth(view.getActualSize().width, native.convertPointToView(CGPointMake(0, 0), null).x, window.bounds.size.width)
 }
 
 /**

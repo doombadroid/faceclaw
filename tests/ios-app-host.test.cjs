@@ -296,6 +296,13 @@ test('iOS grouped lists centre a 672pt column in wide windows, whatever column t
   scroll.side = 59; resize(852);
   assert.deepEqual([hubColumn.marginLeft, hubColumn.marginRight], [31, 31], 'landscape notched iPhone: 672pt inside its 59pt side insets');
   assert.equal(kit.readableMargin(600), 0);
+  // Fold columns: the split rides the window's centre line, within 340pt of either edge.
+  assert.equal(kit.foldColumnWidth(818, 0, 890), 445, 'iPhone Duo inner display, landscape: split on the fold');
+  assert.equal(kit.foldColumnWidth(780, 20, 890), 425, 'inset by the side safe area: still on the fold');
+  assert.equal(kit.foldColumnWidth(600, 0, 626), null, 'inner display, portrait: one column');
+  assert.equal(kit.foldColumnWidth(394, 0, 466), null, 'outer display: one column');
+  assert.equal(kit.foldColumnWidth(700, 0, 2000), 360, 'never narrower than 340pt on the trailing side');
+  assert.equal(kit.foldColumnWidth(700, 500, 890), 340, 'nor on the leading side');
 });
 
 test('iOS Remote pads for a keyboard only where it covers the window, in screen coordinates', () => {

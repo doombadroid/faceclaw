@@ -12,7 +12,7 @@ class View {
   on(event, fn) { this.handlers[event] = fn; }
   getActualSize() { return { width: this.width, height: 0 }; }
 }
-class GridLayout extends View { static setColumn() {} }
+class GridLayout extends View { static setColumn(view, column) { view.column = column; } }
 // Models NativeScript's Image on iOS: src is applied last and wraps an ImageSource in a
 // copy; teardown nulls the native image of whatever imageSource the view holds.
 class Image extends View {
@@ -29,7 +29,7 @@ const teardown = node => {
 
 function setup({ state = null, configured = true, serial = '', apps = [], installed = [], notifications = '2 of 3', fonts = true } = {}) {
   const calls = [], listeners = new Map(), settingListeners = new Set();
-  const settings = { brightness: 'auto', mirrorTouch: true, notifications }, env = { configured, installed, fonts, fontChecks: 0 };
+  const settings = { brightness: 'auto', mirrorTouch: true, notifications }, env = { configured, installed, fonts, fontChecks: 0, fold: null, maxWidth: 0 };
   let build = null, container = null, refreshes = 0;
   const page = { handlers: {}, height: 800, on(event, fn) { this.handlers[event] = fn; }, getActualSize() { return { width: 0, height: this.height }; } };
   const row = kind => options => ({ kind, ...options });
@@ -45,7 +45,7 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
       GridLayout, StackLayout: View, Image, Label: View },
     './ui-kit': {
       groupedPage: options => {
-        build = options.build;
+        build = options.build; env.maxWidth = options.maxWidth;
         const refresh = () => { refreshes++; if (container) teardown(container); container = new View(); build(container); };
         refresh();
         return { page, refresh };
@@ -53,6 +53,7 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
       section: options => options,
       navRow: row('nav'), buttonRow: row('button'), switchRow: row('switch'),
       customRow: view => ({ kind: 'custom', view }),
+      foldColumns: view => { env.measured = view; return env.fold; }, READABLE_WIDTH: 672,
       tile: (symbol, color) => { const box = new View(); box.symbol = symbol; box.color = color; const icon = new Image(); icon.src = `sys://${symbol}`; box.addChild(icon); return box; },
     },
     './runtime': { getRuntime: () => runtime },
@@ -80,7 +81,8 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
   const api = load('app/phone-ui/ios/glasses-page.ts');
   api.createPage();
   page.handlers.loaded();
-  const sections = () => container.children;
+  // Sections in reading order: a two-column page holds them in one grid, leading column first.
+  const sections = () => container.children.flatMap(child => child instanceof GridLayout ? child.children.flatMap(column => column.children) : [child]);
   const rows = () => sections().flatMap(section => section.rows);
   const find = title => rows().find(r => r.title === title);
   const texts = view => [view.text, ...view.children.flatMap(texts)].filter(Boolean);
@@ -88,7 +90,8 @@ function setup({ state = null, configured = true, serial = '', apps = [], instal
   const slot = () => sections().find(section => section.header === 'Lens').rows[0].view.children[0];
   const mirror = () => slot().children[0];
   const settingsChanged = () => { for (const fn of [...settingListeners]) fn(); };
-  return { api, page, runtime, calls, listeners, settings, env, mirror, slot, settingListeners, sections, rows, find, texts, card,
+  const layout = fold => { env.fold = fold; page.handlers.layoutChanged(); };
+  return { api, page, runtime, layout, container: () => container, calls, listeners, settings, env, mirror, slot, settingListeners, sections, rows, find, texts, card,
     settingsChanged, refreshes: () => refreshes,
     setState: next => { runtime.controller.connectionState = next; listeners.get('connection')(next); } };
 }
@@ -298,4 +301,31 @@ test('My Glasses warns about missing G2 fonts only for paired glasses, until ext
   const checks = page.env.fontChecks;
   page.listeners.get('detour')(false); page.setState(connected);
   assert.equal(page.env.fontChecks, checks, 'a confirmed extraction is not parsed again');
+});
+
+test('My Glasses splits into two columns on the fold once wide enough, and back', () => {
+  const page = setup({ state: connected });
+  assert.equal(page.env.maxWidth, 1344, 'two readable columns wide at most');
+  const order = page.sections().map(section => section.header ?? section.rows[0].kind + ':' + (section.rows[0].title ?? ''));
+  assert.equal(page.container().children.some(child => child instanceof GridLayout), false, 'one column until measured wide');
+  const before = page.refreshes(), column = page.container();
+  page.layout(400);
+  assert.equal(page.env.measured, column, 'measures the column the sections fill');
+  assert.equal(page.refreshes(), before + 1, 'crossing into two columns rebuilds once');
+  const grid = page.container().children[0];
+  assert.equal(grid.columns, '400,*');
+  const [lead, trail] = grid.children;
+  assert.equal(trail.column, 1);
+  assert.deepEqual(lead.children.map(section => section.header ?? 'card'), ['card', 'Lens'], 'glasses and lens lead');
+  assert.equal(trail.children[0].rows[0].title, 'Display & Brightness', 'the rest trails');
+  assert.equal(trail.children[0].marginTop, 6, 'level with the device card');
+  assert.deepEqual(page.sections().map(section => section.header ?? section.rows[0].kind + ':' + (section.rows[0].title ?? '')), order, 'same sections, same order');
+  page.layout(420);
+  assert.equal(page.refreshes(), before + 1, 'the fold moving within two columns only re-splits');
+  assert.equal(grid.columns, '420,*');
+  page.layout(420);
+  assert.equal(page.refreshes(), before + 1);
+  page.layout(null);
+  assert.equal(page.refreshes(), before + 2, 'folding back to one column rebuilds');
+  assert.equal(page.container().children.some(child => child instanceof GridLayout), false);
 });
