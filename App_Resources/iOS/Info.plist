@@ -62,6 +62,14 @@
   <string>OcuSmart connects to the terminal servers and developer app URLs you configure on your local network.</string>
   <key>UILaunchScreen</key>
   <dict/>
+  <!-- Scene life cycle: iOS 27 SDK apps need it, and the iPhone Duo inner display only goes
+       edge-to-edge for scene apps built with the 27.1 SDK. @nativescript/core supplies the
+       scene delegate when this key exists. -->
+  <key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+  </dict>
   <key>UISupportedInterfaceOrientations</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>
